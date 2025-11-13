@@ -1,7 +1,11 @@
 .vscode
+.ipynb_checkpoints
 __pycache__
 data/cad-recode-v1.5
 data/text2cad
 data/deepcad_test_mesh
 data/fusion360_test_mesh
-work_dirs
+qwen2vl_proc.tar.gz
+output/
+ckpt/
+cadrille_linux_amd64.tar
