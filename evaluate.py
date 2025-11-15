@@ -1,4 +1,6 @@
 import os
+import json
+import shutil
 import trimesh
 import numpy as np
 import cadquery as cq
@@ -134,11 +136,16 @@ def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext):
     pred_mesh_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_mesh')
     pred_brep_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_brep')
     best_names_path = os.path.join(os.path.dirname(pred_py_path), 'tmp.txt')
+    metrics_path = os.path.join(os.path.dirname(pred_py_path), 'metrics.json')
 
     # should be no predicted meshes from previous experiments
+    if os.path.exists(pred_mesh_path):
+        shutil.rmtree(pred_mesh_path)
+    if os.path.exists(pred_brep_path):
+        shutil.rmtree(pred_brep_path)
+
     os.makedirs(pred_mesh_path, exist_ok=True)
     os.makedirs(pred_brep_path, exist_ok=True)
-    assert len(os.listdir(pred_mesh_path)) == len(os.listdir(pred_brep_path)) == 0
 
     # compute chamfer distance and iou for each sample
     py_file_names = os.listdir(pred_py_path)
@@ -188,16 +195,64 @@ def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext):
     with open(best_names_path, 'w') as f:
         f.writelines([line + '\n' for line in best_names])
 
+    summary = {
+        'invalid_cd': ir_cd,
+        'invalid_iou': ir_iou,
+        'mean_iou': None,
+        'median_cd': None,
+        'skip_stats': list(),
+    }
+
     if len(iou):
-        print(f'mean iou: {np.mean(iou):.3f}', end=' ')
+        summary['mean_iou'] = float(np.mean(iou))
+        print(f"mean iou: {summary['mean_iou']:.3f}", end=' ')
     else:
         print('mean iou: N/A', end=' ')
-    print(f'median cd: {np.median(cd) * 1000:.3f}')
+
+    if len(cd):
+        summary['median_cd'] = float(np.median(cd))
+        print(f"median cd: {summary['median_cd'] * 1000:.3f}")
+    else:
+        print('median cd: N/A')
 
     cd = sorted(cd)
     for i in range(5):
-        print(f'skip: {i} ir: {(ir_cd + i) / len(metrics) * 100:.2f}',
-              f'mean cd: {np.mean(cd[:len(cd) - i]) * 1000:.3f}')
+        if len(metrics):
+            skip_mean_cd = float(np.mean(cd[:len(cd) - i])) if len(cd) - i > 0 else None
+            invalid_ratio = float((ir_cd + i) / len(metrics))
+        else:
+            skip_mean_cd = None
+            invalid_ratio = None
+
+        summary['skip_stats'].append({
+            'skip': i,
+            'invalid_ratio': invalid_ratio,
+            'mean_cd': skip_mean_cd,
+        })
+
+        if skip_mean_cd is not None and invalid_ratio is not None:
+            print(f'skip: {i} ir: {invalid_ratio * 100:.2f}',
+                  f'mean cd: {skip_mean_cd * 1000:.3f}')
+        else:
+            print(f'skip: {i} ir: N/A mean cd: N/A')
+
+    metrics_serialized = {
+        key: {
+            'cd': [float(v) for v in value['cd']],
+            'iou': [float(v) for v in value['iou']],
+            'id': list(value['id']),
+        }
+        for key, value in metrics.items()
+    }
+
+    results = {
+        'summary': summary,
+        'best_names': best_names,
+        'metrics': metrics_serialized,
+    }
+
+    with open(metrics_path, 'w') as f:
+        json.dump(results, f, indent=2)
 
 
 # To overcome CadQuery memory leaks, we call each exec() in a separate Process with
