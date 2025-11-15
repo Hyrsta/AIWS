@@ -39,6 +39,12 @@ To predict CadQuery codes run *test.py* script:
 python test.py --split deepcad_test_mesh --mode pc
 ```
 To run on other datasets and modalities use *--split fusion360_test_mesh* or set *--mode* to *img* or *text*.
+For external inputs you can bypass mesh preprocessing by providing multi-view images or point clouds directly:
+```shell
+python test.py --split my_custom_split --mode img --input-source multi_view --data-path ./my_data
+python test.py --split my_point_clouds --mode pc --input-source point_cloud --data-path ./my_data
+```
+`--image-exts` and `--point-cloud-exts` allow configuring the accepted file formats, while `--mesh-ext` specifies the mesh extension when using mesh inputs.
 
 ### Evaluation
 
@@ -46,6 +52,11 @@ To evaluate IoU, invalidity ratio, and chamfer distance run *evaluate.py* script
 ```shell
 python evaluate.py
 ```
+You can also evaluate predictions against point cloud references when meshes are unavailable:
+```shell
+python evaluate.py --gt-path ./my_point_clouds --gt-format point_cloud
+```
+Configure `--gt-point-cloud-exts` or `--gt-mesh-ext` to match your dataset layout.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/8b811b14-e646-48d6-9a0c-06a9655bdbaf" alt="cadrille scheme"/>
