@@ -10,6 +10,8 @@ from argparse import ArgumentParser
 from multiprocessing import Process
 from multiprocessing.pool import Pool
 
+import open3d
+
 
 class NonDaemonProcess(Process):
     def _get_daemon(self):
@@ -28,12 +30,21 @@ class NonDaemonPool(Pool):
         return proc
 
 
-def compute_chamfer_distance(gt_mesh, pred_mesh, n_points):
-    gt_points, _ = trimesh.sample.sample_surface(gt_mesh, n_points)
-    pred_points, _ = trimesh.sample.sample_surface(pred_mesh, n_points)
+def sample_mesh_points(mesh, n_points):
+    points, _ = trimesh.sample.sample_surface(mesh, n_points)
+    return points
+
+
+def compute_chamfer_distance_points(gt_points, pred_points):
     gt_distance, _ = cKDTree(gt_points).query(pred_points, k=1)
     pred_distance, _ = cKDTree(pred_points).query(gt_points, k=1)
     return np.mean(np.square(gt_distance)) + np.mean(np.square(pred_distance))
+
+
+def compute_chamfer_distance(gt_mesh, pred_mesh, n_points):
+    gt_points = sample_mesh_points(gt_mesh, n_points)
+    pred_points = sample_mesh_points(pred_mesh, n_points)
+    return compute_chamfer_distance_points(gt_points, pred_points)
 
 
 def compute_iou(gt_mesh, pred_mesh):
@@ -87,13 +98,14 @@ def py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path):
         process.join()
 
 
-def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt_mesh_path, n_points):
+def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt_path,
+                  n_points, gt_format, point_cloud_exts, mesh_ext):
     eval_file_name = py_file_name[:py_file_name.rfind('+')]
     py_path = os.path.join(pred_py_path, py_file_name)
     mesh_path = os.path.join(pred_mesh_path, py_file_name[:-3] + '.stl')
     brep_path = os.path.join(pred_brep_path, py_file_name[:-3] + '.step')
     py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path)
-    
+
     cd, iou = None, None
     try:  # apply_transform fails for some reason; or mesh path can not exist
         pred_mesh = trimesh.load_mesh(mesh_path)
@@ -103,9 +115,14 @@ def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt
         if extent > 1e-7:
             pred_mesh.apply_scale(1.0 / extent)
         pred_mesh.apply_transform(trimesh.transformations.translation_matrix([0.5, 0.5, 0.5]))
-        gt_mesh = trimesh.load_mesh(os.path.join(gt_mesh_path, eval_file_name + '.stl'))
-        cd = compute_chamfer_distance(gt_mesh, pred_mesh, n_points)
-        iou = compute_iou(gt_mesh, pred_mesh)
+        if gt_format == 'mesh':
+            gt_mesh = trimesh.load_mesh(resolve_gt_mesh_path(gt_path, eval_file_name, mesh_ext))
+            cd = compute_chamfer_distance(gt_mesh, pred_mesh, n_points)
+            iou = compute_iou(gt_mesh, pred_mesh)
+        else:
+            gt_points = load_point_cloud(resolve_gt_point_cloud_path(gt_path, eval_file_name, point_cloud_exts))
+            pred_points = sample_mesh_points(pred_mesh, n_points)
+            cd = compute_chamfer_distance_points(gt_points, pred_points)
     except:
         pass
     
@@ -113,7 +130,7 @@ def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt
     return dict(file_name=eval_file_name, id=index, cd=cd, iou=iou)
 
 
-def run(gt_mesh_path, pred_py_path, n_points):
+def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext):
     pred_mesh_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_mesh')
     pred_brep_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_brep')
     best_names_path = os.path.join(os.path.dirname(pred_py_path), 'tmp.txt')
@@ -132,8 +149,11 @@ def run(gt_mesh_path, pred_py_path, n_points):
                 pred_py_path=pred_py_path,
                 pred_mesh_path=pred_mesh_path,
                 pred_brep_path=pred_brep_path,
-                gt_mesh_path=gt_mesh_path,
-                n_points=n_points),
+                gt_path=gt_path,
+                n_points=n_points,
+                gt_format=gt_format,
+                point_cloud_exts=point_cloud_exts,
+                mesh_ext=mesh_ext),
             py_file_names), total=len(py_file_names)))
 
     # aggregate metrics per eval_file_name
@@ -159,7 +179,7 @@ def run(gt_mesh_path, pred_py_path, n_points):
             best_names.append(f'{key}+{index}.py')
         else:
             ir_cd += 1
-        
+
         if len(value['iou']):
             iou.append(np.max(value['iou']))
         else:
@@ -168,8 +188,11 @@ def run(gt_mesh_path, pred_py_path, n_points):
     with open(best_names_path, 'w') as f:
         f.writelines([line + '\n' for line in best_names])
 
-    print(f'mean iou: {np.mean(iou):.3f}',
-          f'median cd: {np.median(cd) * 1000:.3f}')
+    if len(iou):
+        print(f'mean iou: {np.mean(iou):.3f}', end=' ')
+    else:
+        print('mean iou: N/A', end=' ')
+    print(f'median cd: {np.median(cd) * 1000:.3f}')
 
     cd = sorted(cd)
     for i in range(5):
@@ -180,10 +203,55 @@ def run(gt_mesh_path, pred_py_path, n_points):
 # To overcome CadQuery memory leaks, we call each exec() in a separate Process with
 # timeout of 3 seconds. The Pool is tweaked to support non-daemon processes that can
 # call one more nested process.
+def resolve_gt_mesh_path(gt_root, file_name, mesh_ext):
+    path = os.path.join(gt_root, f'{file_name}.{mesh_ext}')
+    if not os.path.exists(path):
+        raise FileNotFoundError(f'Ground truth mesh {path} not found')
+    return path
+
+
+def resolve_gt_point_cloud_path(gt_root, file_name, point_cloud_exts):
+    for ext in point_cloud_exts:
+        candidate = os.path.join(gt_root, f'{file_name}.{ext}')
+        if os.path.exists(candidate):
+            return candidate
+    raise FileNotFoundError(
+        f'No ground truth point cloud found for {file_name} with extensions {point_cloud_exts}')
+
+
+def load_point_cloud(path):
+    if path.lower().endswith('.npz'):
+        data = np.load(path)
+        if isinstance(data, np.lib.npyio.NpzFile):
+            for key in ('points', 'point_cloud', 'pc'):
+                if key in data:
+                    return np.asarray(data[key])
+            return np.asarray(list(data.values())[0])
+        return np.asarray(data)
+    if path.lower().endswith('.npy'):
+        return np.load(path)
+    if path.lower().endswith(('.txt', '.xyz')):
+        return np.loadtxt(path, dtype=np.float32)
+
+    point_cloud = open3d.io.read_point_cloud(path)
+    if point_cloud is None:
+        raise ValueError(f'Unable to read point cloud from {path}')
+    return np.asarray(point_cloud.points)
+
+
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--gt-mesh-path', type=str, default='./data/deepcad_test_mesh')
+    parser.add_argument('--gt-path', type=str, default='./data/deepcad_test_mesh')
+    parser.add_argument('--gt-format', type=str, choices=['mesh', 'point_cloud'], default='mesh')
+    parser.add_argument('--gt-point-cloud-exts', type=str, default='ply,pcd,xyz,txt,npz,npy')
+    parser.add_argument('--gt-mesh-ext', type=str, default='stl')
     parser.add_argument('--pred-py-path', type=str, default='./work_dirs/tmp_py')
     parser.add_argument('--n-points', type=int, default=8192)
     args = parser.parse_args()
-    run(args.gt_mesh_path, args.pred_py_path, args.n_points)
+    run(
+        args.gt_path,
+        args.pred_py_path,
+        args.n_points,
+        args.gt_format,
+        tuple(ext.strip().lower() for ext in args.gt_point_cloud_exts.split(',') if ext.strip()),
+        args.gt_mesh_ext.lower())
