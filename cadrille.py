@@ -47,9 +47,11 @@ def collate(batch, processor, n_points, eval=False):
             processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=False) 
             for msg in messages] 
     else:
+        raw_inputs = [None] * len(batch)
         for i, m in enumerate(batch):
             if 'video' in m.keys():
                 is_img[i] = 1
+                raw_inputs[i] = {'type': 'img', 'data': m['video']}
                 message = [{
                         'role': 'user',
                         'content': [
@@ -60,6 +62,9 @@ def collate(batch, processor, n_points, eval=False):
             else:
                 if 'point_cloud' in m.keys():
                     is_pc[i] = 1
+                    raw_inputs[i] = {'type': 'pc', 'data': m['point_cloud']}
+                else:
+                    raw_inputs[i] = {'type': 'text', 'data': m.get('description')}
                 message = [{
                         'role': 'user',
                         'content': [
@@ -68,7 +73,7 @@ def collate(batch, processor, n_points, eval=False):
                     }]
             messages.append(message)
         texts = [
-            processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True) 
+            processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
             for msg in messages]
 
 
@@ -120,6 +125,7 @@ def collate(batch, processor, n_points, eval=False):
         inputs['labels'] = labels_ids
     else:
         inputs['file_name'] = [m['file_name'] for m in batch]
+        inputs['raw_inputs'] = raw_inputs
     return inputs
 
 
