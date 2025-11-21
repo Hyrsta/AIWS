@@ -30,7 +30,18 @@ def save_input_example(raw_input, save_dir, stem):
         if hasattr(frame, 'save'):
             frame.save(os.path.join(save_dir, f"{stem}.png"))
     elif input_type == 'pc' and data is not None:
-        np.save(os.path.join(save_dir, f"{stem}.npy"), np.asarray(data))
+        points = np.asarray(data)
+        if points.ndim == 2 and points.shape[1] >= 3:
+            ply_path = os.path.join(save_dir, f"{stem}.ply")
+            with open(ply_path, 'w') as ply_file:
+                ply_file.write("ply\n")
+                ply_file.write("format ascii 1.0\n")
+                ply_file.write(f"element vertex {len(points)}\n")
+                ply_file.write("property float x\n")
+                ply_file.write("property float y\n")
+                ply_file.write("property float z\n")
+                ply_file.write("end_header\n")
+                np.savetxt(ply_file, points[:, :3], fmt='%.6f')
 
 
 def run(data_path, split, mode, checkpoint_path, py_path, input_source,
