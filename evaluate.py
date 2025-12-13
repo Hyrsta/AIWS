@@ -106,7 +106,8 @@ def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt
     py_path = os.path.join(pred_py_path, py_file_name)
     mesh_path = os.path.join(pred_mesh_path, py_file_name[:-3] + '.stl')
     brep_path = os.path.join(pred_brep_path, py_file_name[:-3] + '.step')
-    py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path)
+    if not os.path.exists(mesh_path):
+        py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path)
 
     cd, iou = None, None
     try:  # apply_transform fails for some reason; or mesh path can not exist
@@ -137,12 +138,6 @@ def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext):
     pred_brep_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_brep')
     best_names_path = os.path.join(os.path.dirname(pred_py_path), 'tmp.txt')
     metrics_path = os.path.join(os.path.dirname(pred_py_path), 'metrics.json')
-
-    # should be no predicted meshes from previous experiments
-    if os.path.exists(pred_mesh_path):
-        shutil.rmtree(pred_mesh_path)
-    if os.path.exists(pred_brep_path):
-        shutil.rmtree(pred_brep_path)
 
     os.makedirs(pred_mesh_path, exist_ok=True)
     os.makedirs(pred_brep_path, exist_ok=True)
