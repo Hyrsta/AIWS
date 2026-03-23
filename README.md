@@ -31,16 +31,6 @@ Stage 4: Precise alignment
   This feeds directly into weld seam mapping and robot path planning.
 ```
 
-### Test results (100 samples, all 5 workpiece types)
-
-| Metric | Result |
-|--------|--------|
-| Classification accuracy | 100% |
-| Pose estimation success rate | 100% |
-| Mean dimension error | 39.2 mm |
-| Dimension query match rate | 95% |
-| End-to-end time per workpiece | ~46 seconds |
-
 ## What this repo does (Stage 3)
 
 This repo wraps two models into a single image-to-CAD pipeline:
