@@ -1,0 +1,22 @@
+# Core
+torch
+torchvision
+
+# 3D processing
+trimesh
+open3d
+numpy
+scipy
+
+# CAD
+cadquery
+
+# ML / inference
+transformers
+accelerate
+flash-attn
+sentence-transformers
+
+# Utilities
+tqdm
+Pillow
