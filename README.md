@@ -1,40 +1,52 @@
 # AIWS: Artificial Intelligence Welding System
 
-CAD reconstruction module for an automated welding system. Takes multi-view RGB images of workpieces and produces weld-ready CAD models through a two-stage pipeline:
+AIWS is an automated welding system that replaces manual workpiece measurement and CAD modeling with a vision-based pipeline. A welder currently spends hours per workpiece: photographing it, measuring dimensions by hand, drawing up the CAD model, then planning the weld path. AIWS does the same job in under a minute per part.
 
-1. **Images to mesh**: [SAM 3D Objects](https://github.com/facebookresearch/sam-3d-objects) reconstructs a 3D mesh from multi-view photographs.
-2. **Mesh to CAD**: [Cadrille](https://github.com/col14m/cadrille) converts the mesh into a parametric [CadQuery](https://github.com/CadQuery/cadquery) program, exportable as STL or STEP for welding path planning.
-
-The system targets 5 workpiece types: cover plate, square tube, H-beam, channel steel, and bellmouth.
+The system handles 5 standard workpiece types used in structural welding: **cover plate**, **square tube**, **H-beam**, **channel steel**, and **bellmouth**.
 
 > Part of the AIWS project at Fudan University (Oct 2025 - present).
 
-## Pipeline
+## How the full system works
+
+The complete AIWS pipeline has four stages. This repository implements **Stage 3** (CAD reconstruction). The other stages are developed by collaborators and run in separate Docker containers.
 
 ```
-Multi-view RGB images
+Stage 1: Reachability check
+  Can the welding torch actually reach this workpiece in its current position?
+  If not, a human repositions it before proceeding.
         |
-        v
-  ┌───────────┐
-  │  SAM 3D   │  single-image 3D reconstruction
-  │  Objects   │  (per-view mesh with pose + shape)
-  └─────┬─────┘
+Stage 2: Recognition + coarse estimation
+  YOLOv11-seg identifies the workpiece type and segments it from the background.
+  GenPose++ estimates rough dimensions and pose from RGB-D input.
+  The system retrieves a candidate CAD template from the model database.
         |
-        v
-   3D Mesh (.ply)
+Stage 3: CAD reconstruction  ← this repo
+  Multi-view RGB images -> 3D mesh (SAM 3D Objects)
+  3D mesh -> parametric CadQuery program (Cadrille)
+  CadQuery program -> STL/STEP files for downstream use
         |
-        v
-  ┌───────────┐
-  │ Cadrille  │  point cloud -> CadQuery script
-  │           │  (parametric CAD program)
-  └─────┬─────┘
-        |
-        v
-  CadQuery .py  ──>  STL mesh  /  STEP B-Rep
-        |
-        v
-  Welding path planning & control
+Stage 4: Precise alignment
+  FoundationPose aligns the CAD model to the actual workpiece,
+  outputting a 6D pose (translation + rotation) in camera coordinates.
+  This feeds directly into weld seam mapping and robot path planning.
 ```
+
+### Test results (100 samples, all 5 workpiece types)
+
+| Metric | Result |
+|--------|--------|
+| Classification accuracy | 100% |
+| Pose estimation success rate | 100% |
+| Mean dimension error | 39.2 mm |
+| Dimension query match rate | 95% |
+| End-to-end time per workpiece | ~46 seconds |
+
+## What this repo does (Stage 3)
+
+This repo wraps two models into a single image-to-CAD pipeline:
+
+1. **[SAM 3D Objects](https://github.com/facebookresearch/sam-3d-objects)**: takes multi-view RGB photographs and reconstructs a 3D mesh with pose and shape.
+2. **[Cadrille](https://github.com/col14m/cadrille)**: takes the mesh (as a sampled point cloud) and generates a parametric [CadQuery](https://github.com/CadQuery/cadquery) program, which can be exported as STL or STEP for welding path planning.
 
 ## Repository Structure
 
@@ -80,7 +92,7 @@ cd third_party/sam-3d-objects
 pip install -e .
 cd ../..
 
-# Install Cadrille dependencies (see their Dockerfile for exact versions)
+# Install Cadrille dependencies (see their Dockerfile for pinned versions)
 cd third_party/cadrille
 pip install -e .
 cd ../..
@@ -91,7 +103,6 @@ conda install -c conda-forge cadquery -y
 
 ### Model checkpoints
 
-SAM 3D Objects and Cadrille each need pre-trained weights:
 - SAM 3D: download per [their setup guide](https://github.com/facebookresearch/sam-3d-objects/blob/main/doc/setup.md) (requires HuggingFace access request)
 - Cadrille: weights pull automatically from HuggingFace (`maksimko123/cadrille-rl`)
 
@@ -105,7 +116,7 @@ python pipeline.py \
     --output-dir output/workpiece_01
 ```
 
-### Skip SAM3D (use an existing mesh)
+### Use an existing mesh (skip SAM3D)
 
 ```bash
 python pipeline.py \
@@ -114,7 +125,7 @@ python pipeline.py \
     --output-dir output/workpiece_01
 ```
 
-### Mesh reconstruction only
+### Mesh reconstruction only (skip Cadrille)
 
 ```bash
 python pipeline.py \
