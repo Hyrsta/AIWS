@@ -6,37 +6,63 @@ The system handles 5 standard workpiece types used in structural welding: **cove
 
 > Part of the AIWS project at Fudan University (Oct 2025 - present).
 
-## How the full system works
+## System overview
 
-The complete AIWS pipeline has four stages. This repository implements **Stage 3** (CAD reconstruction). The other stages are developed by collaborators and run in separate Docker containers.
+AIWS has two parts: an **offline** CAD reconstruction step (this repo) and an **online** 3-stage vision pipeline (developed by collaborators). The offline step runs first to build CAD models for each workpiece type, which the online pipeline then uses for real-time alignment during welding.
+
+### Offline: CAD reconstruction (this repo)
+
+```
+Multi-view RGB images of workpiece
+        |
+        v
+  ┌───────────┐
+  │  SAM 3D   │  single-image 3D reconstruction
+  │  Objects   │  (mesh with pose + shape)
+  └─────┬─────┘
+        |
+        v
+   3D Mesh (.ply)
+        |
+        v
+  ┌───────────┐
+  │ Cadrille  │  point cloud -> CadQuery script
+  │           │  (parametric CAD program)
+  └─────┬─────┘
+        |
+        v
+  CadQuery .py  ──>  STL mesh  /  STEP B-Rep
+        |
+        v
+  Stored in CAD model database
+```
+
+### Online: real-time welding pipeline (3 stages)
+
+The online pipeline runs on-site with RGB-D cameras and uses the CAD models built offline.
 
 ```
 Stage 1: Reachability check
-  Can the welding torch actually reach this workpiece in its current position?
+  Can the welding torch reach this workpiece in its current position?
   If not, a human repositions it before proceeding.
-        |
+
 Stage 2: Recognition + coarse estimation
-  YOLOv11-seg identifies the workpiece type and segments it from the background.
+  YOLOv11-seg identifies the workpiece type and segments it.
   GenPose++ estimates rough dimensions and pose from RGB-D input.
-  The system retrieves a candidate CAD template from the model database.
-        |
-Stage 3: CAD reconstruction  ← this repo
-  Multi-view RGB images -> 3D mesh (SAM 3D Objects)
-  3D mesh -> parametric CadQuery program (Cadrille)
-  CadQuery program -> STL/STEP files for downstream use
-        |
-Stage 4: Precise alignment
+  Retrieves the matching CAD model from the database (built offline).
+
+Stage 3: Precise alignment
   FoundationPose aligns the CAD model to the actual workpiece,
-  outputting a 6D pose (translation + rotation) in camera coordinates.
-  This feeds directly into weld seam mapping and robot path planning.
+  outputting a 6D pose in camera coordinates.
+  This feeds into weld seam mapping and robot path planning.
 ```
 
-## What this repo does (Stage 3)
+## What this repo does
 
-This repo wraps two models into a single image-to-CAD pipeline:
+This repo wraps two models into a single image-to-CAD pipeline for the offline step:
 
 1. **[SAM 3D Objects](https://github.com/facebookresearch/sam-3d-objects)**: takes multi-view RGB photographs and reconstructs a 3D mesh with pose and shape.
-2. **[Cadrille](https://github.com/col14m/cadrille)**: takes the mesh (as a sampled point cloud) and generates a parametric [CadQuery](https://github.com/CadQuery/cadquery) program, which can be exported as STL or STEP for welding path planning.
+2. **[Cadrille](https://github.com/col14m/cadrille)**: takes the mesh (as a sampled point cloud) and generates a parametric [CadQuery](https://github.com/CadQuery/cadquery) program, which can be exported as STL or STEP.
 
 ## Repository Structure
 
