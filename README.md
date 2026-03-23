@@ -1,11 +1,11 @@
 # AIWS: Artificial Intelligence Welding System
 
-CAD reconstruction module for an automated welding system. Takes multi-view RGB images of industrial workpieces and produces weld-ready CAD models through a two-stage pipeline:
+CAD reconstruction module for an automated welding system. Takes multi-view RGB images of workpieces and produces weld-ready CAD models through a two-stage pipeline:
 
 1. **Images to mesh**: [SAM 3D Objects](https://github.com/facebookresearch/sam-3d-objects) reconstructs a 3D mesh from multi-view photographs.
-2. **Mesh to CAD**: [Cadrille](https://github.com/col14m/cadrille) converts the mesh into a parametric [CadQuery](https://github.com/CadQuery/cadquery) program, which can then be exported as STL or STEP for downstream welding path planning.
+2. **Mesh to CAD**: [Cadrille](https://github.com/col14m/cadrille) converts the mesh into a parametric [CadQuery](https://github.com/CadQuery/cadquery) program, exportable as STL or STEP for welding path planning.
 
-The goal is to replace manual CAD modeling of workpieces (which takes hours per part) with an automated pipeline that runs in minutes.
+The system targets 5 workpiece types: cover plate, square tube, H-beam, channel steel, and bellmouth.
 
 > Part of the AIWS project at Fudan University (Oct 2025 - present).
 
@@ -16,7 +16,7 @@ Multi-view RGB images
         |
         v
   ┌───────────┐
-  │   SAM 3D  │  single-image 3D reconstruction
+  │  SAM 3D   │  single-image 3D reconstruction
   │  Objects   │  (per-view mesh with pose + shape)
   └─────┬─────┘
         |
@@ -25,7 +25,7 @@ Multi-view RGB images
         |
         v
   ┌───────────┐
-  │ Cadrille  │  point cloud / image -> CadQuery script
+  │ Cadrille  │  point cloud -> CadQuery script
   │           │  (parametric CAD program)
   └─────┬─────┘
         |
@@ -55,7 +55,7 @@ AIWS/
 
 ## Installation
 
-**Prerequisites:** CUDA GPU, Python 3.10+, conda.
+**Prerequisites:** Linux 64-bit, CUDA GPU (32GB+ VRAM), Python 3.10+, conda.
 
 ```bash
 # Clone with submodules
@@ -80,7 +80,7 @@ cd third_party/sam-3d-objects
 pip install -e .
 cd ../..
 
-# Install Cadrille
+# Install Cadrille dependencies (see their Dockerfile for exact versions)
 cd third_party/cadrille
 pip install -e .
 cd ../..
@@ -91,16 +91,15 @@ conda install -c conda-forge cadquery -y
 
 ### Model checkpoints
 
-SAM 3D Objects and Cadrille each need pre-trained weights. Follow their READMEs:
-- SAM 3D: download checkpoints per [their setup guide](https://github.com/facebookresearch/sam-3d-objects/blob/main/doc/setup.md)
-- Cadrille: weights are pulled automatically from HuggingFace (`maksimko123/cadrille-rl`)
+SAM 3D Objects and Cadrille each need pre-trained weights:
+- SAM 3D: download per [their setup guide](https://github.com/facebookresearch/sam-3d-objects/blob/main/doc/setup.md) (requires HuggingFace access request)
+- Cadrille: weights pull automatically from HuggingFace (`maksimko123/cadrille-rl`)
 
 ## Usage
 
 ### Full pipeline (images to CAD)
 
 ```bash
-# Place multi-view photos of the workpiece in a directory
 python pipeline.py \
     --input-dir data/workpiece_01 \
     --output-dir output/workpiece_01
@@ -127,7 +126,6 @@ python pipeline.py \
 ### Batch CadQuery conversion
 
 ```bash
-# Convert a directory of CadQuery scripts to STL
 python convert_cadquery.py --src work_dirs/cad --mesh-out work_dirs/stl
 
 # Also export STEP files
