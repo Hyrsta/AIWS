@@ -66,6 +66,25 @@ Copy and fill one block per server:
 - Notes:
 ```
 
+### Known Servers
+
+#### RXL
+- Purpose: remote server accessed over SSH
+- HostName: 10.12.208.90
+- User: rxl
+- Port: 1207
+- Auth: unknown yet
+- Key path: unknown yet
+- ProxyJump: none configured
+- Project path: unknown yet
+- Repo path: unknown yet
+- Python env / conda env: unknown yet
+- Common start command: unknown yet
+- Common status command: unknown yet
+- Common log command: unknown yet
+- GPU check command: `nvidia-smi`
+- Notes: available via local SSH alias `RXL` from `~/.ssh/config`
+
 ### What I need from Leonardo for a new server
 
 - SSH alias or hostname/IP
