@@ -73,8 +73,8 @@ Copy and fill one block per server:
 - HostName: 10.12.208.90
 - User: rxl
 - Port: 1207
-- Auth: unknown yet
-- Key path: unknown yet
+- Auth: SSH key setup in progress
+- Key path: `~/.ssh/id_rxl`
 - ProxyJump: none configured
 - Project path: unknown yet
 - Repo path: unknown yet
@@ -83,7 +83,7 @@ Copy and fill one block per server:
 - Common status command: unknown yet
 - Common log command: unknown yet
 - GPU check command: `nvidia-smi`
-- Notes: available via local SSH alias `RXL` from `~/.ssh/config`
+- Notes: available via local SSH alias `RXL` from `~/.ssh/config`; dedicated ED25519 key created for this host
 
 ### What I need from Leonardo for a new server
 
