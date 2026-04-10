@@ -69,8 +69,13 @@ def main() -> None:
 
     metadata_dir = OUT_DIR / "metadata"
     unannotated_dir = OUT_DIR / "misc" / "unannotated_images"
+    multi_label_dir = OUT_DIR / "misc" / "multi_label"
     metadata_dir.mkdir(parents=True, exist_ok=True)
     unannotated_dir.mkdir(parents=True, exist_ok=True)
+    (multi_label_dir / "images").mkdir(parents=True, exist_ok=True)
+    (multi_label_dir / "annotations").mkdir(parents=True, exist_ok=True)
+    (multi_label_dir / "depth_png").mkdir(parents=True, exist_ok=True)
+    (multi_label_dir / "depth_exr").mkdir(parents=True, exist_ok=True)
 
     for subset in SUBSETS:
         for workpiece in ALL_WORKPIECES:
@@ -95,6 +100,7 @@ def main() -> None:
         "missing_image": [],
         "unmapped_labels": defaultdict(set),
         "missing_depth": [],
+        "multi_label_images": [],
         "unannotated_images": sorted(image_stems - ann_stems),
     }
 
@@ -125,20 +131,29 @@ def main() -> None:
         if subset in {"V2", "NEW"} and depth_path is None:
             warnings["missing_depth"].append(stem)
 
-        subset_counts[subset] += 1
-        for label_zh, count in label_counter.items():
-            if label_zh not in WORKPIECE_MAP:
-                continue
-            workpiece = WORKPIECE_MAP[label_zh]
-            subset_workpiece_unique[(subset, workpiece)].add(stem)
-            subset_workpiece_objects[(subset, workpiece)] += count
-
-            base = OUT_DIR / subset / workpiece
-            safe_symlink(image_path, base / "images" / image_path.name)
-            safe_symlink(ann_path, base / "annotations" / ann_path.name)
+        is_multi_label = len(mapped_labels_zh) > 1
+        if is_multi_label:
+            warnings["multi_label_images"].append(stem)
+            safe_symlink(image_path, multi_label_dir / "images" / image_path.name)
+            safe_symlink(ann_path, multi_label_dir / "annotations" / ann_path.name)
             if depth_path is not None:
                 depth_folder = "depth_png" if depth_path.suffix.lower() == ".png" else "depth_exr"
-                safe_symlink(depth_path, base / depth_folder / depth_path.name)
+                safe_symlink(depth_path, multi_label_dir / depth_folder / depth_path.name)
+        else:
+            subset_counts[subset] += 1
+            for label_zh, count in label_counter.items():
+                if label_zh not in WORKPIECE_MAP:
+                    continue
+                workpiece = WORKPIECE_MAP[label_zh]
+                subset_workpiece_unique[(subset, workpiece)].add(stem)
+                subset_workpiece_objects[(subset, workpiece)] += count
+
+                base = OUT_DIR / subset / workpiece
+                safe_symlink(image_path, base / "images" / image_path.name)
+                safe_symlink(ann_path, base / "annotations" / ann_path.name)
+                if depth_path is not None:
+                    depth_folder = "depth_png" if depth_path.suffix.lower() == ".png" else "depth_exr"
+                    safe_symlink(depth_path, base / depth_folder / depth_path.name)
 
         rows.append(
             {
@@ -158,6 +173,7 @@ def main() -> None:
                 "image_path": str(image_path.relative_to(BASE)),
                 "annotation_path": str(ann_path.relative_to(BASE)),
                 "depth_path": str(depth_path.relative_to(BASE)) if depth_path else "",
+                "is_multi_label": is_multi_label,
             }
         )
 
@@ -187,6 +203,7 @@ def main() -> None:
                 "image_path",
                 "annotation_path",
                 "depth_path",
+                "is_multi_label",
             ],
         )
         writer.writeheader()
@@ -197,10 +214,12 @@ def main() -> None:
         "output_type": "symlink_view",
         "subsets": {},
         "unannotated_images": warnings["unannotated_images"],
+        "multi_label_images": warnings["multi_label_images"],
         "warnings": {
             "unknown_subset": warnings["unknown_subset"],
             "missing_image": warnings["missing_image"],
             "missing_depth": warnings["missing_depth"],
+            "multi_label_images": warnings["multi_label_images"],
             "unmapped_labels": {k: sorted(v) for k, v in warnings["unmapped_labels"].items()},
         },
     }
@@ -251,7 +270,7 @@ def main() -> None:
 ## 重要说明
 
 1. 这里使用的标注真值来源是 **`isat_annotations/`**，不是 `train.json` / `val.json`。
-2. 如果一张图里有多个工件类别，这张图会同时出现在多个工件目录里，**因为这里是符号链接，不会重复占用存储**。
+2. 如果一张图里有多个**不同类别**的工件，它不会进入具体工件目录，而是进入 `misc/multi_label/`。
 3. `misc/unannotated_images/` 中放的是当前发现的有图像但没有标注的样本。
 4. `metadata/samples.csv` 和 `metadata/summary.json` 提供机器可读的汇总信息。
 
