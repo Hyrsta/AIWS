@@ -13,3 +13,7 @@
   Type: documentation
   Context: Leonardo requested synchronized EN+ZH edits whenever one side is requested
   Confirmed: yes
+- [23:49] Keep evaluation aligned with paper method; do not switch to voxel IoU by default
+  Type: evaluation
+  Context: Leonardo rejected changing evaluation method and asked to follow paper metrics
+  Confirmed: yes
