@@ -9,3 +9,7 @@
   Type: workflow
   Context: Leonardo corrected the setup approach
   Confirmed: yes
+- [23:39] For bilingual documentation edits, always update both English and Chinese versions together
+  Type: documentation
+  Context: Leonardo requested synchronized EN+ZH edits whenever one side is requested
+  Confirmed: yes

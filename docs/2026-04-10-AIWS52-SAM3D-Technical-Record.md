@@ -254,37 +254,39 @@ Restart the same shard command with `--resume` using the same run directory.
 
 ### 8.1 Completion status
 
-The official run is fully complete:
-
-- Total tasks: **1418 / 1418**
-- Failed: **0**
-- Skipped: **0**
-- Completion: **100%**
+| Metric | Value |
+|---|---|
+| Total tasks | **1418 / 1418** |
+| Failed | **0** |
+| Skipped | **0** |
+| Completion | **100%** |
 
 Per-shard summary:
 
-- shard-0 (GPU0): 355/355, `avg_ok_duration_sec=14.074`, `ok_instances_per_hour=254.337`
-- shard-1 (GPU1): 355/355, `avg_ok_duration_sec=14.121`, `ok_instances_per_hour=253.559`
-- shard-2 (GPU2): 354/354, `avg_ok_duration_sec=14.813`, `ok_instances_per_hour=241.790`
-- shard-3 (GPU3): 354/354, `avg_ok_duration_sec=16.191`, `ok_instances_per_hour=221.272`
+| Shard | GPU | Completed | `avg_ok_duration_sec` (s) | `ok_instances_per_hour` |
+|---|---:|---:|---:|---:|
+| shard-0 | 0 | 355 / 355 | 14.074 | 254.337 |
+| shard-1 | 1 | 355 / 355 | 14.121 | 253.559 |
+| shard-2 | 2 | 354 / 354 | 14.813 | 241.790 |
+| shard-3 | 3 | 354 / 354 | 16.191 | 221.272 |
 
 ### 8.2 Global performance (1418 samples)
 
-- `duration_sec`: mean **14.799s**, p50 **13.812s**, p90 **17.555s**, p95 **18.977s**, max **73.562s**
-- `peak_memory_allocated_mb`: mean **18709.201MB**, p95 **19614.863MB**, max **20071.270MB**
-- `peak_memory_reserved_mb`: mean **24647.275MB**, p95 **27136.000MB**, max **28076.000MB**
-- `sec_per_megapixel`: mean **7.374**
-- `instances_per_hour`: mean **256.205**
+| Metric | Mean | P50 | P90 | P95 | Max |
+|---|---:|---:|---:|---:|---:|
+| `duration_sec` (s) | 14.799 | 13.812 | 17.555 | 18.977 | 73.562 |
+| `peak_memory_allocated_mb` (MB) | 18709.201 | 18738.090 | 19428.319 | 19614.863 | 20071.270 |
+| `peak_memory_reserved_mb` (MB) | 24647.275 | 24936.000 | 26420.000 | 27136.000 | 28076.000 |
+| `sec_per_megapixel` | 7.374 | 6.664 | 8.505 | 9.359 | 51.063 |
+| `instances_per_hour` | 256.205 | 260.652 | 323.367 | 328.014 | 335.882 |
 
 ### 8.3 Key bottleneck finding
 
-The clearest runtime bottleneck is:
+| Segment | Samples | `duration_mean_sec` | `duration_p90_sec` | Conclusion |
+|---|---:|---:|---:|---|
+| `V1 / bellmouth` | 194 | 17.8334 | 34.9408 | Higher than overall mean, and the main long-tail bottleneck |
 
-- **`V1 / bellmouth`** (194 samples)
-  - `duration_mean_sec=17.8334`
-  - `duration_p90_sec=34.9408`
-
-This matches live runtime behavior where shard-3 became noticeably slower while traversing dense `V1/bellmouth` segments.
+This matches live runtime behavior: shard-3 became noticeably slower while traversing dense `V1/bellmouth` segments.
 
 ---
 
