@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 import os
+import socket
 import sys
 import time
 import traceback
@@ -24,11 +25,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int, default=None, help="Optional cap on number of instances")
     parser.add_argument("--resume", action="store_true", help="Skip instances with an existing splat.ply")
+    parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards for parallel multi-GPU runs")
+    parser.add_argument("--shard-index", type=int, default=0, help="0-based shard index for this worker")
     return parser.parse_args()
 
 
 @dataclass
 class Task:
+    global_index: int
     split: str
     subset: str
     workpiece: str
@@ -75,6 +79,7 @@ def load_tasks(dataset_root: Path) -> list[Task]:
                     raise ValueError(f"Missing segmentation for {ann_path} object {idx}")
                 tasks.append(
                     Task(
+                        global_index=len(tasks),
                         split=split,
                         subset=subset,
                         workpiece=workpiece,
@@ -101,6 +106,7 @@ def write_manifest(tasks: list[Task], path: Path) -> None:
         writer = csv.DictWriter(
             f,
             fieldnames=[
+                "global_index",
                 "task_id",
                 "split",
                 "subset",
@@ -125,6 +131,12 @@ def write_manifest(tasks: list[Task], path: Path) -> None:
             row["task_id"] = task.task_id
             row["bbox"] = json.dumps(task.bbox, ensure_ascii=False)
             writer.writerow(row)
+
+
+def select_shard(tasks: list[Task], num_shards: int, shard_index: int) -> list[Task]:
+    if num_shards <= 1:
+        return tasks
+    return [task for task in tasks if task.global_index % num_shards == shard_index]
 
 
 def build_mask(task: Task) -> np.ndarray:
@@ -161,14 +173,37 @@ def patch_torch_hub_for_local_dinov2(torch: Any) -> None:
     torch.hub.load = wrapped_load
 
 
+def get_device_info(torch: Any) -> dict[str, Any]:
+    info: dict[str, Any] = {
+        "hostname": socket.gethostname(),
+        "pid": os.getpid(),
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+    }
+    if torch.cuda.is_available():
+        current_device = torch.cuda.current_device()
+        info.update(
+            {
+                "torch_cuda_device_index": current_device,
+                "gpu_name": torch.cuda.get_device_name(current_device),
+            }
+        )
+    return info
+
+
 def main() -> None:
     args = parse_args()
+    if args.num_shards < 1:
+        raise SystemExit("--num-shards must be >= 1")
+    if args.shard_index < 0 or args.shard_index >= args.num_shards:
+        raise SystemExit("--shard-index must satisfy 0 <= shard-index < num-shards")
+
     dataset_root = args.dataset_root.resolve()
     repo_root = args.repo_root.resolve()
     output_root = args.output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
-    tasks = load_tasks(dataset_root)
+    tasks_all = load_tasks(dataset_root)
+    tasks = select_shard(tasks_all, args.num_shards, args.shard_index)
     if args.limit is not None:
         tasks = tasks[: args.limit]
 
@@ -185,13 +220,18 @@ def main() -> None:
     patch_torch_hub_for_local_dinov2(torch)
 
     config_path = repo_root / "checkpoints" / "hf" / "pipeline.yaml"
+    model_init_started = time.time()
     inference = Inference(str(config_path), compile=False)
+    model_init_sec = time.time() - model_init_started
+    device_info = get_device_info(torch)
 
     total = len(tasks)
+    total_global = len(tasks_all)
     done = 0
     skipped = 0
     failed = 0
     started_at = time.time()
+    sum_ok_duration = 0.0
 
     for index, task in enumerate(tasks, start=1):
         task_out_dir = output_root / task.split / task.subset / task.workpiece / f"{task.stem}__obj{task.object_index:02d}"
@@ -205,8 +245,15 @@ def main() -> None:
             continue
 
         task_out_dir.mkdir(parents=True, exist_ok=True)
+        image_pixels = int(task.width * task.height)
         task_started = time.time()
         record = {
+            "global_index": task.global_index,
+            "task_index_in_shard": index,
+            "total_tasks_in_shard": total,
+            "total_tasks_global": total_global,
+            "num_shards": args.num_shards,
+            "shard_index": args.shard_index,
             "task_id": task.task_id,
             "split": task.split,
             "subset": task.subset,
@@ -224,30 +271,54 @@ def main() -> None:
             "area": task.area,
             "width": task.width,
             "height": task.height,
+            "image_pixels": image_pixels,
             "seed": args.seed,
+            "started_at_epoch": task_started,
+            "model_init_sec": round(model_init_sec, 3),
             "status": "started",
+            **device_info,
         }
 
         try:
             image = Image.open(task.image_path).convert("RGB")
             image_np = np.array(image)
             mask_np = build_mask(task)
+            mask_pixels = int(mask_np.sum())
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.synchronize()
             output = inference(image_np, mask_np, seed=args.seed)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
             if tmp_ply_path.exists():
                 tmp_ply_path.unlink()
             output["gs"].save_ply(str(tmp_ply_path))
             tmp_ply_path.replace(ply_path)
             duration = time.time() - task_started
+            peak_allocated_mb = None
+            peak_reserved_mb = None
+            if torch.cuda.is_available():
+                peak_allocated_mb = round(torch.cuda.max_memory_allocated() / (1024**2), 2)
+                peak_reserved_mb = round(torch.cuda.max_memory_reserved() / (1024**2), 2)
             record.update(
                 {
                     "status": "ok",
                     "duration_sec": round(duration, 3),
+                    "ended_at_epoch": round(time.time(), 3),
+                    "mask_pixels": mask_pixels,
+                    "mask_fraction": round(mask_pixels / image_pixels, 6) if image_pixels else None,
+                    "sec_per_megapixel": round(duration / (image_pixels / 1_000_000), 6) if image_pixels else None,
+                    "instances_per_hour": round(3600.0 / duration, 3) if duration > 0 else None,
+                    "peak_memory_allocated_mb": peak_allocated_mb,
+                    "peak_memory_reserved_mb": peak_reserved_mb,
                     "ply_size_bytes": ply_path.stat().st_size if ply_path.exists() else None,
                 }
             )
             meta_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
             append_jsonl(results_path, record)
             done += 1
+            sum_ok_duration += duration
             print(f"[{index}/{total}] ok {task.task_id} ({duration:.1f}s)", flush=True)
             del output
             torch.cuda.empty_cache()
@@ -257,6 +328,7 @@ def main() -> None:
                 {
                     "status": "error",
                     "duration_sec": round(duration, 3),
+                    "ended_at_epoch": round(time.time(), 3),
                     "error_type": type(exc).__name__,
                     "error": str(exc),
                     "traceback": traceback.format_exc(),
@@ -275,21 +347,36 @@ def main() -> None:
             except Exception:
                 pass
 
+        elapsed = time.time() - started_at
+        processed = done + failed
+        avg_ok_duration_sec = round(sum_ok_duration / done, 3) if done else None
+        tasks_per_hour = round(done * 3600.0 / elapsed, 3) if done and elapsed > 0 else None
+        remaining = total - (done + failed + skipped)
+        eta_sec = round((elapsed / processed) * remaining, 3) if processed and remaining > 0 else None
         summary = {
             "dataset_root": str(dataset_root),
             "repo_root": str(repo_root),
             "output_root": str(output_root),
             "manifest_path": str(manifest_path),
             "results_path": str(results_path),
-            "total_tasks": total,
+            "total_tasks_in_shard": total,
+            "total_tasks_global": total_global,
             "completed_ok": done,
             "skipped": skipped,
             "failed": failed,
+            "processed": processed,
             "started_at_epoch": started_at,
-            "elapsed_sec": round(time.time() - started_at, 3),
+            "elapsed_sec": round(elapsed, 3),
             "last_task": task.task_id,
             "resume": bool(args.resume),
             "seed": args.seed,
+            "num_shards": args.num_shards,
+            "shard_index": args.shard_index,
+            "model_init_sec": round(model_init_sec, 3),
+            "avg_ok_duration_sec": avg_ok_duration_sec,
+            "ok_instances_per_hour": tasks_per_hour,
+            "eta_sec": eta_sec,
+            **device_info,
         }
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 

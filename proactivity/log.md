@@ -12,3 +12,6 @@
 - 2026-04-10: Unzipped `aiws5.2-usable-split-materialized.zip` on `RXL`, created `scripts/run_sam3d_aiws52_batch.py`, and smoke-tested it successfully on one real sample.
 - 2026-04-10: The batch runner now redirects `torch.hub` loads for `facebookresearch/dinov2` to the local cache on `RXL`, avoiding flaky GitHub access without patching the main SAM3D repo.
 - 2026-04-10: Started the full resumable run at `/ssd1/rxl/zhankaiming/outputs/sam3d-aiws52-full-20260410-153416/`; it is processing the dataset in the background and writing `manifest.csv`, `results.jsonl`, `summary.json`, and per-instance `splat.ply` outputs.
+- 2026-04-10: Leonardo corrected the rollout plan after launch. The premature full run was terminated cleanly after 20 completed instances so the setup could be redesigned around explicit metrics and 4-GPU sharding.
+- 2026-04-10: Upgraded `scripts/run_sam3d_aiws52_batch.py` to record model init time, per-instance wall time, throughput, image/mask size, peak GPU memory, GPU identity, and shard metadata.
+- 2026-04-10: Added deterministic task sharding to the batch runner via `--num-shards` and `--shard-index`, then validated it with a 1-instance smoke test on GPU 2 (`CUDA_VISIBLE_DEVICES=2`).

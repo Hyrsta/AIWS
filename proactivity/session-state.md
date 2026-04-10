@@ -1,6 +1,6 @@
 # Session State
 
-- Current objective: Run SAM3D over the full AIWS5.2 split-materialized welding dataset on `RXL` using the repaired `flash_attn` path.
-- Last confirmed decision: Leonardo said not to patch the original repo further for now and asked to start the full experiment on all data in `aiws5.2-usable-split-materialized.zip`.
-- Blocker or open question: The batch runner needed an offline-safe DINO load path because `torch.hub` tried GitHub again; that was handled in the runner by redirecting `facebookresearch/dinov2` to the local torch hub cache.
-- Next useful move: Let the background run continue, monitor `/ssd1/rxl/zhankaiming/outputs/sam3d-aiws52-full-20260410-153416/`, and summarize progress or failures on demand.
+- Current objective: Prepare the SAM3D welding-data experiment for a correct full launch by keeping only smoke-tested infrastructure, saving useful performance metrics, and planning proper 4-GPU sharding.
+- Last confirmed decision: Leonardo corrected the workflow, asking to stop after a 1-instance smoke test and think through metrics plus the fact that `RXL` currently has 4 RTX A6000 GPUs.
+- Blocker or open question: Need Leonardo's approval on the final metric set and whether to relaunch as four parallel shards now that the runner supports it.
+- Next useful move: Report the completed smoke test, the saved metrics, the 4-GPU sharding plan, and wait for Leonardo's go-ahead before relaunching the full experiment.
