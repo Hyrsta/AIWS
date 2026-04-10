@@ -77,7 +77,21 @@ def parse_args() -> argparse.Namespace:
 
     # Cadrille stage
     cad = parser.add_argument_group("Cadrille stage")
-    cad.add_argument("--cadrille-python", default=sys.executable, help="Python executable for Cadrille stage")
+    cad.add_argument("--cadrille-python", default=sys.executable, help="Python executable for Cadrille host runtime")
+    cad.add_argument(
+        "--cadrille-runtime",
+        choices=("auto", "docker", "host"),
+        default="auto",
+        help="Run Cadrille stage on host Python or inside Docker (default: auto, prefer docker if available)",
+    )
+    cad.add_argument("--cadrille-docker-image", default="cadrille:latest", help="Docker image for Cadrille runtime")
+    cad.add_argument("--cadrille-docker-python", default="python", help="Python executable inside Cadrille Docker image")
+    cad.add_argument("--cadrille-docker-gpus", default="all", help="Value for docker --gpus (for example all, 0, \"device=0\")")
+    cad.add_argument(
+        "--cadrille-docker-extra-args",
+        default="",
+        help="Extra raw args appended to docker run (for example '--ipc=host --ulimit memlock=-1')",
+    )
     cad.add_argument(
         "--cadrille-root",
         type=Path,
@@ -133,6 +147,92 @@ def run_cmd(cmd: list[str], cwd: Path | None = None, dry_run: bool = False) -> N
     if dry_run:
         return
     subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+
+
+def is_relative_to(path: Path, base: Path) -> bool:
+    try:
+        path.relative_to(base)
+        return True
+    except ValueError:
+        return False
+
+
+def command_exists(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def docker_image_exists(image: str) -> bool:
+    if not command_exists("docker"):
+        return False
+    result = subprocess.run(
+        ["docker", "image", "inspect", image],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def choose_cadrille_runtime(args: argparse.Namespace) -> str:
+    if args.cadrille_runtime in ("docker", "host"):
+        if args.cadrille_runtime == "docker":
+            if not command_exists("docker"):
+                raise RuntimeError("--cadrille-runtime docker requested but 'docker' command is not available")
+            if not docker_image_exists(args.cadrille_docker_image):
+                raise RuntimeError(
+                    f"--cadrille-runtime docker requested but image not found: {args.cadrille_docker_image}"
+                )
+        return args.cadrille_runtime
+
+    # auto mode
+    if command_exists("docker") and docker_image_exists(args.cadrille_docker_image):
+        print(f"[INFO] Cadrille runtime auto-selected: docker ({args.cadrille_docker_image})")
+        return "docker"
+
+    print("[INFO] Cadrille runtime auto-selected: host (docker image unavailable)")
+    return "host"
+
+
+def build_docker_mounts(
+    cadrille_root: Path,
+    cadrille_data_root: Path,
+    cadrille_output_root: Path,
+) -> tuple[list[tuple[Path, Path]], Path, Path, Path]:
+    container_cadrille_root = Path("/workspace/cadrille")
+    mounts: list[tuple[Path, Path]] = [(cadrille_root, container_cadrille_root)]
+
+    if is_relative_to(cadrille_data_root, cadrille_root):
+        container_data_root = container_cadrille_root / cadrille_data_root.relative_to(cadrille_root)
+    else:
+        container_data_root = Path("/workspace/cadrille_data")
+        mounts.append((cadrille_data_root, container_data_root))
+
+    if is_relative_to(cadrille_output_root, cadrille_root):
+        container_output_root = container_cadrille_root / cadrille_output_root.relative_to(cadrille_root)
+    elif is_relative_to(cadrille_output_root, cadrille_data_root):
+        container_output_root = container_data_root / cadrille_output_root.relative_to(cadrille_data_root)
+    else:
+        container_output_root = Path("/workspace/cadrille_output")
+        mounts.append((cadrille_output_root, container_output_root))
+
+    # dedupe mounts while preserving order
+    deduped: list[tuple[Path, Path]] = []
+    seen: set[tuple[str, str]] = set()
+    for host, container in mounts:
+        key = (str(host), str(container))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append((host, container))
+
+    return deduped, container_cadrille_root, container_data_root, container_output_root
+
+
+def map_host_to_container(path: Path, mounts: list[tuple[Path, Path]]) -> Path:
+    for host_root, container_root in mounts:
+        if is_relative_to(path, host_root):
+            return container_root / path.relative_to(host_root)
+    raise RuntimeError(f"Path {path} is not covered by docker mounts")
 
 
 def ensure_clean_dir(path: Path, force: bool, dry_run: bool, label: str) -> None:
@@ -267,6 +367,19 @@ def main() -> None:
     selected_mesh_dir = cadrille_output_root / "selected_mesh"
     selected_brep_dir = cadrille_output_root / "selected_brep"
 
+    cadrille_runtime = choose_cadrille_runtime(args)
+    docker_mounts: list[tuple[Path, Path]] = []
+    container_cadrille_root: Path | None = None
+    container_cadrille_data_root: Path | None = None
+    container_cadrille_output_root: Path | None = None
+    if cadrille_runtime == "docker":
+        (
+            docker_mounts,
+            container_cadrille_root,
+            container_cadrille_data_root,
+            container_cadrille_output_root,
+        ) = build_docker_mounts(cadrille_root, cadrille_data_root, cadrille_output_root)
+
     if not args.skip_sam3d:
         sam_cmd = [
             args.sam3d_python,
@@ -371,20 +484,59 @@ def main() -> None:
         print("[INFO] --prepare-input-only set, stopping before Cadrille inference.")
         return
 
+    # Prepare runtime-specific paths/commands for Cadrille stage
+    if cadrille_runtime == "docker":
+        assert container_cadrille_root is not None
+        assert container_cadrille_data_root is not None
+        assert container_cadrille_output_root is not None
+
+        cadrille_data_arg = str(map_host_to_container(cadrille_data_root, docker_mounts))
+        tmp_py_arg = str(map_host_to_container(tmp_py_dir, docker_mounts))
+        tmp_mesh_arg = str(map_host_to_container(tmp_mesh_dir, docker_mounts))
+        tmp_brep_arg = str(map_host_to_container(tmp_brep_dir, docker_mounts))
+
+        checkpoint_arg = args.cadrille_checkpoint
+        checkpoint_path = Path(args.cadrille_checkpoint)
+        if checkpoint_path.is_absolute():
+            checkpoint_arg = str(map_host_to_container(checkpoint_path.resolve(), docker_mounts))
+
+        py_exec = args.cadrille_docker_python
+
+        def run_cadrille_inner(inner_cmd: list[str]) -> None:
+            docker_cmd = ["docker", "run", "--rm", "--gpus", args.cadrille_docker_gpus]
+            for host_path, container_path in docker_mounts:
+                docker_cmd.extend(["-v", f"{host_path}:{container_path}"])
+            if args.cadrille_docker_extra_args.strip():
+                docker_cmd.extend(shlex.split(args.cadrille_docker_extra_args))
+            docker_cmd.extend(["-w", str(container_cadrille_root), args.cadrille_docker_image])
+            docker_cmd.extend(inner_cmd)
+            run_cmd(docker_cmd, dry_run=args.dry_run)
+
+    else:
+        cadrille_data_arg = str(cadrille_data_root)
+        tmp_py_arg = str(tmp_py_dir)
+        tmp_mesh_arg = str(tmp_mesh_dir)
+        tmp_brep_arg = str(tmp_brep_dir)
+        checkpoint_arg = args.cadrille_checkpoint
+        py_exec = args.cadrille_python
+
+        def run_cadrille_inner(inner_cmd: list[str]) -> None:
+            run_cmd(inner_cmd, cwd=cadrille_root, dry_run=args.dry_run)
+
     # Run Cadrille inference
     test_cmd = [
-        args.cadrille_python,
+        py_exec,
         "test.py",
         "--data-path",
-        str(cadrille_data_root),
+        cadrille_data_arg,
         "--split",
         split_name,
         "--mode",
         args.cadrille_mode,
         "--checkpoint-path",
-        args.cadrille_checkpoint,
+        checkpoint_arg,
         "--py-path",
-        str(tmp_py_dir),
+        tmp_py_arg,
         "--input-source",
         "mesh",
         "--mesh-ext",
@@ -394,16 +546,16 @@ def main() -> None:
         "--image-exts",
         args.image_exts,
     ]
-    run_cmd(test_cmd, cwd=cadrille_root, dry_run=args.dry_run)
+    run_cadrille_inner(test_cmd)
 
     # Convert CadQuery outputs to CAD meshes/BRep
     convert_cmd = [
-        args.cadrille_python,
+        py_exec,
         "convert_cadquery.py",
         "--src",
-        str(tmp_py_dir),
+        tmp_py_arg,
         "--mesh-out",
-        str(tmp_mesh_dir),
+        tmp_mesh_arg,
         "--timeout",
         str(args.convert_timeout_sec),
     ]
@@ -411,11 +563,11 @@ def main() -> None:
         convert_cmd.extend([
             "--export-brep",
             "--brep-out",
-            str(tmp_brep_dir),
+            tmp_brep_arg,
             "--brep-ext",
             args.brep_ext,
         ])
-    run_cmd(convert_cmd, cwd=cadrille_root, dry_run=args.dry_run)
+    run_cadrille_inner(convert_cmd)
 
     # Select preferred candidate per input sample
     selected_rows: list[dict[str, Any]] = []
@@ -477,10 +629,20 @@ def main() -> None:
             "manifest_jsonl": str(manifest_jsonl),
         },
         "cadrille": {
+            "runtime": cadrille_runtime,
             "cadrille_root": str(cadrille_root),
             "cadrille_data_root": str(cadrille_data_root),
             "cadrille_mode": args.cadrille_mode,
             "checkpoint": args.cadrille_checkpoint,
+            "host_python": args.cadrille_python,
+            "docker_python": args.cadrille_docker_python,
+            "docker_image": args.cadrille_docker_image if cadrille_runtime == "docker" else None,
+            "docker_gpus": args.cadrille_docker_gpus if cadrille_runtime == "docker" else None,
+            "docker_mounts": (
+                [{"host": str(h), "container": str(c)} for h, c in docker_mounts]
+                if cadrille_runtime == "docker"
+                else None
+            ),
             "tmp_py_dir": str(tmp_py_dir),
             "tmp_mesh_dir": str(tmp_mesh_dir),
             "tmp_brep_dir": str(tmp_brep_dir) if args.export_brep else None,
