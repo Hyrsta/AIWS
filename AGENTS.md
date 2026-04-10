@@ -23,14 +23,17 @@ You wake up fresh each session. These files are your continuity:
 
 - **Daily notes:** `memory/YYYY-MM-DD.md` (create `memory/` if needed) — raw logs of what happened
 - **Long-term:** `MEMORY.md` — your curated memories, like a human's long-term memory
-- **Proactivity:** `~/proactivity/` — proactive operating state for durable boundaries, active task recovery, and follow-through
+- **Proactivity:** `proactivity/` — proactive operating state for durable boundaries, active task recovery, and follow-through
+- **Self-improving:** `self-improving/` — execution-improvement memory for corrections, preferences, workflow lessons, and reusable patterns
 
 Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
 
-Use `~/proactivity/memory.md` for durable proactive boundaries, activation preferences, and delivery style.
-Use `~/proactivity/session-state.md` for the current objective, last decision, blocker, and next move.
-Use `~/proactivity/memory/working-buffer.md` for volatile breadcrumbs during long or fragile tasks.
-Before non-trivial ongoing work or proactive follow-up, read `~/proactivity/memory.md` and `~/proactivity/session-state.md`. Load the working buffer when context drift risk is high.
+Use `proactivity/memory.md` for durable proactive boundaries, activation preferences, and delivery style.
+Use `proactivity/session-state.md` for the current objective, last decision, blocker, and next move.
+Use `proactivity/memory/working-buffer.md` for volatile breadcrumbs during long or fragile tasks.
+Use `self-improving/memory.md` for reusable corrections, preferences, and workflow lessons that should improve future execution.
+Operate `self-improving/` in passive mode by default: learn from explicit corrections and strong reusable lessons, not from silence.
+Before non-trivial ongoing work or proactive follow-up, read `proactivity/memory.md` and `proactivity/session-state.md`. Before non-trivial work, also read `self-improving/memory.md` and only the smallest relevant `self-improving/domains/` or `self-improving/projects/` file when needed.
 
 ### 🧠 MEMORY.md - Your Long-Term Memory
 
@@ -46,13 +49,17 @@ Before non-trivial ongoing work or proactive follow-up, read `~/proactivity/memo
 
 - **Memory is limited** — if you want to remember something, WRITE IT TO A FILE
 - "Mental notes" don't survive session restarts. Files do.
-- When someone says "remember this" → update `memory/YYYY-MM-DD.md` or relevant file
-- When you learn a lesson → update AGENTS.md, TOOLS.md, or the relevant skill
+- When someone says "remember this" → if it's factual context or an event, update `memory/YYYY-MM-DD.md`; if it's a correction, preference, workflow choice, or performance lesson, log it in `self-improving/`
+- When you learn a lesson → update AGENTS.md, TOOLS.md, the relevant skill, or `self-improving/` when the lesson should change future execution
 - When you make a mistake → document it so future-you doesn't repeat it
-- Durable proactive preference or boundary → update `~/proactivity/memory.md`
-- Current task state, blocker, last decision, or next move → update `~/proactivity/session-state.md`
-- Volatile breadcrumbs or recovery hints → update `~/proactivity/memory/working-buffer.md`
-- Proactive follow-up, recurring check, or reusable move → update `~/proactivity/heartbeat.md`, `~/proactivity/log.md`, or `~/proactivity/patterns.md`
+- Durable proactive preference or boundary → update `proactivity/memory.md`
+- Current task state, blocker, last decision, or next move → update `proactivity/session-state.md`
+- Volatile breadcrumbs or recovery hints → update `proactivity/memory/working-buffer.md`
+- Proactive follow-up, recurring check, or reusable move → update `proactivity/heartbeat.md`, `proactivity/log.md`, or `proactivity/patterns.md`
+- Explicit user correction → append to `self-improving/corrections.md`
+- Reusable global rule or preference → append to `self-improving/memory.md`
+- Domain-specific lesson → append to `self-improving/domains/<domain>.md`
+- Project-only override → append to `self-improving/projects/<project>.md`
 - **Text > Brain** 📝
 
 ## Red Lines
@@ -138,7 +145,8 @@ These local skills do not show up in the global skill registry here, so check th
 - `skills/technical-writing/SKILL.md` → use for specs, architecture docs, runbooks, API docs, release notes, and other developer-facing documentation.
 - `skills/ai-humanizer/SKILL.md` → use for English text that needs humanizing, de-AI rewriting, AI-pattern review, or scoring. CLI entrypoint: `node skills/ai-humanizer/src/cli.js`.
 - `skills/humanize-chinese/SKILL.md` → use for Chinese 去AI味, 降AIGC, style conversion, or AI-text detection. CLI scripts live in `skills/humanize-chinese/scripts/`.
-- `skills/proactivity/SKILL.md` → use when Leonardo wants more anticipation, follow-through, state recovery, or proactive check-ins. Keep state in `~/proactivity/`.
+- `skills/proactivity/SKILL.md` → use when Leonardo wants more anticipation, follow-through, state recovery, or proactive check-ins. Keep state in `proactivity/` for this workspace.
+- `skills/self-improving/SKILL.md` → use when Leonardo corrects me, when a tool or workflow fails, when I discover a better approach, or when a reusable lesson should compound into future execution. Keep state in `self-improving/` for this workspace.
 
 **🎭 Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
 
