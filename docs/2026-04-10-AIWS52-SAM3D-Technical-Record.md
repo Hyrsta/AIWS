@@ -1,160 +1,180 @@
-# 2026-04-10 Technical Record: Clean AIWS5.2 Dataset and SAM3D Deployment
+# 2026-04-10 Technical Record: AIWS5.2 Clean Dataset and SAM3D Runtime
 
-## 1. Purpose
-
-This document records the final production workflow adopted on 2026-04-10 for the AIWS5.2 project, including the clean dataset definition, SAM3D deployment on `RXL`, `flash_attn` enablement on RTX A6000 GPUs, batch-runner development, and the launch of the official 4-GPU reconstruction run.
-
-To keep the document readable and reusable, this version only keeps the **final accepted workflow**. Discarded intermediate dataset variants are intentionally omitted.
+**Author**: Weld  
+**Date**: 2026-04-10  
+**Status**: Implemented (reproducible baseline)
 
 ---
 
-## 2. Environment and Key Paths
+## 1. Purpose and Scope
+
+This document defines the official engineering baseline for the AIWS5.2 to SAM3D pipeline, including:
+
+- the official dataset definition (single source of truth)
+- server deployment and dependency recovery
+- `flash_attn` enablement on RTX A6000
+- batch-runner technical behavior
+- 4-GPU parallel runbook
+
+Only the final accepted workflow is kept. Discarded intermediate dataset stories are intentionally omitted.
+
+---
+
+## 2. Environment Baseline
 
 ### 2.1 Local workspace
 
 - Workspace: `/Users/hyrsta/.openclaw/workspaces/welding-algorithm`
-- Relevant scripts:
+- Key scripts:
   - `scripts/build_aiws52_usable_view.py`
   - `scripts/generate_aiws52_instance_masks.py`
   - `scripts/run_sam3d_aiws52_batch.py`
 
-### 2.2 Remote server
+### 2.2 Remote server (RXL)
 
-- Server alias: `RXL`
-- Unified project root: `/ssd1/rxl/zhankaiming/AIWS`
+- Project root: `/ssd1/rxl/zhankaiming/AIWS`
 - SAM3D repo: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
 - Cadrille repo: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
 - Dataset root: `/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized`
 - Batch runner: `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py`
 - Output root: `/ssd1/rxl/zhankaiming/AIWS/outputs`
-- Demo launcher: `/ssd1/rxl/zhankaiming/AIWS/run_sam3d_demo.sh`
-- Runtime notes: `/ssd1/rxl/zhankaiming/AIWS/SAM3D_RUNTIME.md`
-- Conda environment: `/home/rxl/anaconda3/envs/sam3d-objects`
+- Conda env: `/home/rxl/anaconda3/envs/sam3d-objects`
 
-### 2.3 Current official run
+### 2.3 Official run root used in production
 
-- Official run root: `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
+- `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
 
 ---
 
-## 3. Official AIWS5.2 Dataset Definition
+## 3. Official Dataset Definition (single narrative)
 
-### 3.1 Goal
+### 3.1 Official dataset
 
-The final dataset definition used for the official experiment is intentionally simple:
-
-- use a clean directory layout
-- preserve `V1 / V2 / NEW` subset information
-- preserve workpiece categories
-- keep one formal reconstruction task per accepted sample
-- avoid ambiguity caused by multi-instance images in the main experiment narrative
-
-Therefore, the official experiment uses the clean materialized dataset:
-
-- `aiws5.2-usable-materialized`
+- Name: `aiws5.2-usable-materialized`
+- Nature: cleaned runnable data view (non-destructive, symlink-organized)
+- Annotation source of truth: `isat_annotations`
 
 ### 3.2 Directory layout
 
-The dataset is organized as:
+- Top-level subsets: `V1 / V2 / NEW`
+- Samples grouped by workpiece class inside each subset (for example `cover_plate`, `square_tube`, `h_beam`, `channel_steel`, `bellmouth`)
+- Each workpiece directory contains:
+  - `images/`
+  - `annotations/`
+  - `depth_png/` or `depth_exr/` (depending on subset type)
 
-- `V1/`
-- `V2/`
-- `NEW/`
+### 3.3 Dataset statistics (`metadata/summary.json`)
 
-Inside each subset, samples are grouped by workpiece class, for example:
-
-- `cover_plate`
-- `square_tube`
-- `h_beam`
-- `channel_steel`
-- `bellmouth`
-
-Each workpiece directory contains:
-
-- `images/`
-- `annotations/`
-- `depth_png/` or `depth_exr/` when depth exists for that subset
-
-### 3.3 Dataset policy
-
-The official experiment follows these rules:
-
-- annotations come from `isat_annotations/`
-- only the cleaned main dataset view is used for the formal run
-- multi-instance images are excluded from the official run
-- unannotated images are excluded from the official run
-- all later writing and reporting should consistently refer to this clean dataset only
-
-### 3.4 Statistics
-
-From `aiws5.2-usable-materialized/metadata/summary.json`:
-
-- official tasks: **1418**
-- multi-instance images: **23**
-- multi-label images: **0**
-- unannotated images: **1**
-
-Subset counts:
-
+- Total official tasks: **1418**
 - `V1`: 593
 - `V2`: 524
 - `NEW`: 301
+- Multi-instance images: 23
+- Multi-label images: 0
+- Unannotated images: 1
 
-For the official workflow, these numbers can be described simply as:
+### 3.4 Writing rule for all follow-up docs
 
-- **1418 cleaned samples**
-- **1418 formal SAM3D reconstruction tasks**
+Use this wording consistently in reports/papers:
 
----
+- “The experiment uses the cleaned `aiws5.2-usable-materialized` dataset.”
+- “The official reconstruction task count is 1418.”
 
-## 4. What SAM3D Takes as Input
-
-For each sample, SAM3D receives three core inputs:
-
-1. the RGB image
-2. a binary mask rasterized from the annotation polygon
-3. a random seed
-
-This means the project does **not** rely on a mandatory pre-generated mask file for the formal run. Instead, the batch runner does the following on the fly:
-
-- load the annotation JSON
-- read the polygon
-- rasterize the polygon into a binary mask
-- call `Inference(image, mask, seed)`
-
-The current batch runner then exports:
-
-- `mesh.glb`
-- `mesh.stl`
+Do not reintroduce intermediate path variants.
 
 ---
 
-## 5. SAM3D Recovery on the Server
+## 4. Batch Runner Technical Specification
 
-### 5.1 Repository recovery
+Script: `scripts/run_sam3d_aiws52_batch.py`
 
-Because the server is in a weak-network environment for GitHub and Hugging Face access, the repository was restored by:
+### 4.1 Key parameters
 
-1. cloning locally
-2. verifying locally
-3. syncing to `RXL`
+- `--dataset-root`: dataset root
+- `--dataset-layout`: `subset` (official project setting)
+- `--repo-root`: SAM3D repository root
+- `--output-root`: output directory for this shard
+- `--resume`: skip tasks with existing non-empty `mesh.glb` and `mesh.stl`
+- `--num-shards` / `--shard-index`: sharded parallel execution
+- `--exclude-stems-file`: optional exclusion list
 
-Final repo path:
+### 4.2 Per-task data flow
 
-- `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
+For each task, the runner performs:
 
-Commit:
+1. load RGB image
+2. load annotation JSON
+3. rasterize polygon to binary mask
+4. call `Inference(image, mask, seed)`
+5. export `mesh.glb` and `mesh.stl`
+6. write per-task `meta.json` and append to shard-level `results.jsonl`
+
+### 4.3 Sharding strategy
+
+Tasks are assigned by `global_index % num_shards == shard_index`.
+
+In 4-shard mode:
+
+- shard 0: `% 4 == 0`
+- shard 1: `% 4 == 1`
+- shard 2: `% 4 == 2`
+- shard 3: `% 4 == 3`
+
+This guarantees:
+
+- no duplicate processing
+- no missing tasks
+- independent shard-level tracking
+
+### 4.4 Artifacts and metrics
+
+Per-shard artifacts:
+
+- `manifest.csv`
+- `results.jsonl`
+- `summary.json`
+- per-task output directories (`mesh.glb`, `mesh.stl`, `meta.json`)
+
+Key metrics include:
+
+- `duration_sec`
+- `instances_per_hour`
+- `sec_per_megapixel`
+- `mask_pixels` / `mask_fraction`
+- `peak_memory_allocated_mb` / `peak_memory_reserved_mb`
+- `gpu_name`
+- `num_shards` / `shard_index`
+
+### 4.5 Failure and recovery semantics
+
+- Failed tasks still write `meta.json` with error type/message/traceback
+- Temporary files (`mesh.partial.*`) are cleaned on failure
+- `--resume` provides checkpoint restart behavior
+
+---
+
+## 5. Server Deployment and Dependency Recovery
+
+### 5.1 Repository recovery strategy
+
+Given unstable direct GitHub/HF access on the server, recovery used:
+
+1. local clone
+2. local verification
+3. sync to RXL
+
+Current repo commit:
 
 - `81a82373a3a7f4cbb00bd5b32aaf6b4d0f659ddd`
 
-### 5.2 Runtime assets
+### 5.2 Runtime assets restored
 
-The restored repo still required runtime assets, including:
+Stable SAM3D runtime requires:
 
 - `checkpoints/hf/pipeline.yaml`
 - SAM3D checkpoints
 - local MoGe weights
-- local DINOv2 cache and checkpoint
+- local DINOv2 cache + checkpoint
 
 Key paths:
 
@@ -163,130 +183,86 @@ Key paths:
 - DINO cache: `/home/rxl/.cache/torch/hub/facebookresearch_dinov2_main`
 - DINO checkpoint: `/home/rxl/.cache/torch/hub/checkpoints/dinov2_vitl14_reg4_pretrain.pth`
 
-### 5.3 AIWS path migration fixes
+### 5.3 Path migration fixes after unifying under `AIWS/`
 
-After moving the project into the unified `AIWS/` root, two additional fixes were required:
+Two fixes were required:
 
-1. the batch runner had to add both the repo root and `notebook/` to `sys.path`
-2. the checkpoint symlinks under `checkpoints/hf/` had to be repointed from the old pre-`AIWS` backup path to the new `AIWS/backups/...` path
-
-After these fixes, the new unified layout became fully runnable again.
+- add both `repo_root` and `repo_root/notebook` to `sys.path`
+- repoint old symlinks under `checkpoints/hf` to the new `AIWS/backups/...` paths
 
 ---
 
 ## 6. `flash_attn` on RTX A6000
 
-### 6.1 Binary compatibility issue
+### 6.1 Issue 1: prebuilt wheel incompatibility
 
-The first `flash_attn` problem was not CUDA capability, but binary compatibility:
+- Prebuilt wheels required a newer glibc level
+- The server runtime could not use them directly
 
-- prebuilt wheels required `GLIBC_2.32`
-- the server environment could not use those wheels directly
+Resolution: local source build of `flash_attn` on the server.
 
-The practical fix was a local source build on the server.
+### 6.2 Issue 2: backend auto-selection did not cover A6000
 
-### 6.2 Runtime backend selection issue
+Even after successful import, runtime backend selection did not automatically switch to A6000.
 
-Even after import succeeded, SAM3D did not automatically switch to `flash_attn` on RTX A6000 because the repository only auto-selects it for a restricted GPU whitelist such as:
-
-- `A100`
-- `H100`
-- `H200`
-
-The final solution was to explicitly export:
+Resolution: explicitly set:
 
 - `ATTN_BACKEND=flash_attn`
 - `SPARSE_ATTN_BACKEND=flash_attn`
 
 ### 6.3 Final state
 
-The current official run on `RXL` confirms:
-
-- dense attention uses `flash_attn`
-- sparse attention uses `flash_attn`
-- the backend is visible in runtime logs
+In the official run, both dense and sparse attention are using `flash_attn`, and backend logs confirm this.
 
 ---
 
-## 7. Batch Runner Capabilities
+## 7. Runbook
 
-The current `run_sam3d_aiws52_batch.py` supports:
+### 7.1 Start one shard (example)
 
-- direct traversal of the `subset` layout used by `aiws5.2-usable-materialized`
-- `--resume`
-- multi-GPU sharding with `--num-shards` and `--shard-index`
-- structured output files
-- instance-level metrics
-- automatic local redirection for DINO cache access instead of live GitHub access
+```bash
+ATTN_BACKEND=flash_attn \
+SPARSE_ATTN_BACKEND=flash_attn \
+CUDA_VISIBLE_DEVICES=0 \
+/home/rxl/anaconda3/envs/sam3d-objects/bin/python -u \
+/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py \
+  --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized \
+  --dataset-layout subset \
+  --repo-root /ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects \
+  --output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527/shard-0 \
+  --resume \
+  --num-shards 4 \
+  --shard-index 0
+```
 
-Main recorded metrics include:
+### 7.2 Monitor all shards
 
-- `model_init_sec`
-- `duration_sec`
-- `instances_per_hour`
-- `sec_per_megapixel`
-- `mask_pixels`
-- `mask_fraction`
-- `peak_memory_allocated_mb`
-- `peak_memory_reserved_mb`
-- `gpu_name`
-- `cuda_visible_devices`
-- `num_shards`
-- `shard_index`
+```bash
+for s in /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527/shard-*; do
+  echo "--- ${s} ---"
+  jq '{completed_ok, failed, skipped, processed, total_tasks_in_shard, eta_sec}' "${s}/summary.json"
+done
+```
 
----
+### 7.3 Resume behavior
 
-## 8. Official Run Organization
-
-The official experiment currently runs as:
-
-- 4 RTX A6000 GPUs
-- 4 workers
-- 4 shards
-
-The sharding rule is:
-
-- `global_index % 4 == 0`
-- `global_index % 4 == 1`
-- `global_index % 4 == 2`
-- `global_index % 4 == 3`
-
-This guarantees:
-
-- no duplicated tasks
-- no missing tasks
-- independent runtime statistics per task
-
-Current official run root:
-
-- `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
-
-Each shard contains:
-
-- `manifest.csv`
-- `results.jsonl`
-- `summary.json`
-- `worker.log`
-- per-task output folders
+Restart the same shard command with `--resume` using the same run directory.
 
 ---
 
-## 9. Final Outcome of the Day
+## 8. Confirmed Outcomes
 
-The main engineering outcomes of the day are:
-
-1. the project now has a single clean official dataset definition
-2. SAM3D has been restored to a reusable state on `RXL`
-3. `flash_attn` is working on RTX A6000 in the actual runtime path
-4. project assets are unified under the `AIWS/` root
-5. the batch runner now matches the official clean dataset layout
-6. the official 4-GPU run on **1418** cleaned samples has been launched
+1. Official dataset definition is fixed as `aiws5.2-usable-materialized`
+2. SAM3D runtime on `RXL` is restored and reusable
+3. `flash_attn` is active on RTX A6000 in the production path
+4. 4-shard parallel run is live and producing outputs
+5. Output structure, per-task metadata, and failure traces are complete
 
 ---
 
-## 10. Recommended Next Steps
+## 9. Recommended Next Steps
 
-1. let the current official run finish
-2. merge the `results.jsonl` files from all four shards
-3. review failed samples separately
-4. use this document as the baseline for the later methods and experiment sections of the paper or technical report
+1. merge shard `results.jsonl` files after run completion
+2. build a failed-sample list and group by failure type
+3. write paper method/experiment sections from this baseline only
+4. keep this runbook as SOP for future reproductions
