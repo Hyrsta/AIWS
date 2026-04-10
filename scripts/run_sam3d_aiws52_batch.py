@@ -17,6 +17,9 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 
+SUBSETS = ("V1", "V2", "NEW")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run SAM3D on all AIWS5.2 split-materialized samples")
     parser.add_argument("--dataset-root", type=Path, required=True, help="Root of aiws5.2-usable-split-materialized")
@@ -27,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true", help="Skip instances with existing mesh.glb and mesh.stl outputs")
     parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards for parallel multi-GPU runs")
     parser.add_argument("--shard-index", type=int, default=0, help="0-based shard index for this worker")
+    parser.add_argument(
+        "--dataset-layout",
+        choices=("auto", "split", "subset"),
+        default="auto",
+        help="Dataset directory layout: split=train/val/subset/workpiece or subset=V1/V2/NEW/workpiece",
+    )
     parser.add_argument(
         "--exclude-stems-file",
         type=Path,
@@ -57,55 +66,83 @@ class Task:
 
     @property
     def task_id(self) -> str:
+        if self.split == "all":
+            return f"{self.subset}/{self.workpiece}/{self.stem}__obj{self.object_index:02d}"
         return f"{self.split}/{self.subset}/{self.workpiece}/{self.stem}__obj{self.object_index:02d}"
 
 
-def load_tasks(dataset_root: Path, exclude_stems: set[str] | None = None) -> list[Task]:
+def detect_dataset_layout(dataset_root: Path) -> str:
+    if (dataset_root / "train").is_dir() or (dataset_root / "val").is_dir():
+        return "split"
+    if any((dataset_root / subset).is_dir() for subset in SUBSETS):
+        return "subset"
+    raise ValueError(f"Could not infer dataset layout under {dataset_root}")
+
+
+def iter_annotation_paths(dataset_root: Path, dataset_layout: str):
+    if dataset_layout == "split":
+        for split in ("train", "val"):
+            for ann_path in sorted(dataset_root.glob(f"{split}/*/*/annotations/*.json")):
+                yield split, ann_path
+        return
+
+    if dataset_layout == "subset":
+        for subset in SUBSETS:
+            for ann_path in sorted((dataset_root / subset).glob("*/annotations/*.json")):
+                yield "all", ann_path
+        return
+
+    raise ValueError(f"Unsupported dataset layout: {dataset_layout}")
+
+
+def load_tasks(dataset_root: Path, dataset_layout: str = "auto", exclude_stems: set[str] | None = None) -> list[Task]:
     exclude_stems = exclude_stems or set()
+    if dataset_layout == "auto":
+        dataset_layout = detect_dataset_layout(dataset_root)
+
     tasks: list[Task] = []
-    for split in ("train", "val"):
-        for ann_path in sorted(dataset_root.glob(f"{split}/*/*/annotations/*.json")):
-            subset = ann_path.parts[-4]
-            workpiece = ann_path.parts[-3]
-            stem = ann_path.stem
-            if stem in exclude_stems:
-                continue
-            image_path = ann_path.parent.parent / "images" / f"{stem}.png"
-            if not image_path.exists():
-                raise FileNotFoundError(f"Missing image for annotation: {ann_path}")
+    for split, ann_path in iter_annotation_paths(dataset_root, dataset_layout):
+        subset = ann_path.parts[-4]
+        workpiece = ann_path.parts[-3]
+        stem = ann_path.stem
+        if stem in exclude_stems:
+            continue
+        image_path = ann_path.parent.parent / "images" / f"{stem}.png"
+        if not image_path.exists():
+            raise FileNotFoundError(f"Missing image for annotation: {ann_path}")
 
-            data = json.loads(ann_path.read_text(encoding="utf-8"))
-            info = data.get("info", {})
-            width = int(info["width"])
-            height = int(info["height"])
-            objects = data.get("objects", [])
-            if not objects:
-                raise ValueError(f"No objects found in {ann_path}")
+        data = json.loads(ann_path.read_text(encoding="utf-8"))
+        info = data.get("info", {})
+        width = int(info["width"])
+        height = int(info["height"])
+        objects = data.get("objects", [])
+        if not objects:
+            raise ValueError(f"No objects found in {ann_path}")
 
-            for idx, obj in enumerate(objects, start=1):
-                polygon = obj.get("segmentation") or []
-                if not polygon:
-                    raise ValueError(f"Missing segmentation for {ann_path} object {idx}")
-                tasks.append(
-                    Task(
-                        global_index=len(tasks),
-                        split=split,
-                        subset=subset,
-                        workpiece=workpiece,
-                        stem=stem,
-                        image_path=str(image_path),
-                        annotation_path=str(ann_path),
-                        object_index=idx,
-                        object_count_in_image=len(objects),
-                        category=str(obj.get("category", "")),
-                        group=obj.get("group"),
-                        bbox=[float(x) for x in (obj.get("bbox") or [])],
-                        area=float(obj["area"]) if obj.get("area") is not None else None,
-                        width=width,
-                        height=height,
-                        polygon=[[float(x), float(y)] for x, y in polygon],
-                    )
+        for idx, obj in enumerate(objects, start=1):
+            polygon = obj.get("segmentation") or []
+            if not polygon:
+                raise ValueError(f"Missing segmentation for {ann_path} object {idx}")
+            tasks.append(
+                Task(
+                    global_index=len(tasks),
+                    split=split,
+                    subset=subset,
+                    workpiece=workpiece,
+                    stem=stem,
+                    image_path=str(image_path),
+                    annotation_path=str(ann_path),
+                    object_index=idx,
+                    object_count_in_image=len(objects),
+                    category=str(obj.get("category", "")),
+                    group=obj.get("group"),
+                    bbox=[float(x) for x in (obj.get("bbox") or [])],
+                    area=float(obj["area"]) if obj.get("area") is not None else None,
+                    width=width,
+                    height=height,
+                    polygon=[[float(x), float(y)] for x, y in polygon],
                 )
+            )
     return tasks
 
 
@@ -206,6 +243,12 @@ def load_exclude_stems(path: Path | None) -> set[str]:
     return {line.strip() for line in text.splitlines() if line.strip()}
 
 
+def task_output_dir(output_root: Path, task: Task) -> Path:
+    if task.split == "all":
+        return output_root / task.subset / task.workpiece / f"{task.stem}__obj{task.object_index:02d}"
+    return output_root / task.split / task.subset / task.workpiece / f"{task.stem}__obj{task.object_index:02d}"
+
+
 def main() -> None:
     args = parse_args()
     if args.num_shards < 1:
@@ -220,8 +263,9 @@ def main() -> None:
 
     exclude_stems_file = args.exclude_stems_file.resolve() if args.exclude_stems_file else None
     exclude_stems = load_exclude_stems(exclude_stems_file)
+    dataset_layout = detect_dataset_layout(dataset_root) if args.dataset_layout == "auto" else args.dataset_layout
 
-    tasks_all = load_tasks(dataset_root, exclude_stems=exclude_stems)
+    tasks_all = load_tasks(dataset_root, dataset_layout=dataset_layout, exclude_stems=exclude_stems)
     tasks = select_shard(tasks_all, args.num_shards, args.shard_index)
     if args.limit is not None:
         tasks = tasks[: args.limit]
@@ -253,7 +297,7 @@ def main() -> None:
     sum_ok_duration = 0.0
 
     for index, task in enumerate(tasks, start=1):
-        task_out_dir = output_root / task.split / task.subset / task.workpiece / f"{task.stem}__obj{task.object_index:02d}"
+        task_out_dir = task_output_dir(output_root, task)
         mesh_path = task_out_dir / "mesh.glb"
         tmp_mesh_path = task_out_dir / "mesh.partial.glb"
         stl_path = task_out_dir / "mesh.stl"
@@ -296,6 +340,7 @@ def main() -> None:
             "height": task.height,
             "image_pixels": image_pixels,
             "seed": args.seed,
+            "dataset_layout": dataset_layout,
             "exclude_stems_file": str(exclude_stems_file) if exclude_stems_file else None,
             "exclude_stems_count": len(exclude_stems),
             "started_at_epoch": task_started,
@@ -405,6 +450,7 @@ def main() -> None:
             "last_task": task.task_id,
             "resume": bool(args.resume),
             "seed": args.seed,
+            "dataset_layout": dataset_layout,
             "exclude_stems_file": str(exclude_stems_file) if exclude_stems_file else None,
             "exclude_stems_count": len(exclude_stems),
             "num_shards": args.num_shards,
