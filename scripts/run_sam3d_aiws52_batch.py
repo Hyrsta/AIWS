@@ -27,6 +27,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true", help="Skip instances with existing mesh.glb and mesh.stl outputs")
     parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards for parallel multi-GPU runs")
     parser.add_argument("--shard-index", type=int, default=0, help="0-based shard index for this worker")
+    parser.add_argument(
+        "--exclude-stems-file",
+        type=Path,
+        default=None,
+        help="Optional newline-delimited file of image stems to exclude entirely (for example multi-instance images)",
+    )
     return parser.parse_args()
 
 
@@ -54,13 +60,16 @@ class Task:
         return f"{self.split}/{self.subset}/{self.workpiece}/{self.stem}__obj{self.object_index:02d}"
 
 
-def load_tasks(dataset_root: Path) -> list[Task]:
+def load_tasks(dataset_root: Path, exclude_stems: set[str] | None = None) -> list[Task]:
+    exclude_stems = exclude_stems or set()
     tasks: list[Task] = []
     for split in ("train", "val"):
         for ann_path in sorted(dataset_root.glob(f"{split}/*/*/annotations/*.json")):
             subset = ann_path.parts[-4]
             workpiece = ann_path.parts[-3]
             stem = ann_path.stem
+            if stem in exclude_stems:
+                continue
             image_path = ann_path.parent.parent / "images" / f"{stem}.png"
             if not image_path.exists():
                 raise FileNotFoundError(f"Missing image for annotation: {ann_path}")
@@ -190,6 +199,13 @@ def get_device_info(torch: Any) -> dict[str, Any]:
     return info
 
 
+def load_exclude_stems(path: Path | None) -> set[str]:
+    if path is None:
+        return set()
+    text = path.read_text(encoding="utf-8")
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
 def main() -> None:
     args = parse_args()
     if args.num_shards < 1:
@@ -202,7 +218,10 @@ def main() -> None:
     output_root = args.output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
-    tasks_all = load_tasks(dataset_root)
+    exclude_stems_file = args.exclude_stems_file.resolve() if args.exclude_stems_file else None
+    exclude_stems = load_exclude_stems(exclude_stems_file)
+
+    tasks_all = load_tasks(dataset_root, exclude_stems=exclude_stems)
     tasks = select_shard(tasks_all, args.num_shards, args.shard_index)
     if args.limit is not None:
         tasks = tasks[: args.limit]
@@ -277,6 +296,8 @@ def main() -> None:
             "height": task.height,
             "image_pixels": image_pixels,
             "seed": args.seed,
+            "exclude_stems_file": str(exclude_stems_file) if exclude_stems_file else None,
+            "exclude_stems_count": len(exclude_stems),
             "started_at_epoch": task_started,
             "model_init_sec": round(model_init_sec, 3),
             "status": "started",
@@ -384,6 +405,8 @@ def main() -> None:
             "last_task": task.task_id,
             "resume": bool(args.resume),
             "seed": args.seed,
+            "exclude_stems_file": str(exclude_stems_file) if exclude_stems_file else None,
+            "exclude_stems_count": len(exclude_stems),
             "num_shards": args.num_shards,
             "shard_index": args.shard_index,
             "model_init_sec": round(model_init_sec, 3),
