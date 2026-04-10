@@ -275,6 +275,7 @@ def main() -> None:
     summary_path = output_root / "summary.json"
     write_manifest(tasks, manifest_path)
 
+    sys.path.insert(0, str(repo_root))
     sys.path.insert(0, str(repo_root / "notebook"))
     os.chdir(repo_root)
     from inference import Inference  # type: ignore
