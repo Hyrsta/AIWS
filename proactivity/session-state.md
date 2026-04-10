@@ -1,6 +1,6 @@
 # Session State
 
-- Current objective: `flash_attn` is fixed on `RXL`, and the helper launcher now defaults to `flash_attn` on the RTX A6000 after a full successful validation run.
-- Last confirmed decision: Leonardo asked to continue past the basic sanity check and verify why SAM3D still chose `sdpa`.
-- Blocker or open question: No active blocker on the flash-attn path; the remaining choice is whether to keep the launcher-only override or later patch the repo-level GPU whitelist.
-- Next useful move: Report that the A6000 runtime now works with `flash_attn` via the launcher default, and only patch repo code if Leonardo wants that behavior inside the codebase itself.
+- Current objective: Run SAM3D over the full AIWS5.2 split-materialized welding dataset on `RXL` using the repaired `flash_attn` path.
+- Last confirmed decision: Leonardo said not to patch the original repo further for now and asked to start the full experiment on all data in `aiws5.2-usable-split-materialized.zip`.
+- Blocker or open question: The batch runner needed an offline-safe DINO load path because `torch.hub` tried GitHub again; that was handled in the runner by redirecting `facebookresearch/dinov2` to the local torch hub cache.
+- Next useful move: Let the background run continue, monitor `/ssd1/rxl/zhankaiming/outputs/sam3d-aiws52-full-20260410-153416/`, and summarize progress or failures on demand.

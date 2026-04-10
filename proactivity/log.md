@@ -8,3 +8,7 @@
 - 2026-04-10: Patched `/ssd1/rxl/zhankaiming/run_sam3d_demo.sh` to disable `set -u` during `conda activate`, then reran SAM3D successfully end to end.
 - 2026-04-10: Confirmed the repo only auto-enables `flash_attn` on A100/H100/H200; on the RTX A6000 it stayed on `sdpa` unless `ATTN_BACKEND=flash_attn` and `SPARSE_ATTN_BACKEND=flash_attn` were set.
 - 2026-04-10: Verified that the A6000 can run SAM3D successfully with `flash_attn`, then updated the helper launcher to default those backend env vars so future runs use `flash_attn` automatically.
+- 2026-04-10: Confirmed the AIWS5.2 split-materialized dataset contains 1441 annotated image files and 1475 total object instances across train and val.
+- 2026-04-10: Unzipped `aiws5.2-usable-split-materialized.zip` on `RXL`, created `scripts/run_sam3d_aiws52_batch.py`, and smoke-tested it successfully on one real sample.
+- 2026-04-10: The batch runner now redirects `torch.hub` loads for `facebookresearch/dinov2` to the local cache on `RXL`, avoiding flaky GitHub access without patching the main SAM3D repo.
+- 2026-04-10: Started the full resumable run at `/ssd1/rxl/zhankaiming/outputs/sam3d-aiws52-full-20260410-153416/`; it is processing the dataset in the background and writing `manifest.csv`, `results.jsonl`, `summary.json`, and per-instance `splat.ply` outputs.
