@@ -106,6 +106,15 @@ def parse_args() -> argparse.Namespace:
     )
     cad.add_argument("--cadrille-checkpoint", default="ckpt/cadrille_sft", help="Checkpoint path passed to Cadrille test.py")
     cad.add_argument("--cadrille-mode", choices=("pc", "img"), default="pc", help="Cadrille mode")
+    cad.add_argument(
+        "--cadrille-input-source",
+        choices=("mesh", "point_cloud", "multi_view"),
+        default="mesh",
+        help=(
+            "Input source passed to Cadrille test.py. "
+            "This SAM3D bridge currently materializes mesh (.stl) inputs."
+        ),
+    )
     cad.add_argument("--cadrille-split-name", default=None,
                      help="Split name created under Cadrille data root (default auto-generated)")
     cad.add_argument(
@@ -125,8 +134,32 @@ def parse_args() -> argparse.Namespace:
 
     # Selection / safety
     misc = parser.add_argument_group("Selection and safety")
+    misc.add_argument(
+        "--selection-mode",
+        choices=("evaluate", "index"),
+        default="evaluate",
+        help=(
+            "Candidate selection strategy: evaluate.py best_names (paper-aligned) "
+            "or fixed index fallback"
+        ),
+    )
     misc.add_argument("--selected-candidate-index", type=int, default=0,
-                      help="Preferred generated candidate index (+k suffix) copied to selected outputs")
+                      help="Preferred candidate index (+k suffix), used by selection-mode=index or evaluate fallback")
+    misc.add_argument(
+        "--allow-selection-fallback",
+        action="store_true",
+        help="When selection-mode=evaluate and best_names is missing for a sample, fallback to --selected-candidate-index",
+    )
+    misc.add_argument("--eval-gt-path", type=Path, default=None,
+                      help="Ground-truth path for evaluate.py (default: prepared Cadrille split)")
+    misc.add_argument("--eval-gt-format", choices=("mesh", "point_cloud"), default="mesh",
+                      help="Ground-truth format for evaluate.py")
+    misc.add_argument("--eval-gt-mesh-ext", default=None,
+                      help="Ground-truth mesh extension for evaluate.py (default: --mesh-ext)")
+    misc.add_argument("--eval-gt-point-cloud-exts", default=None,
+                      help="Ground-truth point-cloud extensions for evaluate.py (default: --point-cloud-exts)")
+    misc.add_argument("--eval-n-points", type=int, default=8192,
+                      help="Number of sampled points for Chamfer in evaluate.py")
     misc.add_argument("--prepare-input-only", action="store_true",
                       help="Stop after preparing normalized STL split for Cadrille")
     misc.add_argument("--force", action="store_true",
@@ -348,8 +381,56 @@ def pick_candidate_stem(tmp_py_dir: Path, base_stem: str, preferred_idx: int) ->
     return None
 
 
+def split_candidate_stem(candidate_stem: str) -> tuple[str, str] | None:
+    if "+" not in candidate_stem:
+        return None
+    base, idx = candidate_stem.rsplit("+", 1)
+    if not base or not idx:
+        return None
+    return base, idx
+
+
+def load_best_candidate_map(metrics_path: Path, best_names_path: Path) -> tuple[dict[str, str], dict[str, Any] | None]:
+    best_names: list[str] = []
+    eval_summary: dict[str, Any] | None = None
+
+    if metrics_path.exists():
+        data = json.loads(metrics_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            if isinstance(data.get("summary"), dict):
+                eval_summary = data["summary"]
+            if isinstance(data.get("best_names"), list):
+                best_names = [str(v).strip() for v in data["best_names"] if str(v).strip()]
+
+    if not best_names and best_names_path.exists():
+        best_names = [line.strip() for line in best_names_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    best_map: dict[str, str] = {}
+    for name in best_names:
+        stem = Path(name).stem
+        parts = split_candidate_stem(stem)
+        if parts is None:
+            continue
+        base, _idx = parts
+        best_map[base] = stem
+
+    return best_map, eval_summary
+
+
 def main() -> None:
     args = parse_args()
+
+    if args.cadrille_mode == "pc" and args.cadrille_input_source == "multi_view":
+        raise RuntimeError("Cadrille mode=pc is incompatible with input-source=multi_view")
+    if args.cadrille_mode == "img" and args.cadrille_input_source == "point_cloud":
+        raise RuntimeError("Cadrille mode=img is incompatible with input-source=point_cloud")
+    if args.cadrille_input_source != "mesh":
+        raise RuntimeError(
+            "Current SAM3D bridge in this script materializes only mesh (.stl) inputs. "
+            "Use --cadrille-input-source mesh for e2e, or run Cadrille directly for point_cloud/multi_view datasets."
+        )
+    if args.eval_n_points <= 0:
+        raise RuntimeError("--eval-n-points must be > 0")
 
     sam3d_output_root = args.sam3d_output_root.resolve()
     cadrille_root = args.cadrille_root.resolve()
@@ -484,6 +565,10 @@ def main() -> None:
         print("[INFO] --prepare-input-only set, stopping before Cadrille inference.")
         return
 
+    eval_gt_host = args.eval_gt_path.resolve() if args.eval_gt_path else split_dir
+    eval_gt_mesh_ext = (args.eval_gt_mesh_ext or args.mesh_ext).lower()
+    eval_gt_point_cloud_exts = args.eval_gt_point_cloud_exts or args.point_cloud_exts
+
     # Prepare runtime-specific paths/commands for Cadrille stage
     if cadrille_runtime == "docker":
         assert container_cadrille_root is not None
@@ -494,6 +579,7 @@ def main() -> None:
         tmp_py_arg = str(map_host_to_container(tmp_py_dir, docker_mounts))
         tmp_mesh_arg = str(map_host_to_container(tmp_mesh_dir, docker_mounts))
         tmp_brep_arg = str(map_host_to_container(tmp_brep_dir, docker_mounts))
+        eval_gt_arg = str(map_host_to_container(eval_gt_host, docker_mounts))
 
         checkpoint_arg = args.cadrille_checkpoint
         checkpoint_path = Path(args.cadrille_checkpoint)
@@ -517,6 +603,7 @@ def main() -> None:
         tmp_py_arg = str(tmp_py_dir)
         tmp_mesh_arg = str(tmp_mesh_dir)
         tmp_brep_arg = str(tmp_brep_dir)
+        eval_gt_arg = str(eval_gt_host)
         checkpoint_arg = args.cadrille_checkpoint
         py_exec = args.cadrille_python
 
@@ -538,7 +625,7 @@ def main() -> None:
         "--py-path",
         tmp_py_arg,
         "--input-source",
-        "mesh",
+        args.cadrille_input_source,
         "--mesh-ext",
         args.mesh_ext,
         "--point-cloud-exts",
@@ -569,7 +656,33 @@ def main() -> None:
         ])
     run_cadrille_inner(convert_cmd)
 
-    # Select preferred candidate per input sample
+    metrics_path = cadrille_output_root / "metrics.json"
+    best_names_path = cadrille_output_root / "tmp.txt"
+    best_candidate_map: dict[str, str] = {}
+    evaluate_summary: dict[str, Any] | None = None
+    if args.selection_mode == "evaluate":
+        evaluate_cmd = [
+            py_exec,
+            "evaluate.py",
+            "--gt-path",
+            eval_gt_arg,
+            "--gt-format",
+            args.eval_gt_format,
+            "--gt-point-cloud-exts",
+            eval_gt_point_cloud_exts,
+            "--gt-mesh-ext",
+            eval_gt_mesh_ext,
+            "--pred-py-path",
+            tmp_py_arg,
+            "--n-points",
+            str(args.eval_n_points),
+        ]
+        run_cadrille_inner(evaluate_cmd)
+        if not args.dry_run:
+            best_candidate_map, evaluate_summary = load_best_candidate_map(metrics_path, best_names_path)
+            print(f"[INFO] evaluate.py selected best candidates for {len(best_candidate_map)} samples")
+
+    # Select one candidate per input sample
     selected_rows: list[dict[str, Any]] = []
     if not args.dry_run:
         selected_py_dir.mkdir(parents=True, exist_ok=True)
@@ -579,15 +692,39 @@ def main() -> None:
 
         for item in prepared_rows:
             base = item["cadrille_stem"]
-            candidate_stem = pick_candidate_stem(tmp_py_dir, base, args.selected_candidate_index)
+            candidate_stem: str | None = None
+            selection_reason: str | None = None
+
+            if args.selection_mode == "evaluate":
+                candidate_stem = best_candidate_map.get(base)
+                if candidate_stem is not None:
+                    selection_reason = "evaluate_best"
+                elif args.allow_selection_fallback:
+                    candidate_stem = pick_candidate_stem(tmp_py_dir, base, args.selected_candidate_index)
+                    selection_reason = "evaluate_fallback_index"
+            else:
+                candidate_stem = pick_candidate_stem(tmp_py_dir, base, args.selected_candidate_index)
+                if candidate_stem is not None:
+                    selection_reason = "fixed_index"
+
             if candidate_stem is None:
                 selected_rows.append({
                     "cadrille_stem": base,
                     "status": "missing_candidate",
+                    "selection_reason": selection_reason,
                 })
                 continue
 
             py_src = tmp_py_dir / f"{candidate_stem}.py"
+            if not py_src.exists():
+                selected_rows.append({
+                    "cadrille_stem": base,
+                    "candidate_stem": candidate_stem,
+                    "status": "missing_py",
+                    "selection_reason": selection_reason,
+                })
+                continue
+
             mesh_src = tmp_mesh_dir / f"{candidate_stem}.stl"
             brep_src = tmp_brep_dir / f"{candidate_stem}.{args.brep_ext}"
 
@@ -605,6 +742,7 @@ def main() -> None:
                 {
                     "cadrille_stem": base,
                     "candidate_stem": candidate_stem,
+                    "selection_reason": selection_reason,
                     "selected_py": str(py_dst),
                     "selected_mesh": str(mesh_dst) if mesh_src.exists() else None,
                     "selected_brep": str(brep_dst) if (args.export_brep and brep_src.exists()) else None,
@@ -633,6 +771,7 @@ def main() -> None:
             "cadrille_root": str(cadrille_root),
             "cadrille_data_root": str(cadrille_data_root),
             "cadrille_mode": args.cadrille_mode,
+            "cadrille_input_source": args.cadrille_input_source,
             "checkpoint": args.cadrille_checkpoint,
             "host_python": args.cadrille_python,
             "docker_python": args.cadrille_docker_python,
@@ -652,6 +791,22 @@ def main() -> None:
                 "selected_mesh_dir": str(selected_mesh_dir),
                 "selected_brep_dir": str(selected_brep_dir) if args.export_brep else None,
             },
+        },
+        "selection": {
+            "selection_mode": args.selection_mode,
+            "selected_candidate_index": args.selected_candidate_index,
+            "allow_selection_fallback": bool(args.allow_selection_fallback),
+            "best_candidate_count": len(best_candidate_map),
+            "evaluate": {
+                "gt_path": str(eval_gt_host),
+                "gt_format": args.eval_gt_format,
+                "gt_mesh_ext": eval_gt_mesh_ext,
+                "gt_point_cloud_exts": eval_gt_point_cloud_exts,
+                "n_points": args.eval_n_points,
+                "metrics_path": str(metrics_path),
+                "best_names_path": str(best_names_path),
+                "summary": evaluate_summary,
+            } if args.selection_mode == "evaluate" else None,
         },
         "selected_rows": selected_rows,
     }

@@ -17,3 +17,11 @@
   Type: evaluation
   Context: Leonardo rejected changing evaluation method and asked to follow paper metrics
   Confirmed: yes
+- [23:53] Use Cadrille pipeline selection (evaluate.py best_names), not fixed candidate index by default
+  Type: evaluation
+  Context: Leonardo called out index-0 selection as not meaningful and requested paper-aligned pipeline
+  Confirmed: yes
+- [23:53] Keep modality reporting split between pc and img runs
+  Type: experiment-design
+  Context: Leonardo requested explicit modality separation
+  Confirmed: yes
