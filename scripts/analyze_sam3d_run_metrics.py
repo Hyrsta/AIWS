@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
         "--csv-dir",
         type=Path,
         default=None,
-        help="Optional directory to write CSV tables (shard/subset/workpiece/top_slowest)",
+        help="Optional directory to write CSV tables (shard/subset/workpiece/subset_workpiece/top_slowest)",
     )
     return parser.parse_args()
 
@@ -241,6 +241,25 @@ def stats_for_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def group_breakdown(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    def summarize_group(grp_rows: list[dict[str, Any]]) -> dict[str, Any]:
+        ok_rows = [r for r in grp_rows if r.get("status") == "ok"]
+        err_rows = [r for r in grp_rows if r.get("status") == "error"]
+        duration = [v for r in ok_rows if (v := to_float(r.get("duration_sec"))) is not None]
+        mem_alloc = [v for r in ok_rows if (v := to_float(r.get("peak_memory_allocated_mb"))) is not None]
+        sec_per_mp = [v for r in ok_rows if (v := to_float(r.get("sec_per_megapixel"))) is not None]
+        return {
+            "records": len(grp_rows),
+            "ok": len(ok_rows),
+            "error": len(err_rows),
+            "duration_mean_sec": (sum(duration) / len(duration)) if duration else None,
+            "duration_p50_sec": percentile(sorted(duration), 0.5) if duration else None,
+            "duration_p90_sec": percentile(sorted(duration), 0.9) if duration else None,
+            "mem_alloc_mean_mb": (sum(mem_alloc) / len(mem_alloc)) if mem_alloc else None,
+            "mem_alloc_p90_mb": percentile(sorted(mem_alloc), 0.9) if mem_alloc else None,
+            "mem_alloc_max_mb": max(mem_alloc) if mem_alloc else None,
+            "sec_per_megapixel_mean": (sum(sec_per_mp) / len(sec_per_mp)) if sec_per_mp else None,
+        }
+
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in rows:
         group_val = r.get(key)
@@ -249,6 +268,21 @@ def group_breakdown(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]
 
     output: list[dict[str, Any]] = []
     for label, grp_rows in groups.items():
+        output.append({"group": label, **summarize_group(grp_rows)})
+
+    output.sort(key=lambda r: (-r["ok"], r["group"]))
+    return output
+
+
+def group_breakdown_subset_workpiece(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        subset = str(r.get("subset")) if r.get("subset") not in (None, "") else "<unknown>"
+        workpiece = str(r.get("workpiece")) if r.get("workpiece") not in (None, "") else "<unknown>"
+        groups[(subset, workpiece)].append(r)
+
+    output: list[dict[str, Any]] = []
+    for (subset, workpiece), grp_rows in groups.items():
         ok_rows = [r for r in grp_rows if r.get("status") == "ok"]
         err_rows = [r for r in grp_rows if r.get("status") == "error"]
         duration = [v for r in ok_rows if (v := to_float(r.get("duration_sec"))) is not None]
@@ -256,7 +290,8 @@ def group_breakdown(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]
         sec_per_mp = [v for r in ok_rows if (v := to_float(r.get("sec_per_megapixel"))) is not None]
         output.append(
             {
-                "group": label,
+                "subset": subset,
+                "workpiece": workpiece,
                 "records": len(grp_rows),
                 "ok": len(ok_rows),
                 "error": len(err_rows),
@@ -270,7 +305,7 @@ def group_breakdown(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]
             }
         )
 
-    output.sort(key=lambda r: (-r["ok"], r["group"]))
+    output.sort(key=lambda r: (-r["ok"], r["subset"], r["workpiece"]))
     return output
 
 
@@ -387,6 +422,7 @@ def main() -> None:
     shard_breakdown = group_breakdown(records, "_shard")
     subset_breakdown = group_breakdown(records, "subset")
     workpiece_breakdown = group_breakdown(records, "workpiece")
+    subset_workpiece_breakdown = group_breakdown_subset_workpiece(records)
     top_slowest_rows = top_slowest(ok_rows, args.top_n)
 
     error_counts = Counter(str(r.get("error_type") or "UnknownError") for r in err_rows)
@@ -413,6 +449,7 @@ def main() -> None:
             "by_shard": shard_breakdown,
             "by_subset": subset_breakdown,
             "by_workpiece": workpiece_breakdown,
+            "by_subset_workpiece": subset_workpiece_breakdown,
         },
         "top_slowest_ok": top_slowest_rows,
     }
@@ -452,6 +489,19 @@ def main() -> None:
     print(f"- duration vs mask_fraction: {corr['duration_vs_mask_fraction']}")
     print(f"- duration vs image_pixels: {corr['duration_vs_image_pixels']}")
 
+    print("\n--- Slowest subset/workpiece groups (by mean duration) ---")
+    pair_rows = [
+        row
+        for row in rounded["breakdown"]["by_subset_workpiece"]
+        if row.get("duration_mean_sec") is not None and (row.get("ok") or 0) > 0
+    ]
+    pair_rows.sort(key=lambda r: r["duration_mean_sec"], reverse=True)
+    for row in pair_rows[:8]:
+        print(
+            f"- {row['subset']}/{row['workpiece']}: ok={row['ok']}, "
+            f"mean={row['duration_mean_sec']}s, p90={row['duration_p90_sec']}s"
+        )
+
     if rounded["error_type_counts"]:
         print("\n--- Error types ---")
         for k, v in sorted(rounded["error_type_counts"].items(), key=lambda kv: (-kv[1], kv[0])):
@@ -474,6 +524,7 @@ def main() -> None:
         write_csv(args.csv_dir / "by_shard.csv", round_floats(shard_breakdown, ndigits=4))
         write_csv(args.csv_dir / "by_subset.csv", round_floats(subset_breakdown, ndigits=4))
         write_csv(args.csv_dir / "by_workpiece.csv", round_floats(workpiece_breakdown, ndigits=4))
+        write_csv(args.csv_dir / "by_subset_workpiece.csv", round_floats(subset_workpiece_breakdown, ndigits=4))
         write_csv(args.csv_dir / "top_slowest_ok.csv", round_floats(top_slowest_rows, ndigits=4))
         print(f"Wrote CSV directory: {args.csv_dir}")
 
