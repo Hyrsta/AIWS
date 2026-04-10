@@ -1,6 +1,6 @@
 # Session State
 
-- Current objective: Monitor the `flash-attn` source build on `RXL`, then verify import and rerun a small SAM3D check when it finishes.
-- Last confirmed decision: Leonardo said he would check back later, so keep the build running and report real progress when asked.
-- Blocker or open question: The build is slow because it is compiling the full local `sm80` CUDA set from source, but it is now near the end.
-- Next useful move: The live check shows about 65/72 CUDA object files built. Verify `import flash_attn` once the final wheel finishes, then run a quick SAM3D sanity check.
+- Current objective: `flash_attn` is fixed on `RXL`, and the SAM3D sanity check passed end to end.
+- Last confirmed decision: Leonardo asked to clean up the old home-dir proactivity copy and sanity-check SAM3D after the fix.
+- Blocker or open question: No active blocker on the flash-attn fix path.
+- Next useful move: Report the successful result to Leonardo and keep the launcher patch in place for future reruns.
