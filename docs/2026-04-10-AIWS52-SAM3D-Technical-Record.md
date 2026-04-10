@@ -250,19 +250,47 @@ Restart the same shard command with `--resume` using the same run directory.
 
 ---
 
-## 8. Confirmed Outcomes
+## 8. Final Run Statistics and Findings
 
-1. Official dataset definition is fixed as `aiws5.2-usable-materialized`
-2. SAM3D runtime on `RXL` is restored and reusable
-3. `flash_attn` is active on RTX A6000 in the production path
-4. 4-shard parallel run is live and producing outputs
-5. Output structure, per-task metadata, and failure traces are complete
+### 8.1 Completion status
+
+The official run is fully complete:
+
+- Total tasks: **1418 / 1418**
+- Failed: **0**
+- Skipped: **0**
+- Completion: **100%**
+
+Per-shard summary:
+
+- shard-0 (GPU0): 355/355, `avg_ok_duration_sec=14.074`, `ok_instances_per_hour=254.337`
+- shard-1 (GPU1): 355/355, `avg_ok_duration_sec=14.121`, `ok_instances_per_hour=253.559`
+- shard-2 (GPU2): 354/354, `avg_ok_duration_sec=14.813`, `ok_instances_per_hour=241.790`
+- shard-3 (GPU3): 354/354, `avg_ok_duration_sec=16.191`, `ok_instances_per_hour=221.272`
+
+### 8.2 Global performance (1418 samples)
+
+- `duration_sec`: mean **14.799s**, p50 **13.812s**, p90 **17.555s**, p95 **18.977s**, max **73.562s**
+- `peak_memory_allocated_mb`: mean **18709.201MB**, p95 **19614.863MB**, max **20071.270MB**
+- `peak_memory_reserved_mb`: mean **24647.275MB**, p95 **27136.000MB**, max **28076.000MB**
+- `sec_per_megapixel`: mean **7.374**
+- `instances_per_hour`: mean **256.205**
+
+### 8.3 Key bottleneck finding
+
+The clearest runtime bottleneck is:
+
+- **`V1 / bellmouth`** (194 samples)
+  - `duration_mean_sec=17.8334`
+  - `duration_p90_sec=34.9408`
+
+This matches live runtime behavior where shard-3 became noticeably slower while traversing dense `V1/bellmouth` segments.
 
 ---
 
 ## 9. Recommended Next Steps
 
-1. merge shard `results.jsonl` files after run completion
-2. build a failed-sample list and group by failure type
-3. write paper method/experiment sections from this baseline only
-4. keep this runbook as SOP for future reproductions
+1. produce final performance plots with `subset × workpiece` granularity (highlight `V1/bellmouth`)
+2. isolate the slowest samples (for example >30s) and review geometry/mask complexity
+3. frame the paper/report performance takeaway as “stable overall throughput with a bellmouth long-tail”
+4. keep this runbook and metrics script as SOP for future runs
