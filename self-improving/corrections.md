@@ -25,3 +25,7 @@
   Type: experiment-design
   Context: Leonardo requested explicit modality separation
   Confirmed: yes
+- [00:11] For Cadrille generation count, use img=1 and pc=5 by default
+  Type: experiment-design
+  Context: Leonardo clarified deterministic image input should use one generation, while point-cloud branch keeps multi-sample search
+  Confirmed: yes

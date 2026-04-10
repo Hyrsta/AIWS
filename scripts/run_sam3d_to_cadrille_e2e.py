@@ -107,6 +107,12 @@ def parse_args() -> argparse.Namespace:
     cad.add_argument("--cadrille-checkpoint", default="ckpt/cadrille_sft", help="Checkpoint path passed to Cadrille test.py")
     cad.add_argument("--cadrille-mode", choices=("pc", "img"), default="pc", help="Cadrille mode")
     cad.add_argument(
+        "--cadrille-n-samples",
+        type=int,
+        default=None,
+        help="Number of generated candidates per sample in Cadrille test.py (default: img=1, pc=5)",
+    )
+    cad.add_argument(
         "--cadrille-input-source",
         choices=("mesh", "point_cloud", "multi_view"),
         default="mesh",
@@ -429,8 +435,12 @@ def main() -> None:
             "Current SAM3D bridge in this script materializes only mesh (.stl) inputs. "
             "Use --cadrille-input-source mesh for e2e, or run Cadrille directly for point_cloud/multi_view datasets."
         )
+    if args.cadrille_n_samples is not None and args.cadrille_n_samples <= 0:
+        raise RuntimeError("--cadrille-n-samples must be > 0")
     if args.eval_n_points <= 0:
         raise RuntimeError("--eval-n-points must be > 0")
+
+    cadrille_n_samples = args.cadrille_n_samples if args.cadrille_n_samples is not None else (1 if args.cadrille_mode == "img" else 5)
 
     sam3d_output_root = args.sam3d_output_root.resolve()
     cadrille_root = args.cadrille_root.resolve()
@@ -624,6 +634,8 @@ def main() -> None:
         checkpoint_arg,
         "--py-path",
         tmp_py_arg,
+        "--n-samples",
+        str(cadrille_n_samples),
         "--input-source",
         args.cadrille_input_source,
         "--mesh-ext",
@@ -772,6 +784,7 @@ def main() -> None:
             "cadrille_data_root": str(cadrille_data_root),
             "cadrille_mode": args.cadrille_mode,
             "cadrille_input_source": args.cadrille_input_source,
+            "cadrille_n_samples": cadrille_n_samples,
             "checkpoint": args.cadrille_checkpoint,
             "host_python": args.cadrille_python,
             "docker_python": args.cadrille_docker_python,
