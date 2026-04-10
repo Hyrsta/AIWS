@@ -23,8 +23,14 @@ You wake up fresh each session. These files are your continuity:
 
 - **Daily notes:** `memory/YYYY-MM-DD.md` (create `memory/` if needed) — raw logs of what happened
 - **Long-term:** `MEMORY.md` — your curated memories, like a human's long-term memory
+- **Proactivity:** `~/proactivity/` — proactive operating state for durable boundaries, active task recovery, and follow-through
 
 Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
+
+Use `~/proactivity/memory.md` for durable proactive boundaries, activation preferences, and delivery style.
+Use `~/proactivity/session-state.md` for the current objective, last decision, blocker, and next move.
+Use `~/proactivity/memory/working-buffer.md` for volatile breadcrumbs during long or fragile tasks.
+Before non-trivial ongoing work or proactive follow-up, read `~/proactivity/memory.md` and `~/proactivity/session-state.md`. Load the working buffer when context drift risk is high.
 
 ### 🧠 MEMORY.md - Your Long-Term Memory
 
@@ -43,6 +49,10 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - When someone says "remember this" → update `memory/YYYY-MM-DD.md` or relevant file
 - When you learn a lesson → update AGENTS.md, TOOLS.md, or the relevant skill
 - When you make a mistake → document it so future-you doesn't repeat it
+- Durable proactive preference or boundary → update `~/proactivity/memory.md`
+- Current task state, blocker, last decision, or next move → update `~/proactivity/session-state.md`
+- Volatile breadcrumbs or recovery hints → update `~/proactivity/memory/working-buffer.md`
+- Proactive follow-up, recurring check, or reusable move → update `~/proactivity/heartbeat.md`, `~/proactivity/log.md`, or `~/proactivity/patterns.md`
 - **Text > Brain** 📝
 
 ## Red Lines
@@ -119,6 +129,16 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 ## Tools
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
+
+### Workspace-local skills
+
+These local skills do not show up in the global skill registry here, so check them manually when a request matches.
+
+- `skills/agent-config/SKILL.md` → use when changing `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `MEMORY.md`, or `HEARTBEAT.md`. Read `skills/agent-config/references/file-map.md` when placement is unclear.
+- `skills/technical-writing/SKILL.md` → use for specs, architecture docs, runbooks, API docs, release notes, and other developer-facing documentation.
+- `skills/ai-humanizer/SKILL.md` → use for English text that needs humanizing, de-AI rewriting, AI-pattern review, or scoring. CLI entrypoint: `node skills/ai-humanizer/src/cli.js`.
+- `skills/humanize-chinese/SKILL.md` → use for Chinese 去AI味, 降AIGC, style conversion, or AI-text detection. CLI scripts live in `skills/humanize-chinese/scripts/`.
+- `skills/proactivity/SKILL.md` → use when Leonardo wants more anticipation, follow-through, state recovery, or proactive check-ins. Keep state in `~/proactivity/`.
 
 **🎭 Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
 
