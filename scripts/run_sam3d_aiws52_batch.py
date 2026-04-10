@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, required=True, help="Directory for batch outputs and logs")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int, default=None, help="Optional cap on number of instances")
-    parser.add_argument("--resume", action="store_true", help="Skip instances with an existing splat.ply")
+    parser.add_argument("--resume", action="store_true", help="Skip instances with an existing mesh.glb")
     parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards for parallel multi-GPU runs")
     parser.add_argument("--shard-index", type=int, default=0, help="0-based shard index for this worker")
     return parser.parse_args()
@@ -235,11 +235,11 @@ def main() -> None:
 
     for index, task in enumerate(tasks, start=1):
         task_out_dir = output_root / task.split / task.subset / task.workpiece / f"{task.stem}__obj{task.object_index:02d}"
-        ply_path = task_out_dir / "splat.ply"
-        tmp_ply_path = task_out_dir / "splat.partial.ply"
+        mesh_path = task_out_dir / "mesh.glb"
+        tmp_mesh_path = task_out_dir / "mesh.partial.glb"
         meta_path = task_out_dir / "meta.json"
 
-        if args.resume and ply_path.exists() and ply_path.stat().st_size > 0:
+        if args.resume and mesh_path.exists() and mesh_path.stat().st_size > 0:
             skipped += 1
             print(f"[{index}/{total}] skip {task.task_id}", flush=True)
             continue
@@ -264,7 +264,8 @@ def main() -> None:
             "image_path": task.image_path,
             "annotation_path": task.annotation_path,
             "output_dir": str(task_out_dir),
-            "ply_path": str(ply_path),
+            "mesh_path": str(mesh_path),
+            "artifact_format": "glb",
             "category": task.category,
             "group": task.group,
             "bbox": task.bbox,
@@ -291,10 +292,13 @@ def main() -> None:
             output = inference(image_np, mask_np, seed=args.seed)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-            if tmp_ply_path.exists():
-                tmp_ply_path.unlink()
-            output["gs"].save_ply(str(tmp_ply_path))
-            tmp_ply_path.replace(ply_path)
+            mesh = output.get("glb")
+            if mesh is None:
+                raise ValueError("SAM3D output did not include a mesh/glb artifact")
+            if tmp_mesh_path.exists():
+                tmp_mesh_path.unlink()
+            mesh.export(str(tmp_mesh_path))
+            tmp_mesh_path.replace(mesh_path)
             duration = time.time() - task_started
             peak_allocated_mb = None
             peak_reserved_mb = None
@@ -312,7 +316,7 @@ def main() -> None:
                     "instances_per_hour": round(3600.0 / duration, 3) if duration > 0 else None,
                     "peak_memory_allocated_mb": peak_allocated_mb,
                     "peak_memory_reserved_mb": peak_reserved_mb,
-                    "ply_size_bytes": ply_path.stat().st_size if ply_path.exists() else None,
+                    "mesh_size_bytes": mesh_path.stat().st_size if mesh_path.exists() else None,
                 }
             )
             meta_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -334,8 +338,8 @@ def main() -> None:
                     "traceback": traceback.format_exc(),
                 }
             )
-            if tmp_ply_path.exists():
-                tmp_ply_path.unlink()
+            if tmp_mesh_path.exists():
+                tmp_mesh_path.unlink()
             meta_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
             append_jsonl(results_path, record)
             failed += 1
