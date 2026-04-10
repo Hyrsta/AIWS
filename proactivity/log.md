@@ -17,3 +17,5 @@
 - 2026-04-10: Added deterministic task sharding to the batch runner via `--num-shards` and `--shard-index`, then validated it with a 1-instance smoke test on GPU 2 (`CUDA_VISIBLE_DEVICES=2`).
 - 2026-04-10: Leonardo caught that the saved artifact should be mesh, not gaussian-splat. Patched `scripts/run_sam3d_aiws52_batch.py` to export the mesh branch as `mesh.glb` from `output["glb"]` instead of writing `output["gs"].save_ply(...)`.
 - 2026-04-10: Verified the mesh-export path with a fresh 1-instance smoke test at `/ssd1/rxl/zhankaiming/outputs/sam3d-aiws52-smoke-mesh-20260410-1552/`; it produced an 8.7 MB `mesh.glb` and updated metadata fields (`mesh_path`, `mesh_size_bytes`, `artifact_format`).
+- 2026-04-10: Leonardo decided the later Cadrille pipeline also needs `.stl`, so `scripts/run_sam3d_aiws52_batch.py` was extended again to export both `mesh.glb` and `mesh.stl` for each instance.
+- 2026-04-10: Validated dual-format export with a fresh 1-instance smoke test at `/ssd1/rxl/zhankaiming/outputs/sam3d-aiws52-smoke-mesh-stl-20260410-1613/`; it produced `mesh.glb` (8.7 MB) and `mesh.stl` (22 MB) for the same sample.
