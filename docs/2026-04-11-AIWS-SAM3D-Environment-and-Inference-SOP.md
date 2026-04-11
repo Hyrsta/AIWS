@@ -76,15 +76,15 @@ The currently identified `misc/` cases include 23 `multi_instance` samples, 0 `m
 
 In the current data, `misc/` is dominated by `multi_instance` samples.
 
-### 2.4 Project structure (AIWS offline layer plus upstream model repos)
+### 2.4 Project structure (AIWS online/offline split and the offline CAD pipeline)
 
-The correct framing is: this SOP documents the **offline part of AIWS**, and the offline repo wraps two upstream model repos into one RGB-image-to-CAD pipeline.
+The correct framing is: **AIWS is split into an online pipeline and an offline pipeline**, and the CAD reconstruction pipeline documented by this SOP is the **offline pipeline**.
 
-**AIWS offline project repo**
+**AIWS project**
 
 - GitHub: `https://github.com/Hyrsta/AIWS`
-- Role: the offline CAD reconstruction layer inside the broader AIWS system
-- Pipeline framing used here: **AIWS offline RGB images → SAM3D mesh reconstruction → Cadrille CAD reconstruction**
+- Organization: AIWS includes an online pipeline and an offline pipeline
+- This SOP covers the offline pipeline, namely: **AIWS offline RGB images → SAM3D mesh reconstruction → Cadrille CAD reconstruction**
 
 **Upstream model repos used inside the offline pipeline**
 

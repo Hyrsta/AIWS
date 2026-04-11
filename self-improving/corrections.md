@@ -89,3 +89,7 @@
   Type: documentation
   Context: Leonardo corrected the reporting basis and asked the report to explain the PC-vs-IMG runtime difference more directly
   Confirmed: yes
+- [19:13] For AIWS project framing, say AIWS is split into online and offline pipelines, and this CAD reconstruction pipeline is the offline pipeline
+  Type: documentation
+  Context: Leonardo corrected the project-structure wording after I overstated AIWS as if it were just the offline layer
+  Confirmed: yes

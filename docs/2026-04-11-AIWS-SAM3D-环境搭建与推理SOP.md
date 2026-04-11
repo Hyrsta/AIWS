@@ -76,15 +76,15 @@
 
 从当前统计看，`misc/` 以 `multi_instance` 样本为主。
 
-### 2.4 项目结构（AIWS 离线部分 + 上游模型仓库）
+### 2.4 项目结构（AIWS 在线/离线划分与离线 CAD 管线）
 
-这里更准确的表述应该是：本 SOP 记录的是 **AIWS 的离线部分**，而这个离线仓库把两个上游模型仓库封装成一条 RGB 图像到 CAD 的离线重建流水线。
+这里更准确的表述应该是：**AIWS 分为 online pipeline 和 offline pipeline 两部分**，而本 SOP 记录的 CAD 重建管线就是其中的 **offline pipeline**。
 
-**AIWS 离线项目仓库**
+**AIWS 项目**
 
 - GitHub：`https://github.com/Hyrsta/AIWS`
-- 角色：AIWS 整体系统中的离线 CAD 重建部分
-- 本文采用的流水线表述：**AIWS 离线 RGB 图像 → SAM3D 网格重建 → Cadrille CAD 重建**
+- 结构：AIWS 包含在线管线与离线管线
+- 本文覆盖的是离线管线，即：**AIWS 离线 RGB 图像 → SAM3D 网格重建 → Cadrille CAD 重建**
 
 **离线流水线中使用的上游模型仓库**
 

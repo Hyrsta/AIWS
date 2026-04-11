@@ -81,12 +81,12 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 ## Slide 3. Project structure
 
 ### Suggested title
-Project structure: AIWS offline layer plus upstream model repos
+Project structure: AIWS online/offline split and the offline CAD pipeline
 
 ### Suggested content
-- AIWS offline repo: `https://github.com/Hyrsta/AIWS`
-  - role: offline CAD reconstruction part of the broader AIWS system
-  - framing: **offline RGB images → mesh reconstruction → CAD reconstruction**
+- AIWS repo: `https://github.com/Hyrsta/AIWS`
+  - organization: AIWS has an online pipeline and an offline pipeline
+  - this slide covers the offline pipeline: **offline RGB images → mesh reconstruction → CAD reconstruction**
 - upstream repo, SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
   - default entry points used: `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
 - upstream repo, Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
@@ -100,8 +100,8 @@ Project structure: AIWS offline layer plus upstream model repos
   - `scripts/run_cadrille_full_modalities_4gpu.py`
 
 ### Main point to say
-- this is the offline part of AIWS, not just two isolated third-party repos
-- the reusable batch and integration layer lives in the AIWS offline repo around the upstream models
+- AIWS should be framed as online + offline, and this work is specifically the offline CAD pipeline
+- the reusable batch and integration layer lives around the upstream models inside that offline pipeline
 
 ---
 

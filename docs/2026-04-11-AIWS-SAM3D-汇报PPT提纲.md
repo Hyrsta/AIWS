@@ -80,12 +80,12 @@ aiws5.2-usable/
 ## Slide 3. 项目结构
 
 ### 标题建议
-项目结构：AIWS 离线部分与上游模型仓库
+项目结构：AIWS 在线/离线划分与离线 CAD 管线
 
 ### 建议内容
-- AIWS 离线仓库：`https://github.com/Hyrsta/AIWS`
-  - 角色：AIWS 整体系统中的离线 CAD 重建部分
-  - 流水线表述：**离线 RGB 图像 → 网格重建 → CAD 重建**
+- AIWS 仓库：`https://github.com/Hyrsta/AIWS`
+  - 结构：AIWS 分为在线管线与离线管线
+  - 这一页讲的是离线管线：**离线 RGB 图像 → 网格重建 → CAD 重建**
 - 官方仓库，SAM3D：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
   - 当前直接使用的默认入口：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
 - 官方仓库，Cadrille：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
@@ -99,11 +99,11 @@ aiws5.2-usable/
   - `scripts/run_cadrille_full_modalities_4gpu.py`
 
 ### 要强调的点
-- 当前正式运行路径属于 AIWS 的离线部分，不只是两个上游 repo 的拼接
-- 可复用的批处理与桥接层主要沉淀在 AIWS 离线仓库里
+- AIWS 要先表述为在线 + 离线两部分，而这次汇报讲的是其中的离线 CAD 管线
+- 可复用的批处理与桥接层主要沉淀在这条离线管线里
 
 ### 口头补充
-“后续要复现实验，不能只记住上游模型仓库，也要记住 AIWS 这层离线封装和我们补出来的批处理脚本。”
+“后续要复现实验，不能只记住上游模型仓库，还要明确这是 AIWS 的 offline pipeline。”
 
 ---
 
