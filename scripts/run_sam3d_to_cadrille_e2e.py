@@ -667,10 +667,6 @@ def main() -> None:
         str(cadrille_n_samples),
         "--batch-size",
         str(args.cadrille_batch_size),
-        "--input-source",
-        args.cadrille_input_source,
-        "--mesh-ext",
-        args.mesh_ext,
     ]
     run_cadrille_inner(test_cmd)
 

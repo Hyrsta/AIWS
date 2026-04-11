@@ -8,6 +8,7 @@ import time
 from argparse import ArgumentParser
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch.utils.data import ConcatDataset, DataLoader
@@ -101,6 +102,10 @@ def write_gpu_memory_report(
     print(f"[gpu-memory] wrote {output_path}")
 
 
+def _load_kwargs(path_or_id: str) -> dict[str, Any]:
+    return {"local_files_only": True} if Path(path_or_id).exists() else {}
+
+
 def run(
     *,
     cadrille_root: Path,
@@ -110,7 +115,6 @@ def run(
     checkpoint_path: str,
     processor_path: str,
     py_path: Path,
-    mesh_ext: str,
     n_samples: int,
     batch_size_override: int | None,
 ) -> None:
@@ -146,15 +150,15 @@ def run(
             torch_dtype=torch.bfloat16,
             attn_implementation="flash_attention_2",
             device_map="auto",
-            local_files_only=True,
+            **_load_kwargs(checkpoint_path),
         )
 
         processor = AutoProcessor.from_pretrained(
             processor_path,
-            local_files_only=True,
             min_pixels=256 * 28 * 28,
             max_pixels=1280 * 28 * 28,
             padding_side="left",
+            **_load_kwargs(processor_path),
         )
 
         dataset = CadRecodeDataset(
@@ -168,7 +172,6 @@ def run(
             noise_scale_img=-1,
             num_imgs=4,
             mode=mode,
-            ext=mesh_ext,
         )
         batch_size = 256
 
@@ -179,7 +182,7 @@ def run(
         if batch_size <= 0:
             raise ValueError("batch_size must be > 0")
 
-        num_workers = 4 if mode == "img" else 16
+        num_workers = 16
         dataloader = DataLoader(
             dataset=ConcatDataset([dataset] * n_samples),
             batch_size=batch_size,
@@ -240,7 +243,7 @@ def run(
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="AIWS wrapper for running official Cadrille on prepared mesh splits")
+    parser = ArgumentParser(description="Thin wrapper for running official Cadrille with path/HF-id override and GPU-memory logging")
     parser.add_argument("--cadrille-root", type=Path, default=Path("."), help="Official Cadrille repo root")
     parser.add_argument("--data-path", type=Path, default=Path("./data"))
     parser.add_argument("--split", type=str, required=True)
@@ -248,16 +251,9 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint-path", type=str, default="ckpt/cadrille_sft")
     parser.add_argument("--processor-path", type=str, default="ckpt/Qwen2-VL-2B-Instruct")
     parser.add_argument("--py-path", type=Path, default=Path("./work_dirs/tmp_py"))
-    parser.add_argument("--input-source", type=str, default="mesh")
-    parser.add_argument("--mesh-ext", type=str, default="stl")
-    parser.add_argument("--point-cloud-exts", type=str, default="ply,pcd,xyz,txt,npz,npy")
-    parser.add_argument("--image-exts", type=str, default="png,jpg,jpeg,bmp")
     parser.add_argument("--n-samples", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=None)
     args = parser.parse_args()
-
-    if args.input_source != "mesh":
-        raise RuntimeError("AIWS Cadrille wrapper currently supports only input-source=mesh")
 
     run(
         cadrille_root=args.cadrille_root,
@@ -267,7 +263,6 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
         processor_path=args.processor_path,
         py_path=args.py_path,
-        mesh_ext=args.mesh_ext.lower(),
         n_samples=args.n_samples,
         batch_size_override=args.batch_size,
     )
