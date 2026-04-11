@@ -67,6 +67,27 @@ def parse_args() -> argparse.Namespace:
         help="Docker image passed to e2e script when runtime=docker/auto",
     )
     parser.add_argument(
+        "--cadrille-docker-extra-args",
+        default="",
+        help="Extra raw args passed through to docker run in the e2e script",
+    )
+    parser.add_argument(
+        "--cadrille-root",
+        type=Path,
+        default=Path("/ssd1/rxl/zhankaiming/AIWS/repos/cadrille"),
+        help="Cadrille repo root passed through to the e2e script",
+    )
+    parser.add_argument(
+        "--cadrille-checkpoint",
+        default="ckpt/cadrille_sft",
+        help="Checkpoint path passed through to the e2e script",
+    )
+    parser.add_argument(
+        "--cadrille-processor-path",
+        default="ckpt/Qwen2-VL-2B-Instruct",
+        help="Processor path passed through to the e2e script",
+    )
+    parser.add_argument(
         "--selection-mode",
         choices=("evaluate", "index"),
         default="evaluate",
@@ -88,6 +109,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="Cadrille n_samples for img mode",
+    )
+    parser.add_argument(
+        "--cadrille-batch-size",
+        type=int,
+        default=64,
+        help="Batch size passed to Cadrille test.py for each shard",
     )
     parser.add_argument(
         "--export-brep",
@@ -216,12 +243,23 @@ def run_modality(
             args.cadrille_runtime,
             "--cadrille-docker-image",
             args.cadrille_docker_image,
+            f"--cadrille-docker-extra-args={args.cadrille_docker_extra_args}",
+            "--cadrille-root",
+            str(args.cadrille_root),
+            "--cadrille-checkpoint",
+            args.cadrille_checkpoint,
+            "--cadrille-processor-path",
+            args.cadrille_processor_path,
             "--cadrille-mode",
             modality,
             "--cadrille-input-source",
             "mesh",
             "--cadrille-n-samples",
             str(n_samples),
+            "--cadrille-batch-size",
+            str(args.cadrille_batch_size),
+            "--cadrille-docker-gpus",
+            f"device={gpu}",
             "--selection-mode",
             args.selection_mode,
             "--sample-offset",
@@ -303,6 +341,8 @@ def main() -> None:
 
     if args.pc_n_samples <= 0 or args.img_n_samples <= 0:
         raise RuntimeError("--pc-n-samples and --img-n-samples must be > 0")
+    if args.cadrille_batch_size <= 0:
+        raise RuntimeError("--cadrille-batch-size must be > 0")
 
     records = load_sam3d_ok_records(args.sam3d_output_root)
     total = len(records)
@@ -325,6 +365,7 @@ def main() -> None:
         "modalities": modalities,
         "pc_n_samples": args.pc_n_samples,
         "img_n_samples": args.img_n_samples,
+        "cadrille_batch_size": args.cadrille_batch_size,
     }
     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[INFO] Wrote run plan: {plan_path}")

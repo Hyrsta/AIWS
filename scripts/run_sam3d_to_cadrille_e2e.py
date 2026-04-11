@@ -104,7 +104,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Cadrille data root (default: <cadrille-root>/data)",
     )
-    cad.add_argument("--cadrille-checkpoint", default="ckpt/cadrille_sft", help="Checkpoint path passed to Cadrille test.py")
+    cad.add_argument("--cadrille-checkpoint", default="ckpt/cadrille_sft", help="Checkpoint path passed to the AIWS Cadrille test wrapper")
+    cad.add_argument("--cadrille-processor-path", default="ckpt/Qwen2-VL-2B-Instruct", help="Processor path passed to the AIWS Cadrille test wrapper")
     cad.add_argument("--cadrille-mode", choices=("pc", "img"), default="pc", help="Cadrille mode")
     cad.add_argument(
         "--cadrille-n-samples",
@@ -112,6 +113,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Number of generated candidates per sample in Cadrille test.py (default: img=1, pc=5)",
     )
+    cad.add_argument("--cadrille-batch-size", type=int, default=64,
+                     help="Batch size passed to Cadrille test.py (lower is safer for GPU memory)")
     cad.add_argument(
         "--cadrille-input-source",
         choices=("mesh", "point_cloud", "multi_view"),
@@ -129,13 +132,13 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Output root for Cadrille tmp/selected outputs and pipeline summary",
     )
-    cad.add_argument("--mesh-ext", default="stl", help="Mesh extension passed to Cadrille test.py")
-    cad.add_argument("--point-cloud-exts", default="ply,pcd,xyz,txt,npz,npy", help="Pass-through to Cadrille test.py")
-    cad.add_argument("--image-exts", default="png,jpg,jpeg,bmp", help="Pass-through to Cadrille test.py")
+    cad.add_argument("--mesh-ext", default="stl", help="Mesh extension passed to the AIWS Cadrille test wrapper")
+    cad.add_argument("--point-cloud-exts", default="ply,pcd,xyz,txt,npz,npy", help="Reserved for future wrapper expansion")
+    cad.add_argument("--image-exts", default="png,jpg,jpeg,bmp", help="Reserved for future wrapper expansion")
     cad.add_argument("--export-brep", dest="export_brep", action="store_true", default=True,
-                     help="Export STEP/BRep via convert_cadquery.py (default on)")
+                     help="Export STEP/BRep via aiws_cadrille_convert_cadquery.py (default on)")
     cad.add_argument("--no-export-brep", dest="export_brep", action="store_false", help="Skip STEP/BRep export")
-    cad.add_argument("--brep-ext", default="step", help="BRep extension for convert_cadquery.py")
+    cad.add_argument("--brep-ext", default="step", help="BRep extension for aiws_cadrille_convert_cadquery.py")
     cad.add_argument("--convert-timeout-sec", type=float, default=5.0, help="Timeout per CadQuery file conversion")
 
     # Selection / safety
@@ -157,9 +160,9 @@ def parse_args() -> argparse.Namespace:
         help="When selection-mode=evaluate and best_names is missing for a sample, fallback to --selected-candidate-index",
     )
     misc.add_argument("--eval-gt-path", type=Path, default=None,
-                      help="Ground-truth path for evaluate.py (default: prepared Cadrille split)")
+                      help="Ground-truth path for aiws_cadrille_evaluate.py (default: prepared Cadrille split)")
     misc.add_argument("--eval-gt-format", choices=("mesh", "point_cloud"), default="mesh",
-                      help="Ground-truth format for evaluate.py")
+                      help="Ground-truth format for aiws_cadrille_evaluate.py")
     misc.add_argument("--eval-gt-mesh-ext", default=None,
                       help="Ground-truth mesh extension for evaluate.py (default: --mesh-ext)")
     misc.add_argument("--eval-gt-point-cloud-exts", default=None,
@@ -437,6 +440,8 @@ def main() -> None:
         )
     if args.cadrille_n_samples is not None and args.cadrille_n_samples <= 0:
         raise RuntimeError("--cadrille-n-samples must be > 0")
+    if args.cadrille_batch_size <= 0:
+        raise RuntimeError("--cadrille-batch-size must be > 0")
     if args.eval_n_points <= 0:
         raise RuntimeError("--eval-n-points must be > 0")
 
@@ -458,6 +463,12 @@ def main() -> None:
     selected_mesh_dir = cadrille_output_root / "selected_mesh"
     selected_brep_dir = cadrille_output_root / "selected_brep"
 
+    aiws_scripts_root = Path(__file__).resolve().parent
+    aiws_cadrille_test_script = aiws_scripts_root / "aiws_cadrille_test.py"
+    aiws_cadrille_convert_script = aiws_scripts_root / "aiws_cadrille_convert_cadquery.py"
+    aiws_cadrille_evaluate_script = aiws_scripts_root / "aiws_cadrille_evaluate.py"
+    container_aiws_scripts_root = Path("/workspace/aiws_scripts")
+
     cadrille_runtime = choose_cadrille_runtime(args)
     docker_mounts: list[tuple[Path, Path]] = []
     container_cadrille_root: Path | None = None
@@ -470,6 +481,7 @@ def main() -> None:
             container_cadrille_data_root,
             container_cadrille_output_root,
         ) = build_docker_mounts(cadrille_root, cadrille_data_root, cadrille_output_root)
+        docker_mounts.append((aiws_scripts_root, container_aiws_scripts_root))
 
     if not args.skip_sam3d:
         sam_cmd = [
@@ -596,6 +608,15 @@ def main() -> None:
         if checkpoint_path.is_absolute():
             checkpoint_arg = str(map_host_to_container(checkpoint_path.resolve(), docker_mounts))
 
+        processor_arg = args.cadrille_processor_path
+        processor_path = Path(args.cadrille_processor_path)
+        if processor_path.is_absolute():
+            processor_arg = str(map_host_to_container(processor_path.resolve(), docker_mounts))
+
+        test_script_arg = str(container_aiws_scripts_root / aiws_cadrille_test_script.name)
+        convert_script_arg = str(container_aiws_scripts_root / aiws_cadrille_convert_script.name)
+        evaluate_script_arg = str(container_aiws_scripts_root / aiws_cadrille_evaluate_script.name)
+
         py_exec = args.cadrille_docker_python
 
         def run_cadrille_inner(inner_cmd: list[str]) -> None:
@@ -615,6 +636,10 @@ def main() -> None:
         tmp_brep_arg = str(tmp_brep_dir)
         eval_gt_arg = str(eval_gt_host)
         checkpoint_arg = args.cadrille_checkpoint
+        processor_arg = args.cadrille_processor_path
+        test_script_arg = str(aiws_cadrille_test_script)
+        convert_script_arg = str(aiws_cadrille_convert_script)
+        evaluate_script_arg = str(aiws_cadrille_evaluate_script)
         py_exec = args.cadrille_python
 
         def run_cadrille_inner(inner_cmd: list[str]) -> None:
@@ -623,7 +648,9 @@ def main() -> None:
     # Run Cadrille inference
     test_cmd = [
         py_exec,
-        "test.py",
+        test_script_arg,
+        "--cadrille-root",
+        str(container_cadrille_root) if cadrille_runtime == "docker" else str(cadrille_root),
         "--data-path",
         cadrille_data_arg,
         "--split",
@@ -632,25 +659,30 @@ def main() -> None:
         args.cadrille_mode,
         "--checkpoint-path",
         checkpoint_arg,
+        "--processor-path",
+        processor_arg,
         "--py-path",
         tmp_py_arg,
         "--n-samples",
         str(cadrille_n_samples),
+        "--batch-size",
+        str(args.cadrille_batch_size),
         "--input-source",
         args.cadrille_input_source,
         "--mesh-ext",
         args.mesh_ext,
-        "--point-cloud-exts",
-        args.point_cloud_exts,
-        "--image-exts",
-        args.image_exts,
     ]
     run_cadrille_inner(test_cmd)
+
+    gpu_memory_path = cadrille_output_root / 'gpu_memory.json'
+    gpu_memory_summary: dict[str, Any] | None = None
+    if not args.dry_run and gpu_memory_path.exists():
+        gpu_memory_summary = json.loads(gpu_memory_path.read_text(encoding='utf-8'))
 
     # Convert CadQuery outputs to CAD meshes/BRep
     convert_cmd = [
         py_exec,
-        "convert_cadquery.py",
+        convert_script_arg,
         "--src",
         tmp_py_arg,
         "--mesh-out",
@@ -675,7 +707,7 @@ def main() -> None:
     if args.selection_mode == "evaluate":
         evaluate_cmd = [
             py_exec,
-            "evaluate.py",
+            evaluate_script_arg,
             "--gt-path",
             eval_gt_arg,
             "--gt-format",
@@ -799,6 +831,8 @@ def main() -> None:
             "tmp_mesh_dir": str(tmp_mesh_dir),
             "tmp_brep_dir": str(tmp_brep_dir) if args.export_brep else None,
             "selected_candidate_index": args.selected_candidate_index,
+            "gpu_memory_path": str(gpu_memory_path),
+            "gpu_memory": gpu_memory_summary,
             "selected_outputs": {
                 "selected_py_dir": str(selected_py_dir),
                 "selected_mesh_dir": str(selected_mesh_dir),

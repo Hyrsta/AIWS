@@ -1,6 +1,18 @@
 # Working Buffer
 
-- RXL environment: `sam3d-objects`
-- flash-attn target: local source build for `sm80` only
-- Known bad path: prebuilt wheels require `GLIBC_2.32`
-- Verification after build: `import flash_attn`, then a quick SAM3D sanity check
+- 2026-04-11 20:23 Asia/Shanghai
+  - Official Cadrille clone used for AIWS: `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+  - AIWS wrapper scripts copied to server:
+    - `/ssd1/rxl/zhankaiming/AIWS/scripts/aiws_cadrille_test.py`
+    - `/ssd1/rxl/zhankaiming/AIWS/scripts/aiws_cadrille_model.py`
+    - `/ssd1/rxl/zhankaiming/AIWS/scripts/aiws_cadrille_convert_cadquery.py`
+    - `/ssd1/rxl/zhankaiming/AIWS/scripts/aiws_cadrille_evaluate.py`
+  - Wrapper smoke outputs:
+    - IMG: `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-official-wrapper-smoke-img-20260411-202020`
+    - PC: `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-official-wrapper-smoke-pc-20260411-202101`
+  - Both wrapper smokes passed on the official repo with local `ckpt/` assets staged into the official clone.
+  - Full rerun root: `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-official-wrapper-rerun-20260411-202252`
+  - Active parent process: `run_cadrille_full_modalities_4gpu.py` on RXL
+  - Notes:
+    - `run_sam3d_to_cadrille_e2e.py` now mounts `AIWS/scripts/` into Docker and calls wrapper scripts instead of modified Cadrille repo files.
+    - `run_cadrille_full_modalities_4gpu.py` now passes through `--cadrille-root`, checkpoint, processor path, and encodes docker extra args safely.
