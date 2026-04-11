@@ -76,9 +76,9 @@
 
 从当前统计看，`misc/` 以 `multi_instance` 样本为主。
 
-### 2.4 项目结构（AIWS 在线/离线划分与离线 CAD 管线）
+### 2.4 AIWS 项目结构
 
-**AIWS 分为 online pipeline 和 offline pipeline 两部分**，而本 SOP 记录的 CAD 重建管线就是其中的 **offline pipeline**。
+AIWS 包含 online pipeline 和 offline pipeline 两部分。本文档聚焦于 offline CAD 重建管线。
 
 **AIWS 项目**
 

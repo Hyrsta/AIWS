@@ -76,9 +76,9 @@ The currently identified `misc/` cases include 23 `multi_instance` samples, 0 `m
 
 In the current data, `misc/` is dominated by `multi_instance` samples.
 
-### 2.4 Project structure (AIWS online/offline split and the offline CAD pipeline)
+### 2.4 AIWS project structure
 
-**AIWS is split into an online pipeline and an offline pipeline**, and the CAD reconstruction pipeline documented by this SOP is the **offline pipeline**.
+AIWS has two parts: an online pipeline and an offline pipeline. This SOP focuses on the offline CAD reconstruction pipeline.
 
 **AIWS project**
 

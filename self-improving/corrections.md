@@ -113,6 +113,10 @@
   Type: documentation
   Context: Leonardo rejected a model-first phrasing in the docs and asked for purpose-first explanation
   Confirmed: yes
+- [22:03] Avoid overloaded parenthetical section titles like `Project structure (AIWS online/offline split and the offline CAD pipeline)`; prefer short headings such as `AIWS project structure`, followed by a plain direct opening sentence
+  Type: documentation
+  Context: Leonardo explicitly called out the heading and opening sentence as bad wording
+  Confirmed: yes
 - [19:38] In the SOP structure, SAM3D and Cadrille should be framed as parallel modules. If there is `SAM3D Environment Setup` and `SAM3D Inference Workflow`, there should also be `Cadrille Environment Setup` and `Cadrille Inference Workflow`
   Type: documentation
   Context: Leonardo rejected the old `Continuing from SAM3D to Cadrille` framing because it made Cadrille look subordinate instead of parallel
