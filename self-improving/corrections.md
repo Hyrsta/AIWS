@@ -109,3 +109,7 @@
   Type: documentation
   Context: Leonardo corrected the Cadrille description and pointed to `Cadrille 方法研究.pptx` as the reference framing
   Confirmed: yes
+- [19:32] When explaining AIWS online/offline structure, explain what the online pipeline is used for and what the offline pipeline is used for before listing the model stacks
+  Type: documentation
+  Context: Leonardo rejected a model-first phrasing in the docs and asked for purpose-first explanation
+  Confirmed: yes

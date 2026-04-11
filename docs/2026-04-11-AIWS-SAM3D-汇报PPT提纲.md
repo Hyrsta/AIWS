@@ -84,14 +84,15 @@ aiws5.2-usable/
 
 ### 建议内容
 - AIWS 仓库：`https://github.com/Hyrsta/AIWS`
-  - 结构：AIWS 分为在线管线与离线管线
-  - 在线视觉管线：`YOLOv11-seg + GenPose++ + FoundationPose`
-  - 离线 CAD 管线：`SAM3D + Cadrille`
-- 在线部分职责：
+- 在线管线, 用于现场焊接阶段：
+  - 作用：针对真实工件完成识别、位姿估计与基于 CAD 的对齐，支撑后续定位与焊接路径规划
+  - 模型栈：`YOLOv11-seg + GenPose++ + FoundationPose`
   - `YOLOv11-seg`：识别与分割
   - `GenPose++`：粗尺寸 / 粗位姿估计
   - `FoundationPose`：基于 CAD 模型的精对齐
-- 离线部分职责：
+- 离线管线, 用于部署前阶段：
+  - 作用：构建 CAD 模型库
+  - 模型栈：`SAM3D + Cadrille`
   - `SAM3D`：离线 RGB 图像 → 网格重建
   - `Cadrille`：从重建得到的网格出发, PC 模式从网格采样点云，IMG 模式从网格渲染 4 视图 RGB 图像，随后再做 CAD 重建
 - 官方仓库，SAM3D：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
@@ -107,7 +108,7 @@ aiws5.2-usable/
   - `scripts/run_cadrille_full_modalities_4gpu.py`
 
 ### 要强调的点
-- AIWS 要先表述为在线 + 离线两部分，并明确两部分各自使用的模型
+- 先讲清楚在线和离线各自是干什么的，再讲每一部分用了什么模型
 - 这次汇报讲的是离线 CAD 管线，但它的产出会服务在线视觉管线中的后续对齐与定位
 
 ### 口头补充
