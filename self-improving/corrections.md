@@ -141,3 +141,7 @@
   Type: workflow
   Context: Leonardo asked to make the naming convention between Cadrille and SAM3D consistent and explicitly rejected the `aiws_` prefix for script names
   Confirmed: yes
+- [20:43] Do not use symlinks as the steady-state cleanup for this AIWS integration; stop in-flight runs and relaunch from the cleaned final layout instead
+  Type: workflow
+  Context: Leonardo rejected my temporary symlink compatibility approach and asked for a clean stop-and-rerun instead
+  Confirmed: yes
