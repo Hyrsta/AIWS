@@ -74,7 +74,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cadrille-root",
         type=Path,
-        default=Path("/ssd1/rxl/zhankaiming/cadrille-official-col14m"),
+        default=Path("/ssd1/rxl/zhankaiming/AIWS/repos/cadrille"),
         help="Cadrille repo root passed through to the e2e script",
     )
     parser.add_argument(

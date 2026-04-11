@@ -23,7 +23,7 @@ This SOP answers three questions:
 - Server alias: `RXL`
 - Project root: `/ssd1/rxl/zhankaiming/AIWS`
 - SAM3D repo: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
-- Cadrille repo: `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+- Cadrille repo: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
 - Dataset root: `/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable`
 - SAM3D Python env: `/home/rxl/anaconda3/envs/sam3d-objects`
 
@@ -97,7 +97,7 @@ In the current data, `misc/` is dominated by `multi_instance` samples.
 
 - SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
     - the main upstream/default entry points used here are `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
-- Cadrille: `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+- Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
     - the main upstream/default scripts used here are `test.py`, `evaluate.py`, and `convert_cadquery.py`
 
 **AIWS wrapper scripts used around the official Cadrille repo**
@@ -352,9 +352,9 @@ Resume behavior:
 
 Current Cadrille repo on `RXL`:
 
-- `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
 
-The old modified repo under `AIWS/repos/cadrille` is no longer the active inference baseline. The current baseline keeps the upstream repo clean and applies AIWS-specific behavior through wrapper scripts.
+The current baseline uses the official upstream repo at `AIWS/repos/cadrille`, while AIWS-specific behavior is kept in wrapper scripts rather than patched directly into the upstream codebase.
 
 Current AIWS-side orchestration scripts:
 
@@ -374,7 +374,7 @@ Based on the previously used environment-creation history, a usable Cadrille run
 Recommended current repo-tree layout on `RXL`:
 
 ```text
-/ssd1/rxl/zhankaiming/cadrille-official-col14m/
+/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/
 ├── ckpt/
 │   ├── Qwen2-VL-2B-Instruct/
 │   ├── cadrille_rl/
@@ -423,8 +423,8 @@ scp cadrille_linux_amd64.tar rxl@<host>:/tmp/
 
 4. Copy those staged assets into:
 
-- `/ssd1/rxl/zhankaiming/cadrille-official-col14m/ckpt/`
-- `/ssd1/rxl/zhankaiming/cadrille-official-col14m/data/`
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/ckpt/`
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/data/`
 
 This is the same operational idea as the earlier note, but the active baseline is now the official upstream clone plus AIWS wrapper scripts, rather than the old modified repo copy.
 

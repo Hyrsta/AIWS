@@ -1,0 +1,6 @@
+[submodule "repos/sam-3d-objects"]
+	path = repos/sam-3d-objects
+	url = https://github.com/facebookresearch/sam-3d-objects.git
+[submodule "repos/cadrille"]
+	path = repos/cadrille
+	url = https://github.com/col14m/cadrille.git

@@ -98,7 +98,7 @@ Project structure: AIWS online/offline split and the offline CAD pipeline
   - `Cadrille`: start from the reconstructed mesh, then either sample point clouds from that mesh for PC mode or render 4-view RGB images from that mesh for IMG mode, before CAD reconstruction
 - upstream repo, SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
   - default entry points used: `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
-- upstream repo, Cadrille: `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+- upstream repo, Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
   - default scripts used: `test.py`, `evaluate.py`, `convert_cadquery.py`
 - AIWS wrapper scripts used around the official Cadrille repo:
   - `scripts/cadrille_test_wrapper.py`

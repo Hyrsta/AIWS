@@ -23,7 +23,7 @@
 - 服务器别名：`RXL`
 - 项目根目录：`/ssd1/rxl/zhankaiming/AIWS`
 - SAM3D 仓库：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
-- Cadrille 仓库：`/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+- Cadrille 仓库：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
 - 数据集目录：`/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable`
 - SAM3D Python 环境：`/home/rxl/anaconda3/envs/sam3d-objects`
 
@@ -97,7 +97,7 @@
 
 - SAM3D：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
     - 官方/默认入口主要包括：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
-- Cadrille：`/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+- Cadrille：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
     - 当前直接使用的官方/默认脚本主要包括：`test.py`、`evaluate.py`、`convert_cadquery.py`
 
 **围绕官方 Cadrille 运行的 AIWS wrapper 脚本**
@@ -351,9 +351,9 @@ done
 
 `RXL` 上当前使用的 Cadrille 仓库：
 
-- `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
 
-`AIWS/repos/cadrille` 下那份旧的改动版仓库已经不再是当前推理基线。现在的基线做法是保持官方仓库干净，把 AIWS 特有逻辑放进 wrapper 脚本。
+当前基线使用的是 `AIWS/repos/cadrille` 这份官方上游仓库，AIWS 特有逻辑则通过 wrapper 脚本承载，而不是直接改写上游代码。
 
 AIWS 侧当前使用的编排脚本：
 
@@ -373,7 +373,7 @@ AIWS 侧当前使用的编排脚本：
 当前建议在 `RXL` 上采用这样的仓库树：
 
 ```text
-/ssd1/rxl/zhankaiming/cadrille-official-col14m/
+/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/
 ├── ckpt/
 │   ├── Qwen2-VL-2B-Instruct/
 │   ├── cadrille_rl/
@@ -422,8 +422,8 @@ scp cadrille_linux_amd64.tar rxl@<host>:/tmp/
 
 4. 再把这些资源复制到当前工作区：
 
-- `/ssd1/rxl/zhankaiming/cadrille-official-col14m/ckpt/`
-- `/ssd1/rxl/zhankaiming/cadrille-official-col14m/data/`
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/ckpt/`
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/data/`
 
 这和之前那份历史记录的操作思路是一致的，只是当前激活路径已经变成“官方上游仓库 + AIWS wrapper 脚本”，而不是旧的改动版仓库。
 

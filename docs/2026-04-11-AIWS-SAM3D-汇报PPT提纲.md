@@ -97,7 +97,7 @@ aiws5.2-usable/
   - `Cadrille`：从重建得到的网格出发, PC 模式从网格采样点云，IMG 模式从网格渲染 4 视图 RGB 图像，随后再做 CAD 重建
 - 官方仓库，SAM3D：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
   - 当前直接使用的默认入口：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
-- 官方仓库，Cadrille：`/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+- 官方仓库，Cadrille：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
   - 当前直接使用的默认脚本：`test.py`、`evaluate.py`、`convert_cadquery.py`
 - 围绕官方 Cadrille 运行的 AIWS wrapper 脚本：
   - `scripts/cadrille_test_wrapper.py`

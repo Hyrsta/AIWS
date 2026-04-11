@@ -95,7 +95,7 @@ def parse_args() -> argparse.Namespace:
     cad.add_argument(
         "--cadrille-root",
         type=Path,
-        default=Path("/ssd1/rxl/zhankaiming/cadrille-official-col14m"),
+        default=Path("/ssd1/rxl/zhankaiming/AIWS/repos/cadrille"),
         help="Cadrille repository root",
     )
     cad.add_argument(
