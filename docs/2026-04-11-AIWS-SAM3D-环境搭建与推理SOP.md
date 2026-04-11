@@ -140,6 +140,8 @@
 
 ## 3.3 创建 Conda 环境
 
+下面这些命令是干净的从零建环境路径。
+
 在 `RXL` 上执行：
 
 ```bash
@@ -157,6 +159,8 @@ pip install -e '.[inference]'
 
 ./patching/hydra
 ```
+
+但昨天真正验证通过的成功恢复路径并不是完整重建环境，而是**保留已有的** `/home/rxl/anaconda3/envs/sam3d-objects`，然后在这个环境里做 import smoke test 验证。
 
 ## 3.4 下载或补齐 checkpoints
 
@@ -177,7 +181,11 @@ mv checkpoints/${TAG}-download/checkpoints checkpoints/${TAG}
 rm -rf checkpoints/${TAG}-download
 ```
 
+但昨天真正验证通过的是**restore 路径**，不是服务器直连 HuggingFace：因为 `RXL` 无法访问 `huggingface.co`，所以最终是把本地旧备份中的 checkpoint 恢复到 `checkpoints/hf`，并补上本地 `pipeline.yaml`。
+
 ## 3.5 补齐本地依赖资源
+
+这一步就是昨天成功跑通时**直接需要且已验证**的部分。
 
 SAM3D 当前稳定运行依赖以下资源齐全：
 
@@ -192,6 +200,8 @@ SAM3D 当前稳定运行依赖以下资源齐全：
 - MoGe: `/ssd1/rxl/zhankaiming/AIWS/models/moge-vitl/model-real.pt`
 - DINO cache: `/home/rxl/.cache/torch/hub/facebookresearch_dinov2_main`
 - DINO checkpoint: `/home/rxl/.cache/torch/hub/checkpoints/dinov2_vitl14_reg4_pretrain.pth`
+
+昨天 `python demo.py` 成功跑通之前，恢复的就是这些本地资源。
 
 ## 3.6 打开 `flash_attn`
 

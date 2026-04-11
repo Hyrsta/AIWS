@@ -140,6 +140,8 @@ Current production baseline commit:
 
 ## 3.3 Create the Conda environment
 
+The commands below are the clean environment-creation path.
+
 On `RXL`:
 
 ```bash
@@ -157,6 +159,8 @@ pip install -e '.[inference]'
 
 ./patching/hydra
 ```
+
+What was actually verified during the successful recovery run yesterday was slightly different: the existing environment `/home/rxl/anaconda3/envs/sam3d-objects` was kept and validated with import smoke tests, rather than rebuilt from scratch.
 
 ## 3.4 Download or restore checkpoints
 
@@ -177,7 +181,11 @@ mv checkpoints/${TAG}-download/checkpoints checkpoints/${TAG}
 rm -rf checkpoints/${TAG}-download
 ```
 
+What was actually verified during the successful recovery run yesterday was the restore path, not the direct HuggingFace path: `RXL` could not reach `huggingface.co`, so a local backup bundle was restored into `checkpoints/hf`, and a local `pipeline.yaml` was put in place.
+
 ## 3.5 Restore local runtime assets
+
+This is the part that was directly required and verified in the successful run.
 
 A stable SAM3D runtime requires the following assets to be present:
 
@@ -193,6 +201,8 @@ Key paths:
 - MoGe: `/ssd1/rxl/zhankaiming/AIWS/models/moge-vitl/model-real.pt`
 - DINO cache: `/home/rxl/.cache/torch/hub/facebookresearch_dinov2_main`
 - DINO checkpoint: `/home/rxl/.cache/torch/hub/checkpoints/dinov2_vitl14_reg4_pretrain.pth`
+
+These exact local assets were restored before the successful `python demo.py` run on `RXL`.
 
 ## 3.6 Enable `flash_attn`
 
