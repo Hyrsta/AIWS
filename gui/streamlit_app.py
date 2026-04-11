@@ -5,6 +5,7 @@ import json
 import os
 from typing import Any
 
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 
@@ -78,6 +79,113 @@ def render_job_table(jobs: list[dict[str, Any]]) -> None:
             }
         )
     st.dataframe(rows, use_container_width=True)
+
+
+def render_mesh_preview(mesh_payload: dict[str, Any]) -> None:
+    vertices = mesh_payload.get("vertices") or []
+    faces = mesh_payload.get("faces") or []
+    if not vertices or not faces:
+        st.warning("No previewable mesh data returned")
+        return
+
+    x = [vertex[0] for vertex in vertices]
+    y = [vertex[1] for vertex in vertices]
+    z = [vertex[2] for vertex in vertices]
+    i = [face[0] for face in faces]
+    j = [face[1] for face in faces]
+    k = [face[2] for face in faces]
+
+    fig = go.Figure(
+        data=[
+            go.Mesh3d(
+                x=x,
+                y=y,
+                z=z,
+                i=i,
+                j=j,
+                k=k,
+                color="#4F8BF9",
+                opacity=0.9,
+                flatshading=True,
+                lighting={"ambient": 0.55, "diffuse": 0.7, "roughness": 0.8},
+            )
+        ]
+    )
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        scene={"aspectmode": "data"},
+        height=560,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_preview_browser(*, summary: dict[str, Any], ssh_host: str, root: str, state_prefix: str) -> None:
+    st.subheader("3D mesh preview")
+    st.caption("V1 preview supports remote STL meshes, typically from selected_mesh or tmp_mesh")
+
+    modalities = summary.get("modalities", {})
+    mode_options = [mode for mode in ("pc", "img") if modalities.get(mode, {}).get("exists")]
+    if not mode_options:
+        st.info("No previewable modalities found")
+        return
+
+    mode_key = f"{state_prefix}_mode"
+    shard_key = f"{state_prefix}_shard"
+    folder_key = f"{state_prefix}_folder"
+    dir_key = f"{state_prefix}_directory"
+    files_key = f"{state_prefix}_files"
+    mesh_key = f"{state_prefix}_mesh"
+    file_key = f"{state_prefix}_file"
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        selected_mode = st.selectbox("Preview mode", mode_options, key=mode_key)
+    shard_options = [shard["name"] for shard in modalities.get(selected_mode, {}).get("shards", [])]
+    with col2:
+        selected_shard = st.selectbox("Preview shard", shard_options, key=shard_key)
+    with col3:
+        selected_folder = st.selectbox("Mesh folder", ["selected_mesh", "tmp_mesh"], key=folder_key)
+
+    current_directory = f"{root.rstrip('/')}/{selected_mode}/{selected_shard}/{selected_folder}"
+    if st.session_state.get(dir_key) != current_directory:
+        st.session_state[dir_key] = current_directory
+        st.session_state.pop(files_key, None)
+        st.session_state.pop(mesh_key, None)
+
+    st.code(current_directory)
+
+    if st.button("Load mesh file list", key=f"{state_prefix}_load_files"):
+        try:
+            payload = api_get("/preview/files", ssh_host=ssh_host, directory=current_directory, pattern="*.stl")
+            st.session_state[files_key] = payload["files"]
+        except Exception as exc:  # pragma: no cover - UI only
+            st.error(exc)
+
+    files = st.session_state.get(files_key, [])
+    if not files:
+        st.info("Load a file list to browse meshes in this folder")
+        return
+
+    selected_file = st.selectbox("Mesh file", files, key=file_key)
+    max_faces = st.slider("Preview max faces", min_value=1000, max_value=40000, value=15000, step=1000, key=f"{state_prefix}_max_faces")
+
+    if st.button("Render 3D preview", key=f"{state_prefix}_render_preview"):
+        mesh_path = f"{current_directory.rstrip('/')}/{selected_file}"
+        try:
+            st.session_state[mesh_key] = api_get("/preview/mesh", ssh_host=ssh_host, path=mesh_path, max_faces=max_faces)
+        except Exception as exc:  # pragma: no cover - UI only
+            st.error(exc)
+
+    mesh_payload = st.session_state.get(mesh_key)
+    if mesh_payload:
+        meta_cols = st.columns(4)
+        meta_cols[0].metric("Preview faces", mesh_payload.get("face_count", 0))
+        meta_cols[1].metric("Original faces", mesh_payload.get("original_face_count", 0))
+        meta_cols[2].metric("Vertices", mesh_payload.get("vertex_count", 0))
+        extents = mesh_payload.get("extents") or [0, 0, 0]
+        meta_cols[3].metric("Extent max", round(max(extents), 4) if extents else 0)
+        st.caption(mesh_payload.get("path", ""))
+        render_mesh_preview(mesh_payload)
 
 
 tab_full, tab_single, tab_jobs, tab_outputs = st.tabs(
@@ -263,15 +371,22 @@ with tab_outputs:
         try:
             summary = api_get("/outputs/summary", ssh_host=ssh_host, root=root)
             st.session_state["manual_summary"] = summary
+            st.session_state["manual_summary_ssh_host"] = ssh_host
+            st.session_state["manual_summary_root"] = root
         except Exception as exc:  # pragma: no cover - UI only
             st.error(exc)
 
     if "manual_summary" in st.session_state:
         st.json({"root": st.session_state["manual_summary"].get("root")})
         render_job_summary(st.session_state["manual_summary"])
+        render_preview_browser(
+            summary=st.session_state["manual_summary"],
+            ssh_host=st.session_state.get("manual_summary_ssh_host", defaults["ssh_host"]),
+            root=st.session_state.get("manual_summary_root", st.session_state["manual_summary"].get("root", "")),
+            state_prefix="manual_preview",
+        )
 
 st.divider()
 st.caption(
-    "V1 is orchestration-first: launch runs, monitor jobs, inspect shard outputs. "
-    "Next step can be STL/STEP preview in the Outputs tab."
+    "Current GUI can launch runs, monitor jobs, inspect shard outputs, and preview remote STL meshes."
 )

@@ -12,12 +12,17 @@ V1 uses:
 - Track background jobs by remote PID + status file
 - Tail job logs from the GUI
 - Summarize output roots and per-shard progress
+- Preview remote **STL meshes interactively** in the Outputs tab
 
 ## Current scope
 
-This first cut is **orchestration-first**, not geometry-first.
-It focuses on starting jobs, monitoring progress, and inspecting shard outputs.
-A real 3D STL/STEP viewer can be added next in the Outputs tab.
+This first cut is still **orchestration-first**, but it now includes a practical
+STL viewer for remote results. The current preview path focuses on:
+
+- `selected_mesh/*.stl`
+- `tmp_mesh/*.stl`
+
+STEP preview is still a later step.
 
 ## File layout
 
@@ -66,9 +71,18 @@ export AIWS_GUI_BACKEND=http://127.0.0.1:8000
 - Current SAM3D output root defaults to:
   `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
 
+## Current preview implementation
+
+- Backend lists remote mesh files over SSH
+- Backend reads the selected remote STL file and converts it to a JSON mesh payload
+- Streamlit renders it with `Plotly Mesh3d`
+
+Large meshes are reduced to a configurable preview face budget before rendering.
+
 ## Next recommended step
 
-Add **STL/STEP preview** in the Outputs tab, likely with one of:
-- `pyvista` + Streamlit embedding
-- `trimesh` + Plotly mesh rendering
-- or a small Three.js panel if we later want a richer browser-side viewer
+If we want a richer viewer after this, the next good upgrades are:
+- side-by-side input/output comparison
+- candidate switching (`tmp_mesh` vs `selected_mesh`)
+- STEP/BRep preview pathway
+- a browser-side Three.js viewer for richer interaction

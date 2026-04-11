@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import shlex
 import subprocess
@@ -9,7 +10,9 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
+import numpy as np
 from pydantic import BaseModel, Field
+import trimesh
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
@@ -191,6 +194,31 @@ def get_output_summary(
     root: str = Query(..., min_length=1),
 ) -> dict[str, Any]:
     return summarize_output_root(ssh_host, root)
+
+
+@app.get("/preview/files")
+def get_preview_files(
+    ssh_host: str = Query(DEFAULT_REMOTE_HOST),
+    directory: str = Query(..., min_length=1),
+    pattern: str = Query("*.stl", min_length=1),
+) -> dict[str, Any]:
+    return {
+        "ssh_host": ssh_host,
+        "directory": directory,
+        "pattern": pattern,
+        "files": list_remote_files(ssh_host, directory, pattern),
+    }
+
+
+@app.get("/preview/mesh")
+def get_preview_mesh(
+    ssh_host: str = Query(DEFAULT_REMOTE_HOST),
+    path: str = Query(..., min_length=1),
+    max_faces: int = Query(15000, ge=100, le=100000),
+) -> dict[str, Any]:
+    mesh_bytes = read_remote_file_bytes(ssh_host, path)
+    mesh = load_mesh_from_bytes(mesh_bytes, path)
+    return mesh_to_payload(mesh, path=path, max_faces=max_faces)
 
 
 def now_ts() -> float:
@@ -435,6 +463,96 @@ def run_ssh_command(ssh_host: str, command: str, check: bool = True) -> subproce
             },
         )
     return result
+
+
+def read_remote_file_bytes(ssh_host: str, path: str) -> bytes:
+    result = subprocess.run(
+        ["ssh", ssh_host, f"cat {shlex.quote(path)}"],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Failed to read remote file",
+                "ssh_host": ssh_host,
+                "path": path,
+                "returncode": result.returncode,
+                "stderr": result.stderr.decode("utf-8", errors="ignore"),
+            },
+        )
+    return result.stdout
+
+
+def list_remote_files(ssh_host: str, directory: str, pattern: str) -> list[str]:
+    source = f"""
+import fnmatch
+import json
+import os
+
+directory = {json.dumps(directory)}
+pattern = {json.dumps(pattern)}
+if not os.path.isdir(directory):
+    print(json.dumps([]))
+else:
+    files = [name for name in sorted(os.listdir(directory)) if fnmatch.fnmatch(name, pattern)]
+    print(json.dumps(files))
+"""
+    result = subprocess.run(["ssh", ssh_host, "python3", "-"], input=source, text=True, capture_output=True)
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Failed to list remote files",
+                "ssh_host": ssh_host,
+                "directory": directory,
+                "stderr": result.stderr,
+            },
+        )
+    return json.loads(result.stdout or "[]")
+
+
+def load_mesh_from_bytes(data: bytes, path: str) -> trimesh.Trimesh:
+    file_type = Path(path).suffix.lower().lstrip(".") or "stl"
+    loaded = trimesh.load(io.BytesIO(data), file_type=file_type, force="mesh")
+
+    if isinstance(loaded, trimesh.Scene):
+        mesh = loaded.dump(concatenate=True)
+    else:
+        mesh = loaded
+
+    if isinstance(mesh, list):
+        mesh = trimesh.util.concatenate([part for part in mesh if isinstance(part, trimesh.Trimesh)])
+
+    if not isinstance(mesh, trimesh.Trimesh) or mesh.vertices is None or mesh.faces is None:
+        raise HTTPException(status_code=400, detail=f"Unsupported mesh payload for preview: {path}")
+    if len(mesh.faces) == 0:
+        raise HTTPException(status_code=400, detail=f"Mesh has no faces: {path}")
+    return mesh
+
+
+def mesh_to_payload(mesh: trimesh.Trimesh, *, path: str, max_faces: int) -> dict[str, Any]:
+    vertices = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.faces)
+    original_face_count = int(len(faces))
+
+    if len(faces) > max_faces:
+        sampled_ids = np.linspace(0, len(faces) - 1, num=max_faces, dtype=int)
+        faces = faces[sampled_ids]
+        used_vertices, remapped = np.unique(faces.reshape(-1), return_inverse=True)
+        vertices = vertices[used_vertices]
+        faces = remapped.reshape(-1, faces.shape[1])
+
+    return {
+        "path": path,
+        "vertex_count": int(len(vertices)),
+        "face_count": int(len(faces)),
+        "original_face_count": original_face_count,
+        "bounds": mesh.bounds.tolist() if mesh.bounds is not None else None,
+        "extents": mesh.extents.tolist() if mesh.extents is not None else None,
+        "vertices": vertices.astype(float).tolist(),
+        "faces": faces.astype(int).tolist(),
+    }
 
 
 def read_remote_tail(ssh_host: str, log_path: str, tail_lines: int) -> str:
