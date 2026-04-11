@@ -129,6 +129,10 @@
   Type: naming
   Context: Leonardo rejected `build_aiws52...`, `generate_aiws52...`, and similar script naming
   Confirmed: yes
+- [22:58] When archiving the modified Cadrille repo, use a descriptive backup name like `cadrille-aiws-modified-...`, not a vague label like `aiws-fork`.
+  Type: naming
+  Context: Leonardo said `cadrille-aiws-fork-...` was not representative enough
+  Confirmed: yes
 - [19:38] In the SOP structure, SAM3D and Cadrille should be framed as parallel modules. If there is `SAM3D Environment Setup` and `SAM3D Inference Workflow`, there should also be `Cadrille Environment Setup` and `Cadrille Inference Workflow`
   Type: documentation
   Context: Leonardo rejected the old `Continuing from SAM3D to Cadrille` framing because it made Cadrille look subordinate instead of parallel
