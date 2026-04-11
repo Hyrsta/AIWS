@@ -37,3 +37,7 @@
   Type: documentation
   Context: Leonardo asked to simplify the dataset story for the docs and presentation
   Confirmed: yes
+- [16:16] When explaining `misc/` in the AIWS docs, say it is excluded mainly because of multi-instance labels and note that it may be fixed and reused later
+  Type: documentation
+  Context: Leonardo asked to clarify why `misc/` is not used in the current formal pipeline
+  Confirmed: yes

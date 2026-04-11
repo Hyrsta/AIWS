@@ -64,11 +64,13 @@ In this structure:
 - `NEW`: depth stored as EXR
 - `misc/`: special samples such as multi-instance, multi-label, or unannotated cases
 
+The current formal pipeline does not include `misc/` mainly because many of those samples contain **multi-instance labels**. The present main path is organized around cleaner single-instance cases, so those samples likely need future fixes in multi-instance parsing or instance splitting before they can be safely folded into the batch pipeline.
+
 ### 2.4 Which directory to use in future runs
 
 - **For SAM3D / Cadrille runs**: use `aiws5.2-usable/`
 - **For annotation truth**: use `isat_annotations/`
-- **For excluded special cases**: inspect `misc/`
+- **For excluded cases that may be fixed later**: inspect `misc/`
 
 ---
 

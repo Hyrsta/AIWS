@@ -86,6 +86,8 @@
 <li><code>multi_label/</code>：一张图中有多个不同类别</li>
 <li><code>unannotated_images/</code>：有图像但无标注</li>
 </ul>
+<p>当前没有把 <code>misc/</code> 数据纳入正式主实验，主要原因是这部分样本里以 <strong>multi-instance 标注</strong> 为主，而当前 SAM3D / Cadrille 主流程默认处理的是更干净的单实例样本。若直接并入，会给标注解析、实例对应和后续批处理带来额外不确定性。</p>
+<p>因此，<code>misc/</code> 更准确地说是<strong>暂时未纳入当前正式口径</strong>，并不是永久废弃。后续如果补齐多实例样本的解析、拆分或主目标选择策略，这部分数据仍然可以进一步修复并重新利用。</p>
 <p>因此，这次汇报里可以把数据集整理概括为：<strong>把原始平铺资源池整理成了统一的 <code>aiws5.2-usable/</code> 实验结构。</strong></p>
 <h3 id="23-rxl">2.3 运行服务器（RXL）</h3>
 <ul>
