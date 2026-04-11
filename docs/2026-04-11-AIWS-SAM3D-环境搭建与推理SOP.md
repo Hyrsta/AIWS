@@ -358,7 +358,68 @@ AIWS 侧当前使用的编排脚本：
 - `evaluate.py`
 - `convert_cadquery.py`
 
-## 5.2 RXL 上当前验证通过的运行方式
+## 5.2 Cadrille 依赖资源
+
+结合之前的建环境历史，Cadrille 可用环境并不只是把仓库放到服务器上，还需要把模型资源一并按本地路径准备好。
+
+当前建议在 `RXL` 上采用这样的仓库树：
+
+```text
+/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/
+├── ckpt/
+│   ├── Qwen2-VL-2B-Instruct/
+│   ├── cadrille_rl/
+│   └── cadrille_sft/
+├── data/
+│   └── ...
+├── test.py
+├── evaluate.py
+└── convert_cadquery.py
+```
+
+之前实际用过的关键资源包括：
+
+- `Qwen2-VL-2B-Instruct`
+- Cadrille RL 权重：`ckpt/cadrille_rl`
+- Cadrille SFT 权重：`ckpt/cadrille_sft`
+- 可选评估数据：`data/` 下的测试集资源
+
+对当前 AIWS 工作流来说，关键点是：**在正式推理前，把 Cadrille 依赖资源全部提前落到本地仓库树里**。
+
+## 5.3 历史建环境路径，按当前工作区改写
+
+之前的 Cadrille 环境是通过“在另一台网络更稳定的机器准备好，再拷到服务器”的方式搭起来的。这段历史仍然有参考价值，但现在应该改写成面向当前 AIWS 工作区的表述。
+
+当前建议改写为：
+
+1. 在网络稳定的机器上先准备 Docker 镜像：
+
+```bash
+docker build -t cadrille:latest .
+```
+
+2. 如果服务器侧不适合直接 build / pull，则导出并传到服务器：
+
+```bash
+docker save -o cadrille_linux_amd64.tar cadrille:latest
+scp cadrille_linux_amd64.tar rxl@<host>:/tmp/
+```
+
+3. 在网络稳定的机器上下载所需模型资源，并按当前仓库结构整理到：
+
+- `ckpt/Qwen2-VL-2B-Instruct`
+- `ckpt/cadrille_rl`
+- `ckpt/cadrille_sft`
+- 如有需要，再放入 `data/` 下的数据资源
+
+4. 再把这些资源复制到当前工作区：
+
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/ckpt/`
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/data/`
+
+这和之前那份历史记录的操作思路是一致的，只是路径已经统一改写成当前 AIWS 工作区的形式。
+
+## 5.4 RXL 上当前验证通过的运行方式
 
 当前稳定跑通的生产路径里，**Cadrille 是与 SAM3D 并列的独立模块**，不是一个顺手接上的附属后处理步骤。
 
@@ -368,8 +429,15 @@ AIWS 侧当前使用的编排脚本：
 - Docker 镜像使用 `cadrille:latest`
 - 保持**一个 shard 严格绑定一张 GPU**
 - IMG 模式额外加 `--ipc=host --shm-size=16g`
+- 运行时优先使用本地已准备好的模型资源，而不是临时在线下载
 
-## 5.3 AIWS 内部的数据输入输出约定
+如果 Docker 镜像是 tar 包传过去的，可在 `RXL` 上执行：
+
+```bash
+docker load -i /tmp/cadrille_linux_amd64.tar
+```
+
+## 5.5 AIWS 内部的数据输入输出约定
 
 在 AIWS 离线管线里，Cadrille 接收的是 SAM3D 重建出来的网格，但在文档结构上应被视为有自己输入准备和输出结果的并列模块。
 

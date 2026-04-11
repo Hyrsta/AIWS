@@ -117,3 +117,7 @@
   Type: documentation
   Context: Leonardo rejected the old `Continuing from SAM3D to Cadrille` framing because it made Cadrille look subordinate instead of parallel
   Confirmed: yes
+- [19:42] When Leonardo provides historical setup notes, fold them into the docs but rewrite them to match the current workspace paths, terminology, and current operational framing instead of copying the old standalone wording
+  Type: documentation
+  Context: Leonardo pointed to `Cadrille Env & Run Cmd.md` as history for the Cadrille environment and asked that it be adapted to the current AIWS workspace
+  Confirmed: yes

@@ -359,7 +359,68 @@ Current upstream/default Cadrille entry points used in this workflow:
 - `evaluate.py`
 - `convert_cadquery.py`
 
-## 5.2 Validated runtime mode on RXL
+## 5.2 Required Cadrille assets
+
+Based on the previously used environment-creation history, a usable Cadrille runtime is not just the repo itself. It also needs the required model assets staged locally.
+
+Recommended current repo-tree layout on `RXL`:
+
+```text
+/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/
+├── ckpt/
+│   ├── Qwen2-VL-2B-Instruct/
+│   ├── cadrille_rl/
+│   └── cadrille_sft/
+├── data/
+│   └── ...
+├── test.py
+├── evaluate.py
+└── convert_cadquery.py
+```
+
+The historically used assets were:
+
+- `Qwen2-VL-2B-Instruct`
+- Cadrille RL weights: `ckpt/cadrille_rl`
+- Cadrille SFT weights: `ckpt/cadrille_sft`
+- optional evaluation dataset assets under `data/`
+
+For the current AIWS workflow, the critical point is: **all required Cadrille assets should be staged locally under the repo tree before inference starts**.
+
+## 5.3 Historical bootstrap path, adapted to the current workspace
+
+The earlier Cadrille environment was bootstrapped by preparing artifacts on another machine and then copying them to the server. That history is still useful, but the paths should now be interpreted relative to the current AIWS workspace.
+
+Recommended adaptation:
+
+1. On a machine with stable network access, prepare the Docker image:
+
+```bash
+docker build -t cadrille:latest .
+```
+
+2. If the server cannot build or pull reliably, export and transfer the image:
+
+```bash
+docker save -o cadrille_linux_amd64.tar cadrille:latest
+scp cadrille_linux_amd64.tar rxl@<host>:/tmp/
+```
+
+3. Download required model assets on the network-accessible machine and stage them into the current repo layout:
+
+- `ckpt/Qwen2-VL-2B-Instruct`
+- `ckpt/cadrille_rl`
+- `ckpt/cadrille_sft`
+- optional datasets under `data/`
+
+4. Copy those staged assets into:
+
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/ckpt/`
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/data/`
+
+This is the same operational idea as the earlier note, but rewritten for the current AIWS workspace instead of the old standalone Cadrille paths.
+
+## 5.4 Validated runtime mode on RXL
 
 The currently validated production path uses **Cadrille as a parallel module with its own runtime**, not as a minor post-processing add-on.
 
@@ -369,8 +430,15 @@ In practice, the current stable setup on `RXL` is:
 - use Docker image `cadrille:latest`
 - keep **one shard strictly pinned to one GPU**
 - for IMG mode, add `--ipc=host --shm-size=16g`
+- prefer locally staged model assets over live downloads during runtime
 
-## 5.3 Input and output contract inside AIWS
+If the Docker image was transferred as a tarball, load it on `RXL` with:
+
+```bash
+docker load -i /tmp/cadrille_linux_amd64.tar
+```
+
+## 5.5 Input and output contract inside AIWS
 
 Within the AIWS offline pipeline, Cadrille consumes the mesh reconstructed by SAM3D, but it is documented here as a peer module with its own input preparation and outputs.
 
