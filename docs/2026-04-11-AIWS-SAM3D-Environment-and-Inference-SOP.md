@@ -34,6 +34,76 @@ This SOP answers three questions:
 - Cadrille IMG successful full run:
   - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
 
+### 2.3 How the dataset directories were organized
+
+One easy source of confusion is why the formal experiment uses `aiws5.2-usable-materialized/` instead of the original raw folder directly.
+
+The reason is that the original data was closer to a flat resource layout:
+
+- `aiws5.2-dataset/images/`: RGB images stored together
+- `aiws5.2-dataset/depth/`: depth files stored together
+- `isat_annotations/`: annotation-truth JSON files
+- `train.json` / `val.json`: split membership only
+
+That is not ideal for stable batch inference, so the data was reorganized into three clearer views.
+
+#### `aiws5.2-usable-split/`
+
+This preserves train/val semantics:
+
+- `train/`, `val/`
+- under each split: `V1 / V2 / NEW`
+- under each subset: workpiece folders
+
+Use it for:
+
+- split-aware statistics
+- checking train/val membership
+
+#### `aiws5.2-usable/`
+
+This defines the cleaned usable subset:
+
+- top level: `V1 / V2 / NEW`
+- second level: workpiece category
+- special cases moved under `misc/`, including:
+  - `multi_instance/`
+  - `multi_label/`
+  - `unannotated_images/`
+
+Use it for:
+
+- understanding which samples are in the clean main pipeline
+- separating problematic samples from the main reconstruction set
+
+#### `aiws5.2-usable-materialized/`
+
+This is the **directory you should use for formal future runs**.
+
+Its semantics are:
+
+- `V1/`: no depth
+- `V2/`: depth under `depth_png/`
+- `NEW/`: depth under `depth_exr/`
+
+Inside each workpiece folder you will typically find:
+
+- `images/`
+- `annotations/`
+- `depth_png/` or `depth_exr/`
+- `masks/`
+
+Supporting folders:
+
+- `metadata/`: manifests, summary files, mask inventory
+- `misc/`: special samples excluded from the main formal path
+
+### 2.4 Which directory to use in future runs
+
+- **For formal SAM3D / Cadrille runs**: use `aiws5.2-usable-materialized/`
+- **To inspect train/val split membership**: use `aiws5.2-usable-split/`
+- **To understand which samples were excluded from the main clean subset**: inspect `aiws5.2-usable/` and `misc/`
+
 ---
 
 ## 3. SAM3D Environment Setup

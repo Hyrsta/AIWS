@@ -34,6 +34,76 @@
 - Cadrille IMG 成功全量输出：
   - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
 
+### 2.3 数据集目录是怎么整理出来的
+
+后续自己跑实验时，最容易困惑的一点是：**为什么正式输入目录不是原始数据目录，而是 `aiws5.2-usable-materialized/`？**
+
+原因是原始数据更接近平铺式组织：
+
+- `aiws5.2-dataset/images/`：RGB 图像混放
+- `aiws5.2-dataset/depth/`：深度文件混放
+- `isat_annotations/`：标注真值 JSON
+- `train.json` / `val.json`：只描述 split 归属
+
+这对批处理不够友好，所以整理出了 3 个更清晰的视图：
+
+#### `aiws5.2-usable-split/`
+
+用于保留 train / val 语义：
+
+- `train/`、`val/`
+- 每个 split 下是 `V1 / V2 / NEW`
+- 每个 subset 下再是工件类别目录
+
+适合：
+
+- 做 split-aware 统计
+- 核对 train / val 归属
+
+#### `aiws5.2-usable/`
+
+用于定义“干净可用样本”：
+
+- 顶层只保留 `V1 / V2 / NEW`
+- 下一层按工件类别整理
+- `misc/` 下单独存放特殊样本：
+  - `multi_instance/`
+  - `multi_label/`
+  - `unannotated_images/`
+
+适合：
+
+- 隔离单实例主实验样本
+- 把异常样本移出主干路径
+
+#### `aiws5.2-usable-materialized/`
+
+这是**后续正式运行应该使用的目录**。
+
+它的目录语义是：
+
+- `V1/`：无深度
+- `V2/`：深度在 `depth_png/`
+- `NEW/`：深度在 `depth_exr/`
+
+每个工件目录下常见内容：
+
+- `images/`
+- `annotations/`
+- `depth_png/` 或 `depth_exr/`
+- `masks/`
+
+辅助目录：
+
+- `metadata/`：样本清单、统计结果、mask 清单
+- `misc/`：不进主实验主干的特殊样本
+
+### 2.4 后续应该用哪个目录
+
+- **正式跑 SAM3D / Cadrille**：用 `aiws5.2-usable-materialized/`
+- **要查 train / val 归属**：看 `aiws5.2-usable-split/`
+- **要理解哪些样本被排除到主实验之外**：看 `aiws5.2-usable/` 和 `misc/`
+
 ---
 
 ## 3. SAM3D 环境搭建
