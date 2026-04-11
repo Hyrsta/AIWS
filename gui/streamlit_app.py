@@ -13,14 +13,14 @@ import streamlit as st
 BACKEND_URL = os.environ.get("AIWS_GUI_BACKEND", "http://127.0.0.1:8000")
 
 
-def api_get(path: str, **params: Any) -> Any:
-    response = requests.get(f"{BACKEND_URL}{path}", params=params, timeout=30)
+def api_get(endpoint: str, **params: Any) -> Any:
+    response = requests.get(f"{BACKEND_URL}{endpoint}", params=params, timeout=30)
     response.raise_for_status()
     return response.json()
 
 
-def api_post(path: str, payload: dict[str, Any]) -> Any:
-    response = requests.post(f"{BACKEND_URL}{path}", json=payload, timeout=30)
+def api_post(endpoint: str, payload: dict[str, Any]) -> Any:
+    response = requests.post(f"{BACKEND_URL}{endpoint}", json=payload, timeout=30)
     response.raise_for_status()
     return response.json()
 
@@ -42,6 +42,16 @@ except Exception as exc:  # pragma: no cover - UI only
 def default_output_root(prefix: str) -> str:
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     return f"{defaults['remote_workdir']}/outputs/{prefix}-{stamp}"
+
+
+def ensure_state_default(key: str, value: Any) -> None:
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+ensure_state_default("full_output_root", default_output_root("cadrille-gui-full"))
+ensure_state_default("single_cadrille_output_root", default_output_root("cadrille-gui-single"))
+ensure_state_default("summary_root", default_output_root("cadrille-gui-full"))
 
 
 def render_job_summary(summary: dict[str, Any]) -> None:
@@ -201,7 +211,7 @@ with tab_full:
             remote_workdir = st.text_input("Remote workdir", defaults["remote_workdir"])
             remote_python = st.text_input("Remote python", defaults["remote_python"])
             sam3d_output_root = st.text_input("SAM3D output root", defaults["sam3d_output_root"])
-            output_root = st.text_input("Output root", default_output_root("cadrille-gui-full"))
+            output_root = st.text_input("Output root", key="full_output_root")
             split_prefix = st.text_input("Split prefix", "sam3d_bridge_gui")
             modalities = st.text_input("Modalities", "pc,img")
         with col2:
@@ -257,7 +267,7 @@ with tab_single:
             sam3d_output_root = st.text_input("SAM3D output root ", defaults["sam3d_output_root"], key="single_sam3d_output_root")
             dataset_root = st.text_input("Dataset root", defaults["dataset_root"])
             cadrille_root = st.text_input("Cadrille root", defaults["cadrille_root"])
-            cadrille_output_root = st.text_input("Cadrille output root", default_output_root("cadrille-gui-single"))
+            cadrille_output_root = st.text_input("Cadrille output root", key="single_cadrille_output_root")
             split_name = st.text_input("Cadrille split name", "sam3d_bridge_gui_single")
         with col2:
             cadrille_mode = st.selectbox("Cadrille mode", ["pc", "img"])
@@ -364,7 +374,7 @@ with tab_outputs:
     st.subheader("Browse an output root")
     with st.form("output_summary_form"):
         ssh_host = st.text_input("SSH host  ", defaults["ssh_host"], key="summary_ssh_host")
-        root = st.text_input("Remote output root", default_output_root("cadrille-gui-full"))
+        root = st.text_input("Remote output root", key="summary_root")
         submitted = st.form_submit_button("Load output summary")
 
     if submitted:
