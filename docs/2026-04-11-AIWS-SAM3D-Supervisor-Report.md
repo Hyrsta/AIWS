@@ -176,24 +176,80 @@ Per-shard summary:
 
 | Shard | GPU | Completed | Avg latency per sample (s) | Shard throughput (samples/hour) |
 |---|---:|---:|---:|---:|
-| shard-0 | 0 | 355 | 14.074 | 254.337 |
-| shard-1 | 1 | 355 | 14.121 | 253.559 |
-| shard-2 | 2 | 354 | 14.813 | 241.790 |
-| shard-3 | 3 | 354 | 16.191 | 221.272 |
+| shard-0 | 0 | 355 | 14.07 | 254.34 |
+| shard-1 | 1 | 355 | 14.12 | 253.56 |
+| shard-2 | 2 | 354 | 14.81 | 241.79 |
+| shard-3 | 3 | 354 | 16.19 | 221.27 |
 
 ### 4.1.3 Per-sample timing statistics (1418 samples)
 
-| Metric | Mean | P50 | P90 | P95 | Max |
-|---|---:|---:|---:|---:|---:|
-| Runtime per sample (s) | 14.799 | 13.812 | 17.555 | 18.977 | 73.562 |
-| Runtime per megapixel (s/MP) | 7.374 | 6.664 | 8.505 | 9.359 | 51.063 |
+<table>
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th>Metric</th>
+      <th>Mean</th>
+      <th>P50</th>
+      <th>P90</th>
+      <th>P95</th>
+      <th>Max</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td rowspan="2">Runtime</td>
+      <td>Per-sample runtime (s)</td>
+      <td>14.80</td>
+      <td>13.81</td>
+      <td>17.56</td>
+      <td>18.98</td>
+      <td>73.56</td>
+    </tr>
+    <tr>
+      <td>Runtime per megapixel (s/MP)</td>
+      <td>7.37</td>
+      <td>6.66</td>
+      <td>8.51</td>
+      <td>9.36</td>
+      <td>51.06</td>
+    </tr>
+  </tbody>
+</table>
 
 ### 4.1.4 GPU memory statistics (1418 samples)
 
-| Metric | Mean | P50 | P90 | P95 | Max |
-|---|---:|---:|---:|---:|---:|
-| Average allocated GPU memory (MB) | 18709.201 | 18738.090 | 19428.319 | 19614.863 | 20071.270 |
-| Reserved-memory upper bound (MB) | 24647.275 | 24936.000 | 26420.000 | 27136.000 | 28076.000 |
+<table>
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th>Metric</th>
+      <th>Mean</th>
+      <th>P50</th>
+      <th>P90</th>
+      <th>P95</th>
+      <th>Max</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td rowspan="2">GPU memory</td>
+      <td>Peak allocated GPU memory per sample (GB)</td>
+      <td>18.71</td>
+      <td>18.74</td>
+      <td>19.43</td>
+      <td>19.61</td>
+      <td>20.07</td>
+    </tr>
+    <tr>
+      <td>Peak reserved-memory upper bound per sample (GB)</td>
+      <td>24.65</td>
+      <td>24.94</td>
+      <td>26.42</td>
+      <td>27.14</td>
+      <td>28.08</td>
+    </tr>
+  </tbody>
+</table>
 
 Interpretation:
 
@@ -210,19 +266,19 @@ Notes:
 - the memory columns report **average allocated GPU memory** and the **peak reserved-memory upper bound**
 - `—` means that the current main experimental view has no samples for that combination
 
-| Dataset version | Workpiece type | Samples | Mean runtime (s) | P90 runtime (s) | Avg allocated GPU memory (MB) | Peak reserved-memory upper bound (MB) |
+| Dataset version | Workpiece type | Samples | Mean runtime (s) | P90 runtime (s) | Avg peak allocated GPU memory (GB) | Peak reserved-memory upper bound (GB) |
 |---|---|---:|---:|---:|---:|---:|
-| V1 | cover_plate | 200 | 13.9323 | 16.7683 | 18695.6 | 28024.0 |
-| V1 | square_tube | 99 | 16.3360 | 17.2780 | 19110.4 | 27336.0 |
-| V1 | h_beam | 100 | 11.9246 | 13.2744 | 18131.8 | 24856.0 |
+| V1 | cover_plate | 200 | 13.93 | 16.77 | 18.70 | 28.02 |
+| V1 | square_tube | 99 | 16.34 | 17.28 | 19.11 | 27.34 |
+| V1 | h_beam | 100 | 11.92 | 13.27 | 18.13 | 24.86 |
 | V1 | channel_steel | 0 | — | — | — | — |
-| V1 | bellmouth | 194 | 17.8334 | 34.9408 | 18297.3 | 26298.0 |
-| V2 | cover_plate | 524 | 14.6590 | 17.4729 | 18899.0 | 28044.0 |
+| V1 | bellmouth | 194 | 17.83 | 34.94 | 18.30 | 26.30 |
+| V2 | cover_plate | 524 | 14.66 | 17.47 | 18.90 | 28.04 |
 | V2 | square_tube | 0 | — | — | — | — |
 | V2 | h_beam | 0 | — | — | — | — |
 | V2 | channel_steel | 0 | — | — | — | — |
 | V2 | bellmouth | 0 | — | — | — | — |
-| NEW | cover_plate | 301 | 14.1106 | 17.9950 | 18713.1 | 28076.0 |
+| NEW | cover_plate | 301 | 14.11 | 18.00 | 18.71 | 28.08 |
 | NEW | square_tube | 0 | — | — | — | — |
 | NEW | h_beam | 0 | — | — | — | — |
 | NEW | channel_steel | 0 | — | — | — | — |
@@ -275,8 +331,8 @@ Additional quality indicators (average across shard summaries):
 
 | Metric | Value |
 |---|---:|
-| Average IoU | 0.021192 |
-| Median Chamfer distance | 0.038003 |
+| Average IoU | 0.02 |
+| Median Chamfer distance | 0.04 |
 
 ### 4.2.2 IMG mode (full-dataset success after fix)
 
@@ -309,8 +365,8 @@ Additional quality indicators (average across shard summaries):
 
 | Metric | Value |
 |---|---:|
-| Average IoU | 0.026166 |
-| Median Chamfer distance | 0.047796 |
+| Average IoU | 0.03 |
+| Median Chamfer distance | 0.05 |
 
 ### 4.2.3 Memory and shared-memory constraints in Cadrille
 

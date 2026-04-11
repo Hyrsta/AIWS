@@ -65,3 +65,7 @@
   Type: documentation
   Context: Leonardo asked for a cleaner separation between dataset structure and current dataset status
   Confirmed: yes
+- [16:54] For supervisor-facing summary tables, prefer merged-row style where it improves readability, round displayed values to two decimals, and use easier units like GB or hours when large raw numbers are distracting
+  Type: documentation
+  Context: Leonardo corrected the readability of the run-summary tables
+  Confirmed: yes
