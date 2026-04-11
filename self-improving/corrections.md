@@ -81,3 +81,7 @@
   Type: documentation
   Context: Leonardo corrected the placement of current-condition language in the AIWS docs
   Confirmed: yes
+- [17:07] For Cadrille quality metrics in the report, follow the paper convention: IoU in percent and Chamfer Distance multiplied by 10^3, instead of raw small decimals
+  Type: documentation
+  Context: Leonardo asked the report to match the original Cadrille paper’s metric convention
+  Confirmed: yes

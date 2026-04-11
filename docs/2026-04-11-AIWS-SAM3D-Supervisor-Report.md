@@ -376,12 +376,12 @@ Results:
 | Wall-clock time | about 80.1 minutes |
 | Effective throughput | about 1061.7 samples/hour |
 
-Additional quality indicators (average across shard summaries):
+Additional quality indicators (average across shard summaries, reported in the original Cadrille convention):
 
 | Metric | Value |
 |---|---:|
-| Average IoU | 0.02 |
-| Median Chamfer distance | 0.04 |
+| Average IoU (%) | 2.12 |
+| Median Chamfer distance (×10³) | 38.00 |
 
 ### 4.2.2 IMG mode (full-dataset success after fix)
 
@@ -410,12 +410,12 @@ Results:
 | Wall-clock time | about 25.9 minutes |
 | Effective throughput | about 3290.3 samples/hour |
 
-Additional quality indicators (average across shard summaries):
+Additional quality indicators (average across shard summaries, reported in the original Cadrille convention):
 
 | Metric | Value |
 |---|---:|
-| Average IoU | 0.03 |
-| Median Chamfer distance | 0.05 |
+| Average IoU (%) | 2.62 |
+| Median Chamfer distance (×10³) | 47.80 |
 
 ### 4.2.3 Memory and shared-memory constraints in Cadrille
 
