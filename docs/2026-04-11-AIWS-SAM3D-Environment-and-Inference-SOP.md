@@ -2,7 +2,7 @@
 
 **Author**: Kaiming Zhan  
 **Date**: 2026-04-11  
-**Purpose**: Reusable operating procedure for rebuilding the SAM3D environment, running future SAM3D inference, and continuing the downstream SAM3D → Cadrille pipeline.
+**Purpose**: Reusable operating procedure for rebuilding the SAM3D environment and running the AIWS offline RGB image → Cadrille pipeline in future work.
 
 ---
 
@@ -11,8 +11,8 @@
 This SOP answers three questions:
 
 1. How to set up the **SAM3D** environment on `RXL`.
-2. How to run **future SAM3D inference** on the AIWS dataset.
-3. How to continue from **SAM3D outputs into Cadrille** for downstream CAD generation.
+2. How to run **future SAM3D inference on AIWS offline RGB images**.
+3. How to continue from **AIWS offline RGB images through SAM3D into Cadrille** for downstream CAD generation.
 
 ---
 
