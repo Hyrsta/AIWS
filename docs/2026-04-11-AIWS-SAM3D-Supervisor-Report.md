@@ -62,7 +62,10 @@ Its core semantics are:
     - `depth_png/` or `depth_exr/`: depth inputs when available
 - supporting top-level folders:
     - `metadata/`: manifests and summary statistics
-    - `misc/`: special samples excluded from the main pipeline
+    - `misc/`: special samples excluded from the main pipeline, including:
+        - `multi_instance/`: images containing multiple instances
+        - `multi_label/`: images containing multiple categories
+        - `unannotated_images/`: images found without usable annotations
 
 The current dataset condition is as follows:
 
@@ -79,12 +82,6 @@ The current dataset condition is as follows:
     - `V1` is currently the most diverse subset by workpiece type
     - `V2` and `NEW` are currently dominated by depth-enabled `cover_plate` samples
     - `channel_steel` currently has **no populated instances** in the usable main view
-
-Inside `misc/`, the main cases are:
-
-- `multi_instance/`: images containing multiple instances
-- `multi_label/`: images containing multiple categories
-- `unannotated_images/`: images found without usable annotations
 
 At present, the identified special-case counts are:
 

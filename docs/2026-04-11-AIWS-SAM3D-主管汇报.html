@@ -84,7 +84,12 @@
 </li>
 <li>顶层辅助目录包括：<ul>
 <li><code>metadata/</code>：机器可读统计与样本清单</li>
-<li><code>misc/</code>：不进入主实验主干的特殊样本</li>
+<li><code>misc/</code>：不进入主实验主干的特殊样本，内部包括：<ul>
+<li><code>multi_instance/</code>：一张图中有多个实例</li>
+<li><code>multi_label/</code>：一张图中有多个不同类别</li>
+<li><code>unannotated_images/</code>：有图像但无标注</li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -107,12 +112,6 @@
 <li><code>channel_steel</code> 在当前可用主视图中<strong>暂无实例</strong></li>
 </ul>
 </li>
-</ul>
-<p>其中，<code>misc/</code> 主要用于隔离：</p>
-<ul>
-<li><code>multi_instance/</code>：一张图中有多个实例</li>
-<li><code>multi_label/</code>：一张图中有多个不同类别</li>
-<li><code>unannotated_images/</code>：有图像但无标注</li>
 </ul>
 <p>当前 <code>misc/</code> 中已识别的特殊情况包括：</p>
 <ul>

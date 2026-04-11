@@ -56,6 +56,9 @@
 - 顶层辅助目录：
     - `metadata/`
     - `misc/`
+        - `multi_instance/`
+        - `multi_label/`
+        - `unannotated_images/`
 
 当前数据状态可以直接概括为：
 

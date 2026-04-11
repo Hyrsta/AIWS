@@ -56,6 +56,9 @@ Its semantics are:
 - supporting top-level folders:
     - `metadata/`
     - `misc/`
+        - `multi_instance/`
+        - `multi_label/`
+        - `unannotated_images/`
 
 The current dataset condition can be summarized directly as:
 

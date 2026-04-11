@@ -53,3 +53,7 @@
   Type: documentation
   Context: Leonardo corrected the list formatting for supervisor-facing documents
   Confirmed: yes
+- [16:39] Keep structure and current-condition statements clearly separated in dataset sections: folder semantics for `misc/` belong in the structure/core-semantics part, while counts like multi-instance and unannotated cases belong in the current-condition part
+  Type: documentation
+  Context: Leonardo corrected the organization of the AIWS dataset explanation
+  Confirmed: yes
