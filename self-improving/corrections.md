@@ -125,3 +125,7 @@
   Type: documentation
   Context: Leonardo rejected placing `6.1 Single end-to-end bridge script` under Cadrille because it spans both modules
   Confirmed: yes
+- [19:52] Do not use meta wording like `Recommended future configuration for ...` in these technical SOP sections. Matching module sections should mirror each other structurally, like Part 4 SAM3D and Part 6 Cadrille
+  Type: documentation
+  Context: Leonardo rejected the meta phrasing in Part 6 and explicitly asked to remember not to do this again
+  Confirmed: yes

@@ -451,7 +451,72 @@ docker load -i /tmp/cadrille_linux_amd64.tar
 
 ## 6. Cadrille 推理方法
 
-## 6.1 未来继续跑 Cadrille-PC（推荐配置）
+## 6.1 单次已准备 split 的快速验证
+
+如果只想直接验证 Cadrille 本身是否能运行，可以进入 Cadrille 运行环境后，对一个已经准备好的 split 直接运行 `test.py`。
+
+当前直接入口主要是：
+
+- `test.py`
+- `convert_cadquery.py`
+- `evaluate.py`
+
+这种方式适合：
+
+- 单个 split 的快速验证
+- 检查 Cadrille 运行环境是否正常
+- 在大规模批量推理前先验证 PC 或 IMG 模式
+
+## 6.2 AIWS 数据集批量推理（单个模态）
+
+当前 AIWS 正式脚本：
+
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py`
+
+PC 示例：
+
+```bash
+OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
+/home/rxl/anaconda3/envs/sam3d-objects/bin/python \
+/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py \
+  --output-root "$OUT" \
+  --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
+  --modalities pc \
+  --split-prefix sam3d_bridge_pcfull \
+  --gpus 0 \
+  --pc-n-samples 5 \
+  --cadrille-batch-size 64 \
+  --selection-mode evaluate \
+  --cadrille-runtime docker \
+  --cadrille-docker-image cadrille:latest \
+  --export-brep
+```
+
+IMG 示例：
+
+```bash
+OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
+/home/rxl/anaconda3/envs/sam3d-objects/bin/python \
+/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py \
+  --output-root "$OUT" \
+  --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
+  --modalities img \
+  --split-prefix sam3d_bridge_imgfix \
+  --gpus 0 \
+  --img-n-samples 1 \
+  --cadrille-batch-size 32 \
+  --selection-mode evaluate \
+  --cadrille-runtime docker \
+  --cadrille-docker-image cadrille:latest \
+  --cadrille-docker-extra-args '--ipc=host --shm-size=16g' \
+  --export-brep
+```
+
+## 6.3 AIWS 数据集批量推理（4 卡并行）
+
+全量批量推理时，建议保持一个 shard 对应一张 GPU。
+
+PC 示例：
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
@@ -470,12 +535,7 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
   --export-brep
 ```
 
-说明：
-
-- 该配置已经验证可以完成全量 PC 推理。
-- 关键点是**每个 shard 严格绑定独立 GPU**，避免多进程抢同一张卡。
-
-## 6.2 未来继续跑 Cadrille-IMG（推荐稳定配置）
+IMG 示例：
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
@@ -495,39 +555,20 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
   --export-brep
 ```
 
-说明：
+## 6.4 监控与重跑
 
-- **不要**直接使用 IMG 的 `batch_size=64` 默认设置做大规模全量跑。
-- 当前稳定经验是：
-    - `batch_size=32`
-    - `--ipc=host`
-    - `--shm-size=16g`
-    - 降低 dataloader worker 压力
+Cadrille 这部分最重要的运行检查点是：
 
-## 6.3 小规模验证或新数据先做 100 个样本 smoke test
+- 一个 shard 是否真的只对应一张 GPU
+- IMG 模式是否保留了 `--ipc=host --shm-size=16g`
+- 失败的 shard 是否按原参数重跑
+- PC 和 IMG 是否继续分开处理
 
-如果不是立刻跑全量，推荐先做一个 100 样本的小规模验证：
+实际操作上：
 
-```bash
-/home/rxl/anaconda3/envs/sam3d-objects/bin/python \
-/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py \
-  --skip-sam3d \
-  --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
-  --cadrille-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-smoke-next \
-  --cadrille-split-name sam3d_bridge_smoke_next \
-  --cadrille-runtime docker \
-  --cadrille-docker-image cadrille:latest \
-  --cadrille-mode img \
-  --cadrille-input-source mesh \
-  --cadrille-n-samples 1 \
-  --cadrille-batch-size 32 \
-  --cadrille-docker-gpus device=0 \
-  --cadrille-docker-extra-args '--ipc=host --shm-size=16g' \
-  --selection-mode evaluate \
-  --sample-offset 0 \
-  --max-samples 100 \
-  --export-brep
-```
+- 保持原来的 output-root 结构
+- 只重跑失败的 shard 或失败的模态
+- 除非明确需要，否则不要把 PC 和 IMG 的恢复混在同一次重启里
 
 ---
 

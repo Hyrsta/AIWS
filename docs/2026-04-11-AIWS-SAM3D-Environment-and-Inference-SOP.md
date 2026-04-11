@@ -452,7 +452,72 @@ Within the AIWS offline pipeline, Cadrille consumes the mesh reconstructed by SA
 
 ## 6. Cadrille Inference Workflow
 
-## 6.1 Recommended future configuration for Cadrille-PC
+## 6.1 Single prepared-split quick test
+
+For a direct Cadrille-only quick test, enter the Cadrille runtime environment and run `test.py` on a prepared split.
+
+Typical direct entry points:
+
+- `test.py`
+- `convert_cadquery.py`
+- `evaluate.py`
+
+This is suitable for:
+
+- single-split validation
+- checking whether the Cadrille runtime is healthy
+- validating PC or IMG mode before larger batch runs
+
+## 6.2 Dataset batch inference for one modality
+
+Current AIWS production script:
+
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py`
+
+PC example:
+
+```bash
+OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
+/home/rxl/anaconda3/envs/sam3d-objects/bin/python \
+/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py \
+  --output-root "$OUT" \
+  --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
+  --modalities pc \
+  --split-prefix sam3d_bridge_pcfull \
+  --gpus 0 \
+  --pc-n-samples 5 \
+  --cadrille-batch-size 64 \
+  --selection-mode evaluate \
+  --cadrille-runtime docker \
+  --cadrille-docker-image cadrille:latest \
+  --export-brep
+```
+
+IMG example:
+
+```bash
+OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
+/home/rxl/anaconda3/envs/sam3d-objects/bin/python \
+/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py \
+  --output-root "$OUT" \
+  --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
+  --modalities img \
+  --split-prefix sam3d_bridge_imgfix \
+  --gpus 0 \
+  --img-n-samples 1 \
+  --cadrille-batch-size 32 \
+  --selection-mode evaluate \
+  --cadrille-runtime docker \
+  --cadrille-docker-image cadrille:latest \
+  --cadrille-docker-extra-args '--ipc=host --shm-size=16g' \
+  --export-brep
+```
+
+## 6.3 Dataset batch inference on 4 GPUs
+
+For full-dataset batch inference, launch one shard per GPU.
+
+PC example:
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
@@ -471,12 +536,7 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
   --export-brep
 ```
 
-Notes:
-
-- This configuration has already been validated for full-dataset PC-mode inference.
-- The critical requirement is **strict one-shard-per-GPU placement**.
-
-## 6.2 Recommended future configuration for Cadrille-IMG
+IMG example:
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
@@ -496,39 +556,20 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
   --export-brep
 ```
 
-Notes:
+## 6.4 Monitoring and rerun
 
-- Do **not** use the default large-batch IMG configuration for large-scale runs.
-- The currently validated stable recipe is:
-    - `batch_size=32`
-    - `--ipc=host`
-    - `--shm-size=16g`
-    - reduced dataloader worker pressure
+For Cadrille, the most important operational checks are:
 
-## 6.3 Recommended 100-sample smoke test for new settings
+- one shard really maps to one GPU
+- IMG mode keeps `--ipc=host --shm-size=16g`
+- failed shards are rerun with the same parameters
+- PC and IMG are handled as separate runs
 
-Before a new full-dataset run, validate with a small subset first:
+In practice:
 
-```bash
-/home/rxl/anaconda3/envs/sam3d-objects/bin/python \
-/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py \
-  --skip-sam3d \
-  --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
-  --cadrille-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-smoke-next \
-  --cadrille-split-name sam3d_bridge_smoke_next \
-  --cadrille-runtime docker \
-  --cadrille-docker-image cadrille:latest \
-  --cadrille-mode img \
-  --cadrille-input-source mesh \
-  --cadrille-n-samples 1 \
-  --cadrille-batch-size 32 \
-  --cadrille-docker-gpus device=0 \
-  --cadrille-docker-extra-args '--ipc=host --shm-size=16g' \
-  --selection-mode evaluate \
-  --sample-offset 0 \
-  --max-samples 100 \
-  --export-brep
-```
+- keep the same output-root structure
+- rerun only failed shards or failed modalities
+- do not mix PC and IMG recovery into one restart unless that is intentional
 
 ---
 
