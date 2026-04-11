@@ -19,5 +19,7 @@
     - Old modified repo archived to `/ssd1/rxl/zhankaiming/AIWS/backups/cadrille-aiws-fork-20260411-202652`.
     - `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille` now symlinks to `/ssd1/rxl/zhankaiming/cadrille-official-col14m` for compatibility.
     - Verified that official `test.py` still fails as-is on hardcoded processor loading, but official `cadrille.py` works once the processor path is supplied locally.
-    - `aiws_cadrille_test.py` now stays as the only thin inference wrapper for HF/local processor path handling, arg translation, and GPU-memory logging.
+    - `cadrille_test_wrapper.py` now stays as the only thin inference wrapper for HF/local processor path handling, arg translation, and GPU-memory logging.
     - `aiws_cadrille_model.py` was removed from the workspace and archived on RXL under `/ssd1/rxl/zhankaiming/AIWS/backups/script-archive/`.
+    - Wrapper script names were normalized to module-first names: `cadrille_test_wrapper.py`, `cadrille_convert_cadquery.py`, `cadrille_evaluate.py`.
+    - On RXL, temporary symlinks from the old `aiws_cadrille_*` names point to the new names so the active rerun can finish safely.

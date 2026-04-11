@@ -137,3 +137,7 @@
   Type: workflow
   Context: Leonardo corrected the Cadrille cleanup approach and asked to keep only the minimum wrapper layer, removing the copied model helper once official `cadrille.py` was verified to work
   Confirmed: yes
+- [20:36] For wrapper script naming, do not prefix AIWS helpers with `aiws_`; use module-first names like `cadrille_*` / `sam3d_*`, and let the cross-module e2e script keep a combined name
+  Type: workflow
+  Context: Leonardo asked to make the naming convention between Cadrille and SAM3D consistent and explicitly rejected the `aiws_` prefix for script names
+  Confirmed: yes

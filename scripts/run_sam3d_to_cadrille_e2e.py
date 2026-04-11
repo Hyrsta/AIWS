@@ -136,9 +136,9 @@ def parse_args() -> argparse.Namespace:
     cad.add_argument("--point-cloud-exts", default="ply,pcd,xyz,txt,npz,npy", help="Reserved for future wrapper expansion")
     cad.add_argument("--image-exts", default="png,jpg,jpeg,bmp", help="Reserved for future wrapper expansion")
     cad.add_argument("--export-brep", dest="export_brep", action="store_true", default=True,
-                     help="Export STEP/BRep via aiws_cadrille_convert_cadquery.py (default on)")
+                     help="Export STEP/BRep via cadrille_convert_cadquery.py (default on)")
     cad.add_argument("--no-export-brep", dest="export_brep", action="store_false", help="Skip STEP/BRep export")
-    cad.add_argument("--brep-ext", default="step", help="BRep extension for aiws_cadrille_convert_cadquery.py")
+    cad.add_argument("--brep-ext", default="step", help="BRep extension for cadrille_convert_cadquery.py")
     cad.add_argument("--convert-timeout-sec", type=float, default=5.0, help="Timeout per CadQuery file conversion")
 
     # Selection / safety
@@ -160,9 +160,9 @@ def parse_args() -> argparse.Namespace:
         help="When selection-mode=evaluate and best_names is missing for a sample, fallback to --selected-candidate-index",
     )
     misc.add_argument("--eval-gt-path", type=Path, default=None,
-                      help="Ground-truth path for aiws_cadrille_evaluate.py (default: prepared Cadrille split)")
+                      help="Ground-truth path for cadrille_evaluate.py (default: prepared Cadrille split)")
     misc.add_argument("--eval-gt-format", choices=("mesh", "point_cloud"), default="mesh",
-                      help="Ground-truth format for aiws_cadrille_evaluate.py")
+                      help="Ground-truth format for cadrille_evaluate.py")
     misc.add_argument("--eval-gt-mesh-ext", default=None,
                       help="Ground-truth mesh extension for evaluate.py (default: --mesh-ext)")
     misc.add_argument("--eval-gt-point-cloud-exts", default=None,
@@ -463,11 +463,11 @@ def main() -> None:
     selected_mesh_dir = cadrille_output_root / "selected_mesh"
     selected_brep_dir = cadrille_output_root / "selected_brep"
 
-    aiws_scripts_root = Path(__file__).resolve().parent
-    aiws_cadrille_test_script = aiws_scripts_root / "aiws_cadrille_test.py"
-    aiws_cadrille_convert_script = aiws_scripts_root / "aiws_cadrille_convert_cadquery.py"
-    aiws_cadrille_evaluate_script = aiws_scripts_root / "aiws_cadrille_evaluate.py"
-    container_aiws_scripts_root = Path("/workspace/aiws_scripts")
+    wrapper_scripts_root = Path(__file__).resolve().parent
+    cadrille_test_wrapper_script = wrapper_scripts_root / "cadrille_test_wrapper.py"
+    cadrille_convert_script = wrapper_scripts_root / "cadrille_convert_cadquery.py"
+    cadrille_evaluate_script = wrapper_scripts_root / "cadrille_evaluate.py"
+    container_wrapper_scripts_root = Path("/workspace/integration_scripts")
 
     cadrille_runtime = choose_cadrille_runtime(args)
     docker_mounts: list[tuple[Path, Path]] = []
@@ -481,7 +481,7 @@ def main() -> None:
             container_cadrille_data_root,
             container_cadrille_output_root,
         ) = build_docker_mounts(cadrille_root, cadrille_data_root, cadrille_output_root)
-        docker_mounts.append((aiws_scripts_root, container_aiws_scripts_root))
+        docker_mounts.append((wrapper_scripts_root, container_wrapper_scripts_root))
 
     if not args.skip_sam3d:
         sam_cmd = [
@@ -613,9 +613,9 @@ def main() -> None:
         if processor_path.is_absolute():
             processor_arg = str(map_host_to_container(processor_path.resolve(), docker_mounts))
 
-        test_script_arg = str(container_aiws_scripts_root / aiws_cadrille_test_script.name)
-        convert_script_arg = str(container_aiws_scripts_root / aiws_cadrille_convert_script.name)
-        evaluate_script_arg = str(container_aiws_scripts_root / aiws_cadrille_evaluate_script.name)
+        test_script_arg = str(container_wrapper_scripts_root / cadrille_test_wrapper_script.name)
+        convert_script_arg = str(container_wrapper_scripts_root / cadrille_convert_script.name)
+        evaluate_script_arg = str(container_wrapper_scripts_root / cadrille_evaluate_script.name)
 
         py_exec = args.cadrille_docker_python
 
@@ -637,9 +637,9 @@ def main() -> None:
         eval_gt_arg = str(eval_gt_host)
         checkpoint_arg = args.cadrille_checkpoint
         processor_arg = args.cadrille_processor_path
-        test_script_arg = str(aiws_cadrille_test_script)
-        convert_script_arg = str(aiws_cadrille_convert_script)
-        evaluate_script_arg = str(aiws_cadrille_evaluate_script)
+        test_script_arg = str(cadrille_test_wrapper_script)
+        convert_script_arg = str(cadrille_convert_script)
+        evaluate_script_arg = str(cadrille_evaluate_script)
         py_exec = args.cadrille_python
 
         def run_cadrille_inner(inner_cmd: list[str]) -> None:
