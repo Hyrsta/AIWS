@@ -1,6 +1,6 @@
 # 2026-04-11 AIWS × SAM3D Environment and Inference SOP
 
-**Author**: Weld  
+**Author**: Kaiming Zhan  
 **Date**: 2026-04-11  
 **Purpose**: Reusable operating procedure for rebuilding the SAM3D environment, running future SAM3D inference, and continuing the downstream SAM3D → Cadrille pipeline.
 

@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>2026-04-11-AIWS-SAM3D-主管汇报</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    margin: 0;
+    background: #fff;
+    color: #111827;
+  }
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 48px 72px;
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  h1, h2, h3, h4 { line-height: 1.3; margin-top: 1.6em; }
+  h1 { font-size: 30px; margin-top: 0; }
+  h2 { font-size: 22px; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; }
+  h3 { font-size: 18px; }
+  p, li { margin: 0.5em 0; }
+  code {
+    background: #f3f4f6;
+    padding: 0.15em 0.35em;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92em;
+  }
+  pre {
+    background: #0f172a;
+    color: #e5e7eb;
+    padding: 14px 16px;
+    border-radius: 10px;
+    overflow-x: auto;
+  }
+  pre code { background: transparent; padding: 0; color: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+  th, td { border: 1px solid #d1d5db; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f9fafb; }
+  blockquote {
+    margin: 1em 0;
+    padding: 0.2em 1em;
+    border-left: 4px solid #93c5fd;
+    background: #eff6ff;
+    color: #1f2937;
+  }
+  hr { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+</style>
+</head>
+<body>
+  <main class="page">
+    <h1 id="2026-04-11-aiws-sam3d-cadrille">2026-04-11 AIWS × SAM3D × Cadrille 主管汇报</h1>
+<p><strong>作者</strong>: Weld<br />
+<strong>日期</strong>: 2026-04-11<br />
+<strong>对象</strong>: 导师 / 项目主管<br />
+<strong>定位</strong>: 面向汇报的高层总结，重点回答环境、全量实验规模、运行时间、显存/共享内存约束，以及后续如何继续推理。</p>
+<hr />
+<h2 id="1">1. 本次工作的核心结论</h2>
+<p>本轮工作已经把 AIWS5.2 清洗版数据集上的单图 3D 重建流程跑通，并把后续 CAD 生成链路验证到可复用状态：</p>
+<ol>
+<li><strong>SAM3D 环境已经稳定可复现</strong>，并在 <code>RXL</code> 服务器上完成 1418 个正式样本的全量推理。</li>
+<li><strong>SAM3D 全量运行完成率 100%</strong>，且具备较完整的单样本时间与显存统计。</li>
+<li><strong>Cadrille 的 PC 模态全量推理已跑通</strong>，说明 SAM3D STL 输出可以稳定进入 CAD 生成链路。</li>
+<li><strong>Cadrille 的 IMG 模态需要额外的共享内存（shm）调优</strong>，在默认配置下会因 DataLoader worker 共享内存不足失败，但在修复后已经完成全量成功重试。</li>
+<li>后续若继续做批量推理，建议采用“<strong>SAM3D 与 Cadrille 解耦</strong>、<strong>PC / IMG 分开跑</strong>”的运维策略，而不是直接一次性混合发射。</li>
+</ol>
+<hr />
+<h2 id="2">2. 数据集与硬件约束</h2>
+<h3 id="21">2.1 正式数据口径</h3>
+<ul>
+<li>数据集：<code>aiws5.2-usable-materialized</code></li>
+<li>正式任务总数：<strong>1418</strong></li>
+<li>子集分布：</li>
+<li><code>V1</code>: 593</li>
+<li><code>V2</code>: 524</li>
+<li><code>NEW</code>: 301</li>
+</ul>
+<h3 id="22">2.2 数据集整理过程与目录含义</h3>
+<p>本项目的数据不是一开始就天然按“子集 / 工件 / 输入类型”排好的。原始状态更接近<strong>平铺式资源池</strong>：</p>
+<ul>
+<li><code>aiws5.2-dataset/images/</code>：所有 RGB 图像基本混放在同一个目录</li>
+<li><code>aiws5.2-dataset/depth/</code>：所有深度文件混放在同一个目录</li>
+<li><code>isat_annotations/</code>：ISAT 标注 JSON，作为最终标注真值来源</li>
+<li><code>train.json</code> / <code>val.json</code>：只提供 train / val 归属关系，不适合作为后续实例级重建的唯一真值来源</li>
+</ul>
+<p>这种原始组织方式的问题是：</p>
+<ol>
+<li>不方便直接按 <code>V1 / V2 / NEW</code> 管理</li>
+<li>不方便按工件类别批量遍历</li>
+<li>多实例样本、无标注样本、异常样本不容易隔离</li>
+<li>不利于 SAM3D / Cadrille 这种需要稳定目录约定的批处理流程</li>
+</ol>
+<p>因此，后续把数据逐步整理成了 3 层视图：</p>
+<h4 id="1aiws52-usable-split">（1）<code>aiws5.2-usable-split/</code></h4>
+<p>这是<strong>保留 train / val 划分</strong>的非破坏性符号链接视图，结构为：</p>
+<ul>
+<li><code>train/</code>、<code>val/</code></li>
+<li>每个 split 下再分 <code>V1/</code>、<code>V2/</code>、<code>NEW/</code></li>
+<li>每个 subset 下再分 5 类工件：</li>
+<li><code>cover_plate</code>（盖板）</li>
+<li><code>square_tube</code>（方管）</li>
+<li><code>h_beam</code>（H 型钢）</li>
+<li><code>channel_steel</code>（槽钢）</li>
+<li><code>bellmouth</code>（喇叭口）</li>
+</ul>
+<p>用途：</p>
+<ul>
+<li>保留 train / val 语义</li>
+<li>检查 split 归属是否正确</li>
+<li>方便后续做按 split 的统计</li>
+</ul>
+<h4 id="2aiws52-usable">（2）<code>aiws5.2-usable/</code></h4>
+<p>这是<strong>不强调 train / val，只强调“可用于正式重建”</strong>的清洗视图，结构为：</p>
+<ul>
+<li>顶层按 <code>V1 / V2 / NEW</code></li>
+<li>子层按工件类别分组</li>
+<li>把不适合直接进入主干实验的样本移到 <code>misc/</code></li>
+</ul>
+<p>其中：</p>
+<ul>
+<li><code>misc/multi_instance/</code>：一张图中有多个实例</li>
+<li><code>misc/multi_label/</code>：一张图中有多个不同类别</li>
+<li><code>misc/unannotated_images/</code>：有图像但无标注</li>
+</ul>
+<p>用途：</p>
+<ul>
+<li>明确主实验样本边界</li>
+<li>把干净单实例样本与异常样本隔离</li>
+</ul>
+<h4 id="3aiws52-usable-materialized">（3）<code>aiws5.2-usable-materialized/</code></h4>
+<p>这是<strong>最终正式实验使用的数据集根目录</strong>，也是 SAM3D 批处理脚本实际读取的目录。</p>
+<p>它延续了 <code>subset / workpiece</code> 的清晰组织方式，并补充了更适合正式运行的配套文件，例如：</p>
+<ul>
+<li><code>metadata/samples.csv</code></li>
+<li><code>metadata/summary.json</code></li>
+<li><code>metadata/masks.csv</code></li>
+<li>各工件目录下的 <code>masks/</code></li>
+</ul>
+<h4 id="_1">正式实验目录的含义</h4>
+<p>以 <code>aiws5.2-usable-materialized/</code> 为例：</p>
+<ul>
+<li><code>V1/</code>：无深度版本</li>
+<li><code>V2/</code>：带 <code>depth_png/</code> 的版本</li>
+<li><code>NEW/</code>：带 <code>depth_exr/</code> 的版本</li>
+</ul>
+<p>每个工件目录下通常包含：</p>
+<ul>
+<li><code>images/</code>：RGB 图像</li>
+<li><code>annotations/</code>：对应 ISAT 标注 JSON</li>
+<li><code>depth_png/</code> 或 <code>depth_exr/</code>：深度输入（如果该 subset 有深度）</li>
+<li><code>masks/</code>：由标注 polygon 栅格化生成的实例 mask</li>
+</ul>
+<p>辅助目录：</p>
+<ul>
+<li><code>metadata/</code>：机器可读统计与样本清单</li>
+<li><code>misc/</code>：不进入主实验主干的特殊样本</li>
+</ul>
+<p>因此，最终可以把数据组织概括为：</p>
+<p><strong>原始平铺资源池 → split-aware 视图 → cleaned usable 视图 → 正式 materialized 实验视图。</strong></p>
+<h3 id="23-rxl">2.3 运行服务器（RXL）</h3>
+<ul>
+<li>CPU: <code>2 × Intel Xeon Gold 6326 @ 2.90GHz</code></li>
+<li>CPU 总核数: <code>64</code> 线程</li>
+<li>系统内存: <code>503 GiB</code></li>
+<li>GPU: <code>4 × NVIDIA RTX A6000</code></li>
+<li>单卡显存: <code>49140 MiB</code>（约 <code>48 GB</code>）</li>
+<li>驱动版本: <code>580.82.09</code></li>
+</ul>
+<h3 id="24">2.4 本轮实验中的关键硬件约束</h3>
+<ol>
+<li><strong>SAM3D 主要受 GPU 显存约束</strong>，但在 A6000 48 GB 上是可稳定跑通的。</li>
+<li><strong>Cadrille PC 模态</strong>对 GPU 调度方式敏感，若多进程错误落到同一张卡上，会触发 CUDA OOM。</li>
+<li><strong>Cadrille IMG 模态</strong>的首要瓶颈并不是 GPU 显存，而是 <strong>Docker / PyTorch DataLoader 的共享内存（shm）</strong>。</li>
+</ol>
+<hr />
+<h2 id="3-sam3d">3. SAM3D 环境搭建结论</h2>
+<p>当前正式环境基线如下：</p>
+<ul>
+<li>项目根目录：<code>/ssd1/rxl/zhankaiming/AIWS</code></li>
+<li>SAM3D 仓库：<code>/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects</code></li>
+<li>Conda 环境：<code>/home/rxl/anaconda3/envs/sam3d-objects</code></li>
+<li>当前 SAM3D 仓库基线 commit：<code>81a82373a3a7f4cbb00bd5b32aaf6b4d0f659ddd</code></li>
+</ul>
+<h3 id="31">3.1 已补齐的关键运行资源</h3>
+<ul>
+<li><code>checkpoints/hf/pipeline.yaml</code></li>
+<li>SAM3D checkpoints</li>
+<li>MoGe 权重</li>
+<li>DINOv2 本地 cache 与 checkpoint</li>
+</ul>
+<p>关键路径：</p>
+<ul>
+<li>checkpoints: <code>/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects/checkpoints/hf</code></li>
+<li>MoGe: <code>/ssd1/rxl/zhankaiming/AIWS/models/moge-vitl/model-real.pt</code></li>
+<li>DINO cache: <code>/home/rxl/.cache/torch/hub/facebookresearch_dinov2_main</code></li>
+<li>DINO checkpoint: <code>/home/rxl/.cache/torch/hub/checkpoints/dinov2_vitl14_reg4_pretrain.pth</code></li>
+</ul>
+<h3 id="32">3.2 性能相关环境结论</h3>
+<p>为了让 <code>RTX A6000</code> 正常走上更高效的 attention 路径，正式运行使用：</p>
+<ul>
+<li><code>ATTN_BACKEND=flash_attn</code></li>
+<li><code>SPARSE_ATTN_BACKEND=flash_attn</code></li>
+</ul>
+<p>实际部署中，<code>flash_attn</code> 采用了<strong>服务器本地源码编译</strong>，原因是预编译 wheel 与服务器 glibc/二进制环境不兼容。</p>
+<blockquote>
+<p>更细的安装步骤与命令已整理到《环境搭建与推理 SOP》文档。</p>
+</blockquote>
+<hr />
+<h2 id="4">4. 全量实验汇总</h2>
+<h2 id="41-sam3d">4.1 SAM3D 全量实验结果</h2>
+<p>正式输出目录：</p>
+<ul>
+<li><code>/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527</code></li>
+</ul>
+<h3 id="411">4.1.1 完成情况</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align: right;">数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>总任务数</td>
+<td style="text-align: right;">1418</td>
+</tr>
+<tr>
+<td>成功数</td>
+<td style="text-align: right;">1418</td>
+</tr>
+<tr>
+<td>失败数</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>完成率</td>
+<td style="text-align: right;">100%</td>
+</tr>
+</tbody>
+</table>
+<h3 id="412">4.1.2 总体运行时间</h3>
+<ul>
+<li>最早开始时间：<code>2026-04-10 19:36:09</code></li>
+<li>最晚结束时间：<code>2026-04-10 21:12:19</code></li>
+<li><strong>总墙钟时间</strong>：约 <strong>1.60 小时</strong></li>
+<li>按全量墙钟时间折算吞吐：约 <strong>884.7 样本 / 小时</strong></li>
+</ul>
+<p>分 shard 指标：</p>
+<table>
+<thead>
+<tr>
+<th>Shard</th>
+<th style="text-align: right;">GPU</th>
+<th style="text-align: right;">完成数</th>
+<th style="text-align: right;">平均单样本时延 (s)</th>
+<th style="text-align: right;">Shard 吞吐 (样本/小时)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>shard-0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">355</td>
+<td style="text-align: right;">14.074</td>
+<td style="text-align: right;">254.337</td>
+</tr>
+<tr>
+<td>shard-1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">355</td>
+<td style="text-align: right;">14.121</td>
+<td style="text-align: right;">253.559</td>
+</tr>
+<tr>
+<td>shard-2</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">354</td>
+<td style="text-align: right;">14.813</td>
+<td style="text-align: right;">241.790</td>
+</tr>
+<tr>
+<td>shard-3</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">354</td>
+<td style="text-align: right;">16.191</td>
+<td style="text-align: right;">221.272</td>
+</tr>
+</tbody>
+</table>
+<h3 id="413-1418">4.1.3 单样本时间统计（1418 样本）</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align: right;">Mean</th>
+<th style="text-align: right;">P50</th>
+<th style="text-align: right;">P90</th>
+<th style="text-align: right;">P95</th>
+<th style="text-align: right;">Max</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>duration_sec</code></td>
+<td style="text-align: right;">14.799</td>
+<td style="text-align: right;">13.812</td>
+<td style="text-align: right;">17.555</td>
+<td style="text-align: right;">18.977</td>
+<td style="text-align: right;">73.562</td>
+</tr>
+<tr>
+<td><code>sec_per_megapixel</code></td>
+<td style="text-align: right;">7.374</td>
+<td style="text-align: right;">6.664</td>
+<td style="text-align: right;">8.505</td>
+<td style="text-align: right;">9.359</td>
+<td style="text-align: right;">51.063</td>
+</tr>
+</tbody>
+</table>
+<h3 id="414-1418">4.1.4 显存统计（1418 样本）</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align: right;">Mean</th>
+<th style="text-align: right;">P50</th>
+<th style="text-align: right;">P90</th>
+<th style="text-align: right;">P95</th>
+<th style="text-align: right;">Max</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>peak_memory_allocated_mb</code></td>
+<td style="text-align: right;">18709.201</td>
+<td style="text-align: right;">18738.090</td>
+<td style="text-align: right;">19428.319</td>
+<td style="text-align: right;">19614.863</td>
+<td style="text-align: right;">20071.270</td>
+</tr>
+<tr>
+<td><code>peak_memory_reserved_mb</code></td>
+<td style="text-align: right;">24647.275</td>
+<td style="text-align: right;">24936.000</td>
+<td style="text-align: right;">26420.000</td>
+<td style="text-align: right;">27136.000</td>
+<td style="text-align: right;">28076.000</td>
+</tr>
+</tbody>
+</table>
+<p><strong>解释</strong>：</p>
+<ul>
+<li>在 <code>48 GB</code> A6000 上，SAM3D 的峰值 reserved memory 上界约 <strong>28.1 GB</strong>，说明正式配置存在一定安全余量。</li>
+<li>从显存角度看，SAM3D 在当前硬件上是可长期复用的，不需要为了全量数据额外换更高显存卡。</li>
+</ul>
+<h3 id="415">4.1.5 运行瓶颈观察</h3>
+<p>主要长尾来自 <code>V1 / bellmouth</code> 子域，说明后续如果要继续优化总时长，优先分析该类别即可。</p>
+<hr />
+<h2 id="42-cadrille">4.2 Cadrille 全量实验结果</h2>
+<h3 id="421-pc">4.2.1 PC 模态（全量成功）</h3>
+<p>用于统计的输出来自一轮“PC 成功、IMG 失败”的全量联合实验；该顶层目录由于后续清理已移入可恢复归档，但 <strong>PC shard 结果本身完整可用</strong>。</p>
+<p>统计来源目录：</p>
+<ul>
+<li><code>/ssd1/rxl/zhankaiming/AIWS/.trash/outputs-cleanup-20260411-153952/cadrille-full-modalities-20260411-090531-bs64/pc</code></li>
+</ul>
+<p>配置：</p>
+<ul>
+<li>模态：<code>pc</code></li>
+<li>输入：SAM3D 导出的 STL</li>
+<li><code>n_samples=5</code></li>
+<li><code>batch_size=64</code></li>
+<li>4 卡并行</li>
+<li>选择策略：<code>evaluate</code></li>
+</ul>
+<p>结果：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align: right;">数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>送入 Cadrille 的样本数</td>
+<td style="text-align: right;">1418</td>
+</tr>
+<tr>
+<td>成功选出最佳候选数</td>
+<td style="text-align: right;">1418</td>
+</tr>
+<tr>
+<td>选择成功率</td>
+<td style="text-align: right;">100.0%</td>
+</tr>
+<tr>
+<td>墙钟时间</td>
+<td style="text-align: right;">约 80.1 分钟</td>
+</tr>
+<tr>
+<td>折算吞吐</td>
+<td style="text-align: right;">约 1061.7 样本/小时</td>
+</tr>
+</tbody>
+</table>
+<p>补充质量指标（按 shard summary 均值汇总）：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align: right;">数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mean_iou</code> 平均值</td>
+<td style="text-align: right;">0.021192</td>
+</tr>
+<tr>
+<td><code>median_cd</code> 平均值</td>
+<td style="text-align: right;">0.038003</td>
+</tr>
+</tbody>
+</table>
+<h3 id="422-img">4.2.2 IMG 模态（修复后全量成功）</h3>
+<p>最终保留的成功输出目录：</p>
+<ul>
+<li><code>/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix</code></li>
+</ul>
+<p>稳定配置：</p>
+<ul>
+<li>模态：<code>img</code></li>
+<li><code>n_samples=1</code></li>
+<li><code>batch_size=32</code></li>
+<li><code>--ipc=host --shm-size=16g</code></li>
+<li>降低 IMG dataloader worker 压力</li>
+<li>选择策略：<code>evaluate</code></li>
+</ul>
+<p>结果：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align: right;">数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>送入 Cadrille 的样本数</td>
+<td style="text-align: right;">1418</td>
+</tr>
+<tr>
+<td>成功选出最佳候选数</td>
+<td style="text-align: right;">1213</td>
+</tr>
+<tr>
+<td>选择成功率</td>
+<td style="text-align: right;">85.54%</td>
+</tr>
+<tr>
+<td>选出的 STL 数</td>
+<td style="text-align: right;">1213</td>
+</tr>
+<tr>
+<td>选出的 STEP 数</td>
+<td style="text-align: right;">1211</td>
+</tr>
+<tr>
+<td>墙钟时间</td>
+<td style="text-align: right;">约 25.9 分钟</td>
+</tr>
+<tr>
+<td>折算吞吐</td>
+<td style="text-align: right;">约 3290.3 样本/小时</td>
+</tr>
+</tbody>
+</table>
+<p>补充质量指标（按 shard summary 均值汇总）：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align: right;">数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mean_iou</code> 平均值</td>
+<td style="text-align: right;">0.026166</td>
+</tr>
+<tr>
+<td><code>median_cd</code> 平均值</td>
+<td style="text-align: right;">0.047796</td>
+</tr>
+</tbody>
+</table>
+<h3 id="423-cadrille">4.2.3 Cadrille 的内存/共享内存约束结论</h3>
+<p><strong>PC 模态约束</strong>：</p>
+<ul>
+<li>初次多卡全量尝试时，曾出现以下典型错误：</li>
+<li><code>torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.21 GiB</code></li>
+<li>从日志看，当时多个进程实际挤在同一张 GPU 上，导致单卡剩余显存不足。</li>
+<li>结论：<strong>PC 模态并非绝对跑不动，而是必须严格 GPU pinning，避免多进程抢同卡。</strong></li>
+</ul>
+<p><strong>IMG 模态约束</strong>：</p>
+<ul>
+<li>在 <code>batch_size=64</code> 的默认路径下，4 个 shard 均出现：</li>
+<li><code>ERROR: Unexpected bus error encountered in worker. This might be caused by insufficient shared memory (shm).</code></li>
+<li><code>RuntimeError: DataLoader worker ... is killed by signal: Bus error</code></li>
+<li><code>RuntimeError: unable to write to file &lt;/torch_...&gt;: No space left on device (28)</code></li>
+<li>结论：<strong>IMG 模态的首要约束是 Docker/PyTorch DataLoader 的共享内存，而不是 GPU 显存本身。</strong></li>
+</ul>
+<h3 id="424-cadrille">4.2.4 为什么目前没有 Cadrille 的精确峰值显存表</h3>
+<p>当前 Cadrille 运行脚本还没有像 SAM3D 一样记录：</p>
+<ul>
+<li><code>torch.cuda.max_memory_allocated()</code></li>
+<li><code>torch.cuda.max_memory_reserved()</code></li>
+</ul>
+<p>因此，这一轮对 Cadrille 的“内存总结”更准确地说是：</p>
+<ul>
+<li>有<strong>真实失败证据</strong>（OOM / shm bus error）</li>
+<li>有<strong>稳定修复配置</strong></li>
+<li>但还没有<strong>逐样本、逐 shard 的正式峰值显存统计表</strong></li>
+</ul>
+<p>这不影响当前结论，但如果后续要写论文或正式答辩材料，建议把这组 instrumentation 加进去。</p>
+<hr />
+<h2 id="5">5. 面向导师可直接汇报的结论</h2>
+<p>可以直接用下面这组表达：</p>
+<ol>
+<li><strong>SAM3D 已在 1418 个正式样本上完成 100% 全量推理</strong>，在 4×RTX A6000 条件下总墙钟时间约 1.6 小时。</li>
+<li><strong>SAM3D 单样本平均耗时约 14.8 秒</strong>，峰值 reserved 显存上界约 28.1 GB，说明在 A6000 48 GB 上运行是稳定的。</li>
+<li><strong>SAM3D 输出 STL 之后，Cadrille 的 PC 模态已完成全量链路验证</strong>，1418 个输入全部得到可选中的 CAD 结果。</li>
+<li><strong>Cadrille 的 IMG 模态不是算力不够，而是共享内存配置不合适</strong>；在 <code>batch=32 + --ipc=host + --shm-size=16g + 降低 worker</code> 后已跑通全量成功重试。</li>
+<li>当前系统已经具备“<strong>从 AIWS 图像数据，到 SAM3D 3D 重建，再到 Cadrille CAD 生成</strong>”的可复用实验基线。</li>
+</ol>
+<hr />
+<h2 id="6">6. 下一阶段建议</h2>
+<h3 id="1-cadrille">建议 1：把 Cadrille 的峰值显存统计补齐</h3>
+<p>在 <code>test.py</code> / <code>evaluate.py</code> 外围加入显存记录逻辑，补出：</p>
+<ul>
+<li>平均显存</li>
+<li>P95 显存</li>
+<li>最大显存</li>
+<li>分模态显存表</li>
+</ul>
+<p>这样后续汇报会更完整。</p>
+<h3 id="2_1">建议 2：后续批量推理采用“分阶段、分模态”策略</h3>
+<p>推荐流程：</p>
+<ol>
+<li><strong>先单独跑 SAM3D</strong>，产出 STL</li>
+<li><strong>再单独跑 Cadrille-PC</strong></li>
+<li><strong>最后单独跑 Cadrille-IMG</strong></li>
+</ol>
+<p>这样可以针对不同模态采用不同 batch size 与 shm 配置，运维风险更低。</p>
+<h3 id="3-img">建议 3：把 IMG 失败样本做针对性分析</h3>
+<p>当前 IMG 最终保留率约 <code>85.5%</code>，下一步可以重点分析：</p>
+<ul>
+<li>哪些类别更容易失败</li>
+<li>是生成失败、转换失败，还是评估选择失败</li>
+<li>是否与工件几何复杂度、视角、遮挡相关</li>
+</ul>
+<hr />
+<h2 id="7">7. 附：本次汇报引用的关键输出目录</h2>
+<h3 id="_2">成功保留目录</h3>
+<ul>
+<li>SAM3D 正式成功输出：</li>
+<li><code>/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527</code></li>
+<li>Cadrille IMG 正式成功输出：</li>
+<li><code>/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix</code></li>
+</ul>
+<h3 id="_3">归档但仍可恢复的统计目录</h3>
+<ul>
+<li>Cadrille PC 全量成功统计目录：</li>
+<li><code>/ssd1/rxl/zhankaiming/AIWS/.trash/outputs-cleanup-20260411-153952/cadrille-full-modalities-20260411-090531-bs64/pc</code></li>
+</ul>
+<hr />
+<h2 id="8">8. 一句话总结</h2>
+<p><strong>在 4×RTX A6000 条件下，SAM3D 已经具备全量稳定重建能力，Cadrille 链路也已经验证可行；真正需要精细调优的重点不再是“能不能跑”，而是“如何在不同模态下更稳、更可测地跑”。</strong></p>
+  </main>
+</body>
+</html>

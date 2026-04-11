@@ -29,3 +29,7 @@
   Type: experiment-design
   Context: Leonardo clarified deterministic image input should use one generation, while point-cloud branch keeps multi-sample search
   Confirmed: yes
+- [16:11] In generated project documents, use the human author name 詹铠铭 / Kaiming Zhan and omit Audience fields unless explicitly needed
+  Type: documentation
+  Context: Leonardo corrected the author metadata and asked to remove audience lines from the generated report materials
+  Confirmed: yes

@@ -1,6 +1,6 @@
 # 2026-04-11 AIWS × SAM3D × Cadrille Presentation Outline
 
-**Audience**: Supervisor / project lead  
+**Author**: Kaiming Zhan  
 **Use case**: Group meeting or oral presentation  
 **Suggested length**: 6 to 8 slides  
 **Suggested style**: One conclusion per slide, minimal code, emphasize structure and numbers

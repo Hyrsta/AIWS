@@ -1,8 +1,7 @@
 # 2026-04-11 AIWS × SAM3D × Cadrille Supervisor Report
 
-**Author**: Weld  
+**Author**: Kaiming Zhan  
 **Date**: 2026-04-11  
-**Audience**: Supervisor / project lead  
 **Purpose**: High-level summary of environment readiness, full-dataset experiments, runtime and memory behavior under current hardware constraints, and how inference should be run in future work.
 
 ---
