@@ -97,3 +97,7 @@
   Type: documentation
   Context: Leonardo corrected the pipeline wording to match the provided project framing slide
   Confirmed: yes
+- [19:18] Never write meta lead-ins like "The correct framing is" or similar in project docs; write directly in Leonardo's voice as if he authored the document
+  Type: documentation
+  Context: Leonardo corrected the report tone again and asked that docs avoid assistant/meta setup sentences entirely
+  Confirmed: yes

@@ -86,7 +86,7 @@ Project structure: AIWS online/offline split and the offline CAD pipeline
 ### Suggested content
 - AIWS repo: `https://github.com/Hyrsta/AIWS`
   - organization: AIWS has an online pipeline and an offline pipeline
-  - this slide covers the offline pipeline: **offline RGB images → mesh reconstruction → CAD reconstruction**
+  - offline pipeline: **offline RGB images → mesh reconstruction → CAD reconstruction**
 - upstream repo, SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
   - default entry points used: `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
 - upstream repo, Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`

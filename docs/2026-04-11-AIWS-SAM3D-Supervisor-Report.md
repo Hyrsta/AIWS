@@ -83,7 +83,7 @@ In the current data, `misc/` is dominated by `multi_instance` samples.
 
 ### 2.3 Project structure (AIWS online/offline split and the offline CAD pipeline)
 
-The correct framing is: **AIWS is split into an online pipeline and an offline pipeline**, and the CAD reconstruction pipeline documented here is the **offline pipeline**.
+**AIWS is split into an online pipeline and an offline pipeline**, and the CAD reconstruction pipeline documented here is the **offline pipeline**.
 
 **AIWS project**
 

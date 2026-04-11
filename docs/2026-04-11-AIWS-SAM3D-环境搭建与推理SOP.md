@@ -78,7 +78,7 @@
 
 ### 2.4 项目结构（AIWS 在线/离线划分与离线 CAD 管线）
 
-这里更准确的表述应该是：**AIWS 分为 online pipeline 和 offline pipeline 两部分**，而本 SOP 记录的 CAD 重建管线就是其中的 **offline pipeline**。
+**AIWS 分为 online pipeline 和 offline pipeline 两部分**，而本 SOP 记录的 CAD 重建管线就是其中的 **offline pipeline**。
 
 **AIWS 项目**
 
