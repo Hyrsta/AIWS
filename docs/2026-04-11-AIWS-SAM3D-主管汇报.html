@@ -88,7 +88,7 @@
 </ul>
 <p>当前没有把 <code>misc/</code> 数据纳入正式主实验，主要原因是这部分样本里以 <strong>multi-instance 标注</strong> 为主，而当前 SAM3D / Cadrille 主流程默认处理的是更干净的单实例样本。若直接并入，会给标注解析、实例对应和后续批处理带来额外不确定性。</p>
 <p>因此，<code>misc/</code> 更准确地说是<strong>暂时未纳入当前正式口径</strong>，并不是永久废弃。后续如果补齐多实例样本的解析、拆分或主目标选择策略，这部分数据仍然可以进一步修复并重新利用。</p>
-<p>因此，这次汇报里可以把数据集整理概括为：<strong>把原始平铺资源池整理成了统一的 <code>aiws5.2-usable/</code> 实验结构。</strong></p>
+<p>最终，原始平铺资源池被整理为统一的 <code>aiws5.2-usable/</code> 实验结构。</p>
 <h3 id="23-rxl">2.3 运行服务器（RXL）</h3>
 <ul>
 <li>CPU: <code>2 × Intel Xeon Gold 6326 @ 2.90GHz</code></li>
@@ -458,8 +458,7 @@
 </ul>
 <p>这不影响当前结论，但如果后续要写论文或正式答辩材料，建议把这组 instrumentation 加进去。</p>
 <hr />
-<h2 id="5">5. 面向导师可直接汇报的结论</h2>
-<p>可以直接用下面这组表达：</p>
+<h2 id="5">5. 主要结论</h2>
 <ol>
 <li><strong>SAM3D 已在 1418 个正式样本上完成 100% 全量推理</strong>，在 4×RTX A6000 条件下总墙钟时间约 1.6 小时。</li>
 <li><strong>SAM3D 单样本平均耗时约 14.8 秒</strong>，峰值 reserved 显存上界约 28.1 GB，说明在 A6000 48 GB 上运行是稳定的。</li>

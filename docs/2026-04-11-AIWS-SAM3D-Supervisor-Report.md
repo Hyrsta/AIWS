@@ -74,7 +74,7 @@ The current formal pipeline does **not** include `misc/` data mainly because the
 
 So `misc/` should be understood as **temporarily excluded from the current formal scope**, not as permanently discarded. If multi-instance parsing, splitting, or main-object selection is improved later, these samples can still be repaired and reused.
 
-So for presentation purposes, the dataset story can be summarized simply as: **the original flat resource pool was reorganized into the unified `aiws5.2-usable/` experiment structure.**
+In summary, the original flat resource pool was reorganized into the unified `aiws5.2-usable/` experiment structure.
 
 ### 2.3 Compute server (`RXL`)
 
@@ -291,9 +291,7 @@ This does not change the operational conclusion, but it should be added before p
 
 ---
 
-## 5. Supervisor-Facing Takeaways
-
-The following statements can be reported directly:
+## 5. Main Conclusions
 
 1. **SAM3D has already completed 100% full-dataset inference on 1418 formal samples**, with a total wall-clock time of about 1.6 hours on `4 × RTX A6000`.
 2. **SAM3D averages about 14.8 seconds per sample**, with an upper observed reserved-memory bound of about **28.1 GB**, showing that it is stable on 48 GB A6000 GPUs.

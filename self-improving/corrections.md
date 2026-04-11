@@ -41,3 +41,7 @@
   Type: documentation
   Context: Leonardo asked to clarify why `misc/` is not used in the current formal pipeline
   Confirmed: yes
+- [16:25] In supervisor-facing documents, remove assistant/meta narration and write directly in Leonardo's voice rather than using phrases like "for presentation purposes" or "can be summarized simply"
+  Type: documentation
+  Context: Leonardo corrected the report tone and asked that supervisor documents read as if written directly by him
+  Confirmed: yes
