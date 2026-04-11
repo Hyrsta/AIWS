@@ -56,7 +56,7 @@ Dense and sparse attention are both running with `flash_attn`.
 
 ## 5. Batch Runner Outcome
 
-Formal runner: `scripts/sam3d_aiws52_batch.py`
+Formal runner: `scripts/sam3d_batch.py`
 
 Now supports:
 

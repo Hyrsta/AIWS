@@ -106,9 +106,9 @@ AIWS 当前包含两个相互衔接的部分：
 - `scripts/cadrille_test_wrapper.py`：薄封装，只负责 processor/checkpoint 覆盖、sample 数控制、batch size 控制，以及 GPU 显存日志
 - `scripts/cadrille_evaluate.py`：AIWS e2e 流程里使用的评估 wrapper
 - `scripts/cadrille_convert_cadquery.py`：AIWS e2e 流程里使用的 CAD 转换 wrapper
-- `scripts/build_aiws52_usable_view.py`：整理并构建 `aiws5.2-usable/` 数据视图
-- `scripts/generate_aiws52_instance_masks.py`：根据标注生成实例级 mask/中间数据
-- `scripts/sam3d_aiws52_batch.py`：SAM3D 全量批处理入口，支持 resume、shard、多卡与运行指标记录
+- `scripts/dataset_usable_view_build.py`：整理并构建 `aiws5.2-usable/` 数据视图
+- `scripts/dataset_instance_masks_generate.py`：根据标注生成实例级 mask/中间数据
+- `scripts/sam3d_batch.py`：SAM3D 全量批处理入口，支持 resume、shard、多卡与运行指标记录
 - `scripts/sam3d_run_metrics_analysis.py`：汇总并分析 SAM3D 运行统计
 - `scripts/sam3d_to_cadrille_e2e.py`：把 SAM3D 网格输出整理为 Cadrille 各模式所需的 mesh-derived 输入，并汇总下游结果
 - `scripts/cadrille_full_modalities_4gpu.py`：按 GPU 切分 shard，批量启动 Cadrille `pc/img` 全量运行
@@ -277,7 +277,7 @@ output["glb"].export("mesh.stl")
 
 当前正式脚本：
 
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_batch.py`
 
 单个 shard 示例：
 
@@ -286,7 +286,7 @@ ATTN_BACKEND=flash_attn \
 SPARSE_ATTN_BACKEND=flash_attn \
 CUDA_VISIBLE_DEVICES=0 \
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python -u \
-/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py \
+/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_batch.py \
   --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable \
   --dataset-layout subset \
   --repo-root /ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects \
@@ -303,7 +303,7 @@ CUDA_VISIBLE_DEVICES=0 \
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-$(date +%Y%m%d-%H%M%S)
 PY=/home/rxl/anaconda3/envs/sam3d-objects/bin/python
-SCRIPT=/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py
+SCRIPT=/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_batch.py
 DATA=/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable
 REPO=/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects
 

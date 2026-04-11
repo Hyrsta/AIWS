@@ -125,6 +125,10 @@
   Type: documentation
   Context: Leonardo asked to rewrite the project-structure section using the current structure and check the whole documentation for similar wording problems
   Confirmed: yes
+- [22:28] Avoid `aiws52` in AIWS script filenames. Prefer general, role-based names like `dataset_*` and `sam3d_*` instead of dataset-version-specific script names.
+  Type: naming
+  Context: Leonardo rejected `build_aiws52...`, `generate_aiws52...`, and similar script naming
+  Confirmed: yes
 - [19:38] In the SOP structure, SAM3D and Cadrille should be framed as parallel modules. If there is `SAM3D Environment Setup` and `SAM3D Inference Workflow`, there should also be `Cadrille Environment Setup` and `Cadrille Inference Workflow`
   Type: documentation
   Context: Leonardo rejected the old `Continuing from SAM3D to Cadrille` framing because it made Cadrille look subordinate instead of parallel

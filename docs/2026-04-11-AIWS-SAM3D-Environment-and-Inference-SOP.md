@@ -106,9 +106,9 @@ AIWS has two connected parts:
 - `scripts/cadrille_test_wrapper.py`: thin wrapper for processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
 - `scripts/cadrille_evaluate.py`: evaluation wrapper used by the AIWS e2e pipeline
 - `scripts/cadrille_convert_cadquery.py`: CAD conversion wrapper used by the AIWS e2e pipeline
-- `scripts/build_aiws52_usable_view.py`: builds the cleaned `aiws5.2-usable/` dataset view
-- `scripts/generate_aiws52_instance_masks.py`: prepares instance-level masks and intermediate data from annotations
-- `scripts/sam3d_aiws52_batch.py`: resumable SAM3D batch runner with sharding, multi-GPU support, and runtime metrics
+- `scripts/dataset_usable_view_build.py`: builds the cleaned `aiws5.2-usable/` dataset view
+- `scripts/dataset_instance_masks_generate.py`: prepares instance-level masks and intermediate data from annotations
+- `scripts/sam3d_batch.py`: resumable SAM3D batch runner with sharding, multi-GPU support, and runtime metrics
 - `scripts/sam3d_run_metrics_analysis.py`: summarizes and analyzes SAM3D run statistics
 - `scripts/sam3d_to_cadrille_e2e.py`: bridges SAM3D mesh outputs into Cadrille by preparing the mesh-derived inputs required by each mode, and writes pipeline summaries
 - `scripts/cadrille_full_modalities_4gpu.py`: launches full-dataset Cadrille `pc/img` shard jobs across GPUs
@@ -278,7 +278,7 @@ Use this for:
 
 Current production script:
 
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_batch.py`
 
 Single-shard example:
 
@@ -287,7 +287,7 @@ ATTN_BACKEND=flash_attn \
 SPARSE_ATTN_BACKEND=flash_attn \
 CUDA_VISIBLE_DEVICES=0 \
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python -u \
-/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py \
+/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_batch.py \
   --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable \
   --dataset-layout subset \
   --repo-root /ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects \
@@ -304,7 +304,7 @@ Recommended `tmux`-friendly launch:
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-$(date +%Y%m%d-%H%M%S)
 PY=/home/rxl/anaconda3/envs/sam3d-objects/bin/python
-SCRIPT=/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py
+SCRIPT=/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_batch.py
 DATA=/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable
 REPO=/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects
 

@@ -62,9 +62,9 @@ AIWS/
 
 ### Main offline pipeline scripts
 
-- `scripts/build_aiws52_usable_view.py`
-- `scripts/generate_aiws52_instance_masks.py`
-- `scripts/sam3d_aiws52_batch.py`
+- `scripts/dataset_usable_view_build.py`
+- `scripts/dataset_instance_masks_generate.py`
+- `scripts/sam3d_batch.py`
 - `scripts/sam3d_run_metrics_analysis.py`
 - `scripts/sam3d_to_cadrille_e2e.py`
 - `scripts/cadrille_full_modalities_4gpu.py`
