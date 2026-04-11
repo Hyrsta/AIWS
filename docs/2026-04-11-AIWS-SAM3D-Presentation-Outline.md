@@ -96,7 +96,8 @@ AIWS project structure
 - current repo layout:
   - `repos/sam-3d-objects`, `repos/cadrille`: upstream submodules
   - `scripts/`: AIWS wrappers, orchestration, data prep, and analysis
-  - `docs/`, `gui/`: documentation and local tooling
+  - `docs/`: documentation
+  - `gui/`: local FastAPI + Streamlit GUI for run launch, log/progress inspection, and STL preview over SSH
 - offline pipeline entry points:
   - SAM3D: `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
   - Cadrille: `test.py`, `evaluate.py`, `convert_cadquery.py`
@@ -104,6 +105,7 @@ AIWS project structure
 ### Main point to say
 - explain the role of each pipeline first, then introduce the model stack under each one
 - show that AIWS keeps upstream model repos clean and puts project-specific logic in `scripts/`
+- mention that AIWS also has a local GUI layer for orchestration and result inspection
 
 ---
 

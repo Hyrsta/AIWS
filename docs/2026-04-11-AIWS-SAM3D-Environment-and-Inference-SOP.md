@@ -96,6 +96,19 @@ AIWS has two connected parts:
 - `docs/`: reports, SOPs, and presentation materials
 - `gui/`: local GUI for launching runs and inspecting outputs
 
+**Current AIWS GUI**
+
+- location: `gui/`
+- architecture: `FastAPI` backend + `Streamlit` frontend
+- default execution path: run the GUI locally and connect to `RXL` over SSH
+- current capabilities:
+    - launch full Cadrille runs with `scripts/cadrille_full_modalities_4gpu.py`
+    - launch single bridge/e2e runs with `scripts/sam3d_to_cadrille_e2e.py`
+    - inspect output roots, shard progress, and job logs
+    - preview remote STL meshes from outputs such as `selected_mesh/` and `tmp_mesh/`
+- current limitation: GUI preview currently supports STL only; STEP/BRep preview is not yet implemented
+- detailed setup and usage notes are kept in `gui/README.md`
+
 **Upstream entry points used in the offline pipeline**
 
 - SAM3D (`repos/sam-3d-objects`): `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`

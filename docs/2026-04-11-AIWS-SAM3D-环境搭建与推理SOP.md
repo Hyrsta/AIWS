@@ -96,6 +96,19 @@ AIWS 当前包含两个相互衔接的部分：
 - `docs/`：报告、SOP 与汇报材料
 - `gui/`：本地运行与结果查看界面
 
+**当前 AIWS GUI**
+
+- 位置：`gui/`
+- 架构：`FastAPI` 后端 + `Streamlit` 前端
+- 默认使用方式：GUI 在本地运行，通过 SSH 连接 `RXL`
+- 当前能力：
+    - 用 `scripts/cadrille_full_modalities_4gpu.py` 启动 Cadrille 全量运行
+    - 用 `scripts/sam3d_to_cadrille_e2e.py` 启动单次 bridge/e2e 运行
+    - 查看输出目录、shard 进度与任务日志
+    - 预览远端输出中的 STL 网格，例如 `selected_mesh/` 与 `tmp_mesh/`
+- 当前限制：目前只支持 STL 预览，STEP/BRep 预览尚未实现
+- 详细启动与使用说明见 `gui/README.md`
+
 **离线管线直接使用的上游入口**
 
 - SAM3D（`repos/sam-3d-objects`）：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`

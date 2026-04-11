@@ -95,7 +95,8 @@ AIWS 项目结构
 - 当前仓库结构：
   - `repos/sam-3d-objects`、`repos/cadrille`：官方上游 submodule
   - `scripts/`：AIWS 自己的 wrapper、编排、数据准备与分析脚本
-  - `docs/`、`gui/`：文档与本地工具
+  - `docs/`：文档
+  - `gui/`：本地 FastAPI + Streamlit GUI，用于启动任务、查看日志/进度，以及通过 SSH 预览 STL
 - 离线管线直接使用的入口：
   - SAM3D：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
   - Cadrille：`test.py`、`evaluate.py`、`convert_cadquery.py`
@@ -103,6 +104,7 @@ AIWS 项目结构
 ### 要强调的点
 - 先讲清楚在线和离线各自承担什么角色，再讲每一部分用了什么模型
 - 强调 AIWS 保持上游仓库干净，把项目特有逻辑集中放在 `scripts/`
+- 顺带说明 AIWS 还有本地 GUI 层，便于编排任务和查看结果
 
 ### 口头补充
 “后续要复现实验，不能只记住上游模型仓库，还要明确这是 AIWS 的 offline pipeline。”
