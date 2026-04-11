@@ -159,9 +159,9 @@ Validation of SAM3D outputs in the downstream Cadrille stage
 - default large-batch setting failed
 - the limiting factor was not raw GPU compute, but **shared memory (shm)**
 - after fixing:
-  - `batch_size=32`
-  - `--ipc=host`
-  - `--shm-size=16g`
+    - `batch_size=32`
+    - `--ipc=host`
+    - `--shm-size=16g`
 - successful retry produced 1213 STL and 1211 STEP outputs
 
 ### Core conclusion of this slide

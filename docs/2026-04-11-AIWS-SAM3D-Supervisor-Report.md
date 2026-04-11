@@ -25,9 +25,9 @@ This round of work established a reusable end-to-end baseline from AIWS5.2 image
 - Dataset: `aiws5.2-usable`
 - Total formal tasks: **1418**
 - Subset breakdown:
-  - `V1`: 593
-  - `V2`: 524
-  - `NEW`: 301
+    - `V1`: 593
+    - `V2`: 524
+    - `NEW`: 301
 
 ### 2.2 Dataset restructuring and folder semantics
 
@@ -51,34 +51,34 @@ Its core semantics are:
 
 - top level: `V1 / V2 / NEW`
 - under each subset: five workpiece folders
-  - `cover_plate`
-  - `square_tube`
-  - `h_beam`
-  - `channel_steel`
-  - `bellmouth`
+    - `cover_plate`
+    - `square_tube`
+    - `h_beam`
+    - `channel_steel`
+    - `bellmouth`
 - inside each workpiece folder, the typical contents are:
-  - `images/`: RGB inputs
-  - `annotations/`: ISAT annotation JSON files
-  - `depth_png/` or `depth_exr/`: depth inputs when available
+    - `images/`: RGB inputs
+    - `annotations/`: ISAT annotation JSON files
+    - `depth_png/` or `depth_exr/`: depth inputs when available
 - supporting top-level folders:
-  - `metadata/`: manifests and summary statistics
-  - `misc/`: special samples excluded from the main pipeline
+    - `metadata/`: manifests and summary statistics
+    - `misc/`: special samples excluded from the main pipeline
 
 The current dataset condition is as follows:
 
 - the current main experimental view contains **1418** usable samples
 - `V1` contains **593** samples, with **no depth**, and currently covers:
-  - `cover_plate`: 200
-  - `square_tube`: 99
-  - `h_beam`: 100
-  - `bellmouth`: 194
-  - `channel_steel`: 0
+    - `cover_plate`: 200
+    - `square_tube`: 99
+    - `h_beam`: 100
+    - `bellmouth`: 194
+    - `channel_steel`: 0
 - `V2` contains **524** samples, **all with PNG depth**, and the current main-view labels are all `cover_plate`
 - `NEW` contains **301** samples, **all with EXR depth**, and the current main-view labels are all `cover_plate`
 - in other words:
-  - `V1` is currently the most diverse subset by workpiece type
-  - `V2` and `NEW` are currently dominated by depth-enabled `cover_plate` samples
-  - `channel_steel` currently has **no populated instances** in the usable main view
+    - `V1` is currently the most diverse subset by workpiece type
+    - `V2` and `NEW` are currently dominated by depth-enabled `cover_plate` samples
+    - `channel_steel` currently has **no populated instances** in the usable main view
 
 Inside `misc/`, the main cases are:
 
@@ -284,16 +284,16 @@ Additional quality indicators (average across shard summaries):
 **PC mode constraint**:
 
 - An earlier large-scale attempt produced the following representative error:
-  - `torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.21 GiB`
+    - `torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.21 GiB`
 - Log inspection showed that multiple processes had effectively collided on the same GPU.
 - Conclusion: **PC mode is feasible on the current hardware, but only if GPU pinning is strict.**
 
 **IMG mode constraint**:
 
 - Under `batch_size=64`, all four shards showed errors such as:
-  - `ERROR: Unexpected bus error encountered in worker. This might be caused by insufficient shared memory (shm).`
-  - `RuntimeError: DataLoader worker ... is killed by signal: Bus error`
-  - `RuntimeError: unable to write to file </torch_...>: No space left on device (28)`
+    - `ERROR: Unexpected bus error encountered in worker. This might be caused by insufficient shared memory (shm).`
+    - `RuntimeError: DataLoader worker ... is killed by signal: Bus error`
+    - `RuntimeError: unable to write to file </torch_...>: No space left on device (28)`
 - Conclusion: **the primary bottleneck for IMG mode is Docker / PyTorch shared memory, not raw GPU VRAM.**
 
 ### 4.2.4 Why there is not yet a formal peak-GPU-memory table for Cadrille
@@ -399,14 +399,14 @@ The final IMG retention rate is about `85.5%`. The next analysis should focus on
 ### Retained successful outputs
 
 - SAM3D official successful output:
-  - `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
+    - `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
 - Cadrille IMG official successful output:
-  - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
+    - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
 
 ### Archived but recoverable statistics path
 
 - Cadrille PC full-dataset success statistics:
-  - `/ssd1/rxl/zhankaiming/AIWS/.trash/outputs-cleanup-20260411-153952/cadrille-full-modalities-20260411-090531-bs64/pc`
+    - `/ssd1/rxl/zhankaiming/AIWS/.trash/outputs-cleanup-20260411-153952/cadrille-full-modalities-20260411-090531-bs64/pc`
 
 ---
 

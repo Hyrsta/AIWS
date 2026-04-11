@@ -30,9 +30,9 @@
 ### 2.2 当前成功输出
 
 - SAM3D 成功全量输出：
-  - `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
+    - `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
 - Cadrille IMG 成功全量输出：
-  - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
+    - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
 
 ### 2.3 数据集目录是怎么整理出来的
 
@@ -50,12 +50,12 @@
 - 顶层按 `V1 / V2 / NEW` 分组
 - 每个 subset 下再按工件类别分组
 - 每个工件目录下通常包含：
-  - `images/`
-  - `annotations/`
-  - `depth_png/` 或 `depth_exr/`
+    - `images/`
+    - `annotations/`
+    - `depth_png/` 或 `depth_exr/`
 - 顶层辅助目录：
-  - `metadata/`
-  - `misc/`
+    - `metadata/`
+    - `misc/`
 
 当前数据状态可以直接概括为：
 
@@ -337,10 +337,10 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
 
 - **不要**直接使用 IMG 的 `batch_size=64` 默认设置做大规模全量跑。
 - 当前稳定经验是：
-  - `batch_size=32`
-  - `--ipc=host`
-  - `--shm-size=16g`
-  - 降低 dataloader worker 压力
+    - `batch_size=32`
+    - `--ipc=host`
+    - `--shm-size=16g`
+    - 降低 dataloader worker 压力
 
 ## 5.4 小规模验证或新数据先做 100 个样本 smoke test
 

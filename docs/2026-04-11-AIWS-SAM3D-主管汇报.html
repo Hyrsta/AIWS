@@ -42,10 +42,12 @@
 <ul>
 <li>数据集：<code>aiws5.2-usable</code></li>
 <li>正式任务总数：<strong>1418</strong></li>
-<li>子集分布：</li>
+<li>子集分布：<ul>
 <li><code>V1</code>: 593</li>
 <li><code>V2</code>: 524</li>
 <li><code>NEW</code>: 301</li>
+</ul>
+</li>
 </ul>
 <h3 id="22">2.2 数据集整理过程与目录含义</h3>
 <p>本项目的数据原始状态更接近<strong>平铺式资源池</strong>：</p>
@@ -66,35 +68,45 @@
 <p>这个结构的核心语义是：</p>
 <ul>
 <li>顶层按 <code>V1 / V2 / NEW</code> 分组</li>
-<li>每个 subset 下再按 5 类工件分组：</li>
+<li>每个 subset 下再按 5 类工件分组：<ul>
 <li><code>cover_plate</code>（盖板）</li>
 <li><code>square_tube</code>（方管）</li>
 <li><code>h_beam</code>（H 型钢）</li>
 <li><code>channel_steel</code>（槽钢）</li>
 <li><code>bellmouth</code>（喇叭口）</li>
-<li>每个工件目录下通常包含：</li>
+</ul>
+</li>
+<li>每个工件目录下通常包含：<ul>
 <li><code>images/</code>：RGB 图像</li>
 <li><code>annotations/</code>：对应 ISAT 标注 JSON</li>
 <li><code>depth_png/</code> 或 <code>depth_exr/</code>：深度输入（如果该 subset 有深度）</li>
-<li>顶层辅助目录包括：</li>
+</ul>
+</li>
+<li>顶层辅助目录包括：<ul>
 <li><code>metadata/</code>：机器可读统计与样本清单</li>
 <li><code>misc/</code>：不进入主实验主干的特殊样本</li>
+</ul>
+</li>
 </ul>
 <p>当前数据状态如下：</p>
 <ul>
 <li>当前主实验可用样本共 <strong>1418</strong> 个</li>
-<li><code>V1</code> 共 <strong>593</strong> 个样本，<strong>无深度</strong>，当前覆盖的工件为：</li>
+<li><code>V1</code> 共 <strong>593</strong> 个样本，<strong>无深度</strong>，当前覆盖的工件为：<ul>
 <li><code>cover_plate</code>: 200</li>
 <li><code>square_tube</code>: 99</li>
 <li><code>h_beam</code>: 100</li>
 <li><code>bellmouth</code>: 194</li>
 <li><code>channel_steel</code>: 0</li>
+</ul>
+</li>
 <li><code>V2</code> 共 <strong>524</strong> 个样本，<strong>全部带 PNG 深度</strong>，当前主实验样本均为 <code>cover_plate</code></li>
 <li><code>NEW</code> 共 <strong>301</strong> 个样本，<strong>全部带 EXR 深度</strong>，当前主实验样本均为 <code>cover_plate</code></li>
-<li>因此，从“工件类型实际分布”来看：</li>
+<li>因此，从“工件类型实际分布”来看：<ul>
 <li><code>V1</code> 是当前工件类型最完整的子集</li>
 <li><code>V2</code> 与 <code>NEW</code> 当前主要是带深度的 <code>cover_plate</code> 数据</li>
 <li><code>channel_steel</code> 在当前可用主视图中<strong>暂无实例</strong></li>
+</ul>
+</li>
 </ul>
 <p>其中，<code>misc/</code> 主要用于隔离：</p>
 <ul>
@@ -453,17 +465,21 @@
 <h3 id="423-cadrille">4.2.3 Cadrille 的内存/共享内存约束结论</h3>
 <p><strong>PC 模态约束</strong>：</p>
 <ul>
-<li>初次多卡全量尝试时，曾出现以下典型错误：</li>
+<li>初次多卡全量尝试时，曾出现以下典型错误：<ul>
 <li><code>torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.21 GiB</code></li>
+</ul>
+</li>
 <li>从日志看，当时多个进程实际挤在同一张 GPU 上，导致单卡剩余显存不足。</li>
 <li>结论：<strong>PC 模态并非绝对跑不动，而是必须严格 GPU pinning，避免多进程抢同卡。</strong></li>
 </ul>
 <p><strong>IMG 模态约束</strong>：</p>
 <ul>
-<li>在 <code>batch_size=64</code> 的默认路径下，4 个 shard 均出现：</li>
+<li>在 <code>batch_size=64</code> 的默认路径下，4 个 shard 均出现：<ul>
 <li><code>ERROR: Unexpected bus error encountered in worker. This might be caused by insufficient shared memory (shm).</code></li>
 <li><code>RuntimeError: DataLoader worker ... is killed by signal: Bus error</code></li>
 <li><code>RuntimeError: unable to write to file &lt;/torch_...&gt;: No space left on device (28)</code></li>
+</ul>
+</li>
 <li>结论：<strong>IMG 模态的首要约束是 Docker/PyTorch DataLoader 的共享内存，而不是 GPU 显存本身。</strong></li>
 </ul>
 <h3 id="424-cadrille">4.2.4 为什么目前没有 Cadrille 的精确峰值显存表</h3>
@@ -571,15 +587,21 @@
 <h2 id="7">7. 附：本次汇报引用的关键输出目录</h2>
 <h3 id="_1">成功保留目录</h3>
 <ul>
-<li>SAM3D 正式成功输出：</li>
+<li>SAM3D 正式成功输出：<ul>
 <li><code>/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527</code></li>
-<li>Cadrille IMG 正式成功输出：</li>
+</ul>
+</li>
+<li>Cadrille IMG 正式成功输出：<ul>
 <li><code>/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix</code></li>
+</ul>
+</li>
 </ul>
 <h3 id="_2">归档但仍可恢复的统计目录</h3>
 <ul>
-<li>Cadrille PC 全量成功统计目录：</li>
+<li>Cadrille PC 全量成功统计目录：<ul>
 <li><code>/ssd1/rxl/zhankaiming/AIWS/.trash/outputs-cleanup-20260411-153952/cadrille-full-modalities-20260411-090531-bs64/pc</code></li>
+</ul>
+</li>
 </ul>
 <hr />
 <h2 id="8">8. 一句话总结</h2>

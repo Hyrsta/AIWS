@@ -158,9 +158,9 @@ SAM3D 输出进入 Cadrille 的验证结果
 - 默认大 batch 配置失败
 - 失败原因不是 GPU 算力本身，而是 **共享内存 shm 不足**
 - 调整后：
-  - `batch_size=32`
-  - `--ipc=host`
-  - `--shm-size=16g`
+    - `batch_size=32`
+    - `--ipc=host`
+    - `--shm-size=16g`
 - 成功重试后：1213 个 STL、1211 个 STEP
 
 ### 这一页要讲的核心结论

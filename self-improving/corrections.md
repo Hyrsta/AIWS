@@ -49,3 +49,7 @@
   Type: documentation
   Context: Leonardo asked the AIWS docs to explain what currently exists in the dataset, not only how folders are organized
   Confirmed: yes
+- [16:37] In markdown reports, nested bullet subpoints must be indented one level deeper so they render correctly in the exported PDF
+  Type: documentation
+  Context: Leonardo corrected the list formatting for supervisor-facing documents
+  Confirmed: yes

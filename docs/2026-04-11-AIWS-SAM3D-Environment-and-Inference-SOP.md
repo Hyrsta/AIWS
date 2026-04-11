@@ -30,9 +30,9 @@ This SOP answers three questions:
 ### 2.2 Current successful outputs
 
 - SAM3D successful full run:
-  - `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
+    - `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
 - Cadrille IMG successful full run:
-  - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
+    - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
 
 ### 2.3 How the dataset directories were organized
 
@@ -50,12 +50,12 @@ Its semantics are:
 - top level: `V1 / V2 / NEW`
 - under each subset: workpiece folders
 - inside each workpiece folder, the typical contents are:
-  - `images/`
-  - `annotations/`
-  - `depth_png/` or `depth_exr/`
+    - `images/`
+    - `annotations/`
+    - `depth_png/` or `depth_exr/`
 - supporting top-level folders:
-  - `metadata/`
-  - `misc/`
+    - `metadata/`
+    - `misc/`
 
 The current dataset condition can be summarized directly as:
 
@@ -338,10 +338,10 @@ Notes:
 
 - Do **not** use the default large-batch IMG configuration for large-scale runs.
 - The currently validated stable recipe is:
-  - `batch_size=32`
-  - `--ipc=host`
-  - `--shm-size=16g`
-  - reduced dataloader worker pressure
+    - `batch_size=32`
+    - `--ipc=host`
+    - `--shm-size=16g`
+    - reduced dataloader worker pressure
 
 ## 5.4 Recommended 100-sample smoke test for new settings
 
