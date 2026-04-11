@@ -57,3 +57,7 @@
   Type: documentation
   Context: Leonardo corrected the organization of the AIWS dataset explanation
   Confirmed: yes
+- [16:44] In supervisor-facing run summaries, avoid internal variable names and present grouped metrics directly by dataset version and workpiece type when that is the practical question
+  Type: documentation
+  Context: Leonardo asked for clearer run-summary wording and a `V1/V2/NEW × workpiece` breakdown of runtime and memory
+  Confirmed: yes

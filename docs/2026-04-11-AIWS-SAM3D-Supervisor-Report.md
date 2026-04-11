@@ -185,22 +185,58 @@ Per-shard summary:
 
 | Metric | Mean | P50 | P90 | P95 | Max |
 |---|---:|---:|---:|---:|---:|
-| `duration_sec` | 14.799 | 13.812 | 17.555 | 18.977 | 73.562 |
-| `sec_per_megapixel` | 7.374 | 6.664 | 8.505 | 9.359 | 51.063 |
+| Runtime per sample (s) | 14.799 | 13.812 | 17.555 | 18.977 | 73.562 |
+| Runtime per megapixel (s/MP) | 7.374 | 6.664 | 8.505 | 9.359 | 51.063 |
 
 ### 4.1.4 GPU memory statistics (1418 samples)
 
 | Metric | Mean | P50 | P90 | P95 | Max |
 |---|---:|---:|---:|---:|---:|
-| `peak_memory_allocated_mb` | 18709.201 | 18738.090 | 19428.319 | 19614.863 | 20071.270 |
-| `peak_memory_reserved_mb` | 24647.275 | 24936.000 | 26420.000 | 27136.000 | 28076.000 |
+| Average allocated GPU memory (MB) | 18709.201 | 18738.090 | 19428.319 | 19614.863 | 20071.270 |
+| Reserved-memory upper bound (MB) | 24647.275 | 24936.000 | 26420.000 | 27136.000 | 28076.000 |
 
 Interpretation:
 
 - On `48 GB` A6000 cards, SAM3D peaks at about **28.1 GB reserved memory**.
 - This indicates that the current SAM3D configuration is operationally safe on the present hardware, with usable headroom.
 
-### 4.1.5 Main bottleneck observation
+### 4.1.5 Runtime and memory by dataset version and workpiece type
+
+To answer the practical question of **how much time and GPU memory each dataset version and workpiece type actually consumes**, the following table summarizes the full-run SAM3D statistics at the `V1 / V2 / NEW × workpiece` level.
+
+Notes:
+
+- the runtime columns report **mean runtime** and **P90 runtime**
+- the memory columns report **average allocated GPU memory** and the **peak reserved-memory upper bound**
+- `—` means that the current main experimental view has no samples for that combination
+
+| Dataset version | Workpiece type | Samples | Mean runtime (s) | P90 runtime (s) | Avg allocated GPU memory (MB) | Peak reserved-memory upper bound (MB) |
+|---|---|---:|---:|---:|---:|---:|
+| V1 | cover_plate | 200 | 13.9323 | 16.7683 | 18695.6 | 28024.0 |
+| V1 | square_tube | 99 | 16.3360 | 17.2780 | 19110.4 | 27336.0 |
+| V1 | h_beam | 100 | 11.9246 | 13.2744 | 18131.8 | 24856.0 |
+| V1 | channel_steel | 0 | — | — | — | — |
+| V1 | bellmouth | 194 | 17.8334 | 34.9408 | 18297.3 | 26298.0 |
+| V2 | cover_plate | 524 | 14.6590 | 17.4729 | 18899.0 | 28044.0 |
+| V2 | square_tube | 0 | — | — | — | — |
+| V2 | h_beam | 0 | — | — | — | — |
+| V2 | channel_steel | 0 | — | — | — | — |
+| V2 | bellmouth | 0 | — | — | — | — |
+| NEW | cover_plate | 301 | 14.1106 | 17.9950 | 18713.1 | 28076.0 |
+| NEW | square_tube | 0 | — | — | — | — |
+| NEW | h_beam | 0 | — | — | — | — |
+| NEW | channel_steel | 0 | — | — | — | — |
+| NEW | bellmouth | 0 | — | — | — | — |
+
+This table makes the main pattern clear:
+
+1. **`V1 / bellmouth` is the slowest current segment**, with a mean runtime of about `17.83 s` and a P90 runtime of about `34.94 s`.
+2. **`V1 / square_tube` is also relatively slow**, but its long-tail behavior is much milder than `bellmouth`.
+3. **`V1 / h_beam` is currently the fastest populated V1 category**.
+4. **`V2` and `NEW` currently behave mainly as depth-enabled `cover_plate` workloads**, with mean runtime around `14.1–14.7 s`.
+5. Across the populated groups, GPU memory remains within the current `48 GB` A6000 safety range; the larger practical difference is **runtime tail behavior**, not memory overflow.
+
+### 4.1.6 Main bottleneck observation
 
 The main long-tail came from the `V1 / bellmouth` subset, which should be the first target if runtime optimization becomes important.
 
@@ -239,8 +275,8 @@ Additional quality indicators (average across shard summaries):
 
 | Metric | Value |
 |---|---:|
-| Average `mean_iou` | 0.021192 |
-| Average `median_cd` | 0.038003 |
+| Average IoU | 0.021192 |
+| Median Chamfer distance | 0.038003 |
 
 ### 4.2.2 IMG mode (full-dataset success after fix)
 
@@ -273,8 +309,8 @@ Additional quality indicators (average across shard summaries):
 
 | Metric | Value |
 |---|---:|
-| Average `mean_iou` | 0.026166 |
-| Average `median_cd` | 0.047796 |
+| Average IoU | 0.026166 |
+| Median Chamfer distance | 0.047796 |
 
 ### 4.2.3 Memory and shared-memory constraints in Cadrille
 
