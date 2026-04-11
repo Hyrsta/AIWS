@@ -452,21 +452,7 @@ Within the AIWS offline pipeline, Cadrille consumes the mesh reconstructed by SA
 
 ## 6. Cadrille Inference Workflow
 
-## 6.1 Single end-to-end bridge script
-
-Script:
-
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py`
-
-This script can:
-
-1. reuse existing SAM3D outputs via `--skip-sam3d`
-2. normalize STL into a Cadrille-compatible unit cube
-3. run Cadrille
-4. export `tmp_py / tmp_mesh / tmp_brep`
-5. use `evaluate` to produce `selected_py / selected_mesh / selected_brep`
-
-## 6.2 Recommended future configuration for Cadrille-PC
+## 6.1 Recommended future configuration for Cadrille-PC
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
@@ -490,7 +476,7 @@ Notes:
 - This configuration has already been validated for full-dataset PC-mode inference.
 - The critical requirement is **strict one-shard-per-GPU placement**.
 
-## 6.3 Recommended future configuration for Cadrille-IMG
+## 6.2 Recommended future configuration for Cadrille-IMG
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
@@ -519,7 +505,7 @@ Notes:
     - `--shm-size=16g`
     - reduced dataloader worker pressure
 
-## 6.4 Recommended 100-sample smoke test for new settings
+## 6.3 Recommended 100-sample smoke test for new settings
 
 Before a new full-dataset run, validate with a small subset first:
 
@@ -546,9 +532,27 @@ Before a new full-dataset run, validate with a small subset first:
 
 ---
 
-## 7. Recommended Operational Strategy
+## 7. SAM3D-Cadrille Bridge and Orchestration
 
-## 7.1 Do not run all stages as one tightly coupled block by default
+## 7.1 Single end-to-end bridge script
+
+Script:
+
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py`
+
+This script can:
+
+1. reuse existing SAM3D outputs via `--skip-sam3d`
+2. normalize STL into a Cadrille-compatible unit cube
+3. run Cadrille
+4. export `tmp_py / tmp_mesh / tmp_brep`
+5. use `evaluate` to produce `selected_py / selected_mesh / selected_brep`
+
+---
+
+## 8. Recommended Operational Strategy
+
+## 8.1 Do not run all stages as one tightly coupled block by default
 
 The safer order is:
 
@@ -563,7 +567,7 @@ Why:
 - IMG mode is more DataLoader / shm sensitive
 - failure recovery is much easier when stages are decoupled
 
-## 7.2 Minimum metrics that should always be preserved
+## 8.2 Minimum metrics that should always be preserved
 
 SAM3D already logs:
 
@@ -587,7 +591,7 @@ That will make future reports much stronger, especially for per-modality memory 
 
 ---
 
-## 8. One-Page Practical Recommendation
+## 9. One-Page Practical Recommendation
 
 For future runs, the recommended procedure is:
 
@@ -599,7 +603,7 @@ For future runs, the recommended procedure is:
 
 ---
 
-## 9. Conclusion
+## 10. Conclusion
 
 At this point:
 

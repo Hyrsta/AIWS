@@ -451,21 +451,7 @@ docker load -i /tmp/cadrille_linux_amd64.tar
 
 ## 6. Cadrille 推理方法
 
-## 6.1 单次端到端脚本
-
-脚本：
-
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py`
-
-这个脚本可以：
-
-1. 直接复用已有 SAM3D 输出（`--skip-sam3d`）
-2. 把 STL 归一化为 Cadrille 可接受的输入
-3. 跑 Cadrille
-4. 导出 `tmp_py / tmp_mesh / tmp_brep`
-5. 用 `evaluate` 选出 `selected_py / selected_mesh / selected_brep`
-
-## 6.2 未来继续跑 Cadrille-PC（推荐配置）
+## 6.1 未来继续跑 Cadrille-PC（推荐配置）
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
@@ -489,7 +475,7 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
 - 该配置已经验证可以完成全量 PC 推理。
 - 关键点是**每个 shard 严格绑定独立 GPU**，避免多进程抢同一张卡。
 
-## 6.3 未来继续跑 Cadrille-IMG（推荐稳定配置）
+## 6.2 未来继续跑 Cadrille-IMG（推荐稳定配置）
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
@@ -518,7 +504,7 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
     - `--shm-size=16g`
     - 降低 dataloader worker 压力
 
-## 6.4 小规模验证或新数据先做 100 个样本 smoke test
+## 6.3 小规模验证或新数据先做 100 个样本 smoke test
 
 如果不是立刻跑全量，推荐先做一个 100 样本的小规模验证：
 
@@ -545,9 +531,27 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
 
 ---
 
-## 7. 推荐的后续运维策略
+## 7. SAM3D-Cadrille 桥接与编排
 
-## 7.1 不再建议一次性把所有阶段混在一起跑
+## 7.1 单次端到端脚本
+
+脚本：
+
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py`
+
+这个脚本可以：
+
+1. 直接复用已有 SAM3D 输出（`--skip-sam3d`）
+2. 把 STL 归一化为 Cadrille 可接受的输入
+3. 跑 Cadrille
+4. 导出 `tmp_py / tmp_mesh / tmp_brep`
+5. 用 `evaluate` 选出 `selected_py / selected_mesh / selected_brep`
+
+---
+
+## 8. 推荐的后续运维策略
+
+## 8.1 不再建议一次性把所有阶段混在一起跑
 
 更稳妥的顺序是：
 
@@ -562,7 +566,7 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
 - IMG 更偏 DataLoader / shm
 - 解耦后，失败更容易恢复
 
-## 7.2 建议保留的最小统计口径
+## 8.2 建议保留的最小统计口径
 
 SAM3D 当前已经记录：
 
@@ -590,7 +594,7 @@ SAM3D 当前已经记录：
 
 ---
 
-## 8. 一页版执行建议
+## 9. 一页版执行建议
 
 如果后续要继续推理，建议直接照下面执行：
 
@@ -602,7 +606,7 @@ SAM3D 当前已经记录：
 
 ---
 
-## 9. 结论
+## 10. 结论
 
 这套 SOP 的意义是：
 

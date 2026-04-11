@@ -121,3 +121,7 @@
   Type: documentation
   Context: Leonardo pointed to `Cadrille Env & Run Cmd.md` as history for the Cadrille environment and asked that it be adapted to the current AIWS workspace
   Confirmed: yes
+- [19:48] In the SOP, the single end-to-end SAM3D-to-Cadrille bridge script is orchestration and should live in its own bridge/orchestration section, not inside the Cadrille inference section
+  Type: documentation
+  Context: Leonardo rejected placing `6.1 Single end-to-end bridge script` under Cadrille because it spans both modules
+  Confirmed: yes
