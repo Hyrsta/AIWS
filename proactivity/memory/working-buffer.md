@@ -18,3 +18,5 @@
     - `run_cadrille_full_modalities_4gpu.py` now passes through `--cadrille-root`, checkpoint, processor path, and encodes docker extra args safely.
     - Old modified repo archived to `/ssd1/rxl/zhankaiming/AIWS/backups/cadrille-aiws-fork-20260411-202652`.
     - `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille` now symlinks to `/ssd1/rxl/zhankaiming/cadrille-official-col14m` for compatibility.
+    - Verified that official `test.py` still fails as-is on hardcoded processor loading, but official `cadrille.py` works once the processor path is supplied locally.
+    - `aiws_cadrille_test.py` was simplified to import official `cadrille.py`; copied `aiws_cadrille_model.py` remains only as an unused backup for now.

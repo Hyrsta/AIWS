@@ -14,12 +14,6 @@ from torch.utils.data import ConcatDataset, DataLoader
 from tqdm import tqdm
 from transformers import AutoProcessor
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
-from aiws_cadrille_model import Cadrille, collate  # noqa: E402
-
 
 def reset_cuda_peak_stats() -> None:
     if not torch.cuda.is_available():
@@ -127,6 +121,7 @@ def run(
     if str(cadrille_root) not in sys.path:
         sys.path.insert(0, str(cadrille_root))
 
+    from cadrille import Cadrille, collate  # noqa: E402
     from dataset import CadRecodeDataset  # noqa: E402
 
     py_path = py_path.resolve()
