@@ -84,7 +84,14 @@
 
 - GitHub：`https://github.com/Hyrsta/AIWS`
 - 结构：AIWS 包含在线管线与离线管线
-- 本文覆盖的是离线 CAD 重建管线，其内部包含两个阶段：**离线 RGB 图像 → 网格重建** 与 **网格重建 → CAD 重建**
+- 在线视觉管线为：**YOLOv11-seg + GenPose++ + FoundationPose**
+    - `YOLOv11-seg`：工件识别与分割
+    - `GenPose++`：粗尺寸与粗位姿估计
+    - `FoundationPose`：基于 CAD 模型的精对齐
+- 离线 CAD 重建管线为：**SAM3D + Cadrille**
+    - `SAM3D`：离线 RGB 图像 → 网格重建
+    - `Cadrille`：网格 / 点云表示 → CAD 重建
+- 本 SOP 聚焦的是离线 CAD 重建管线
 
 **离线流水线中使用的上游模型仓库**
 

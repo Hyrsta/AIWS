@@ -89,7 +89,14 @@ In the current data, `misc/` is dominated by `multi_instance` samples.
 
 - GitHub: `https://github.com/Hyrsta/AIWS`
 - Organization: AIWS includes an online pipeline and an offline pipeline
-- This document covers the offline CAD reconstruction pipeline, which consists of two stages: **offline RGB images → mesh reconstruction** and **mesh reconstruction → CAD reconstruction**
+- The online vision pipeline is: **YOLOv11-seg + GenPose++ + FoundationPose**
+    - `YOLOv11-seg`: workpiece recognition and segmentation
+    - `GenPose++`: coarse size and pose estimation
+    - `FoundationPose`: precise pose alignment against CAD models
+- The offline CAD reconstruction pipeline is: **SAM3D + Cadrille**
+    - `SAM3D`: offline RGB images → mesh reconstruction
+    - `Cadrille`: mesh / point-cloud representation → CAD reconstruction
+- This document focuses on the offline CAD reconstruction pipeline
 
 **Upstream model repos used inside the offline pipeline**
 

@@ -101,3 +101,7 @@
   Type: documentation
   Context: Leonardo corrected the report tone again and asked that docs avoid assistant/meta setup sentences entirely
   Confirmed: yes
+- [19:20] When introducing AIWS project structure, explicitly explain both halves: the online vision pipeline is `YOLOv11-seg + GenPose++ + FoundationPose`, and the offline CAD reconstruction pipeline is `SAM3D + Cadrille`
+  Type: documentation
+  Context: Leonardo asked the docs to explain the online/offline split with the actual model stacks, not just the words "online" and "offline"
+  Confirmed: yes

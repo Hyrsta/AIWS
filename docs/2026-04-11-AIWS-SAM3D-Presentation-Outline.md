@@ -86,7 +86,15 @@ Project structure: AIWS online/offline split and the offline CAD pipeline
 ### Suggested content
 - AIWS repo: `https://github.com/Hyrsta/AIWS`
   - organization: AIWS has an online pipeline and an offline pipeline
-  - offline pipeline: **offline RGB images → mesh reconstruction → CAD reconstruction**
+  - online vision pipeline: `YOLOv11-seg + GenPose++ + FoundationPose`
+  - offline CAD pipeline: `SAM3D + Cadrille`
+- online side responsibilities:
+  - `YOLOv11-seg`: segmentation and recognition
+  - `GenPose++`: coarse size / pose estimation
+  - `FoundationPose`: precise CAD alignment
+- offline side responsibilities:
+  - `SAM3D`: offline RGB images → mesh reconstruction
+  - `Cadrille`: mesh / point cloud → CAD reconstruction
 - upstream repo, SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
   - default entry points used: `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
 - upstream repo, Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
@@ -100,8 +108,8 @@ Project structure: AIWS online/offline split and the offline CAD pipeline
   - `scripts/run_cadrille_full_modalities_4gpu.py`
 
 ### Main point to say
-- AIWS should be framed as online + offline, and this work is specifically the offline CAD pipeline
-- the reusable batch and integration layer lives around the upstream models inside that offline pipeline
+- AIWS should be introduced as online + offline, with the model split stated explicitly
+- this work focuses on the offline CAD pipeline, while the online pipeline consumes the resulting CAD models for downstream perception and alignment
 
 ---
 
