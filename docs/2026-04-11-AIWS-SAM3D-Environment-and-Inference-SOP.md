@@ -34,16 +34,9 @@ This SOP answers three questions:
 - Cadrille IMG successful full run:
     - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
 
-### 2.3 How the dataset directories were organized
+### 2.3 Current dataset structure and condition
 
-The original data was closer to a flat resource pool:
-
-- `aiws5.2-dataset/images/`: RGB images stored together
-- `aiws5.2-dataset/depth/`: depth files stored together
-- `isat_annotations/`: annotation-truth JSON files
-- `train.json` / `val.json`: split-membership information only
-
-For stable batch experiments, the data was reorganized into the unified `aiws5.2-usable/` structure.
+The formal experiments now use `aiws5.2-usable/` as the single dataset root.
 
 Its semantics are:
 
@@ -67,6 +60,8 @@ In this structure:
 - `NEW`: depth stored as EXR
 - `misc/`: special samples such as multi-instance, multi-label, or unannotated cases
 
+Annotation truth should still be checked against `isat_annotations/`.
+
 The current main benchmark uses single-instance samples, so `misc/` is kept separately.
 
 The current dataset condition can be summarized directly as:
@@ -81,7 +76,27 @@ The currently identified `misc/` cases include 23 `multi_instance` samples, 0 `m
 
 In the current data, `misc/` is dominated by `multi_instance` samples.
 
-### 2.4 Which directory to use in future runs
+### 2.4 Project structure (upstream repos vs. local scripts)
+
+The project is easiest to understand as a combination of upstream repos and local wrapper scripts.
+
+**Upstream repos**
+
+- SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
+    - the main upstream/default entry points used here are `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
+- Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+    - the main upstream/default scripts used here are `test.py`, `evaluate.py`, and `convert_cadquery.py`
+
+**Local scripts created for this project**
+
+- `scripts/build_aiws52_usable_view.py`: builds the cleaned `aiws5.2-usable/` dataset view
+- `scripts/generate_aiws52_instance_masks.py`: prepares instance-level masks and intermediate data from annotations
+- `scripts/run_sam3d_aiws52_batch.py`: resumable SAM3D batch runner with sharding, multi-GPU support, and runtime metrics
+- `scripts/analyze_sam3d_run_metrics.py`: summarizes and analyzes SAM3D run statistics
+- `scripts/run_sam3d_to_cadrille_e2e.py`: bridges SAM3D mesh outputs into Cadrille and writes pipeline summaries
+- `scripts/run_cadrille_full_modalities_4gpu.py`: launches full-dataset Cadrille `pc/img` shard jobs across GPUs
+
+### 2.5 Which directory to use in future runs
 
 - **For SAM3D / Cadrille runs**: use `aiws5.2-usable/`
 - **For annotation truth**: use `isat_annotations/`
@@ -179,6 +194,29 @@ Notes:
 
 - The prebuilt `flash_attn` wheel may not be compatible with the server
 - The stable production solution here was to **build `flash_attn` from source on the server**
+
+If the package needs to be rebuilt, the recommended `RXL` runbook is:
+
+```bash
+mamba activate sam3d-objects
+cd /tmp
+git clone https://github.com/Dao-AILab/flash-attention.git
+cd flash-attention
+git checkout v2.8.3
+
+pip uninstall -y flash-attn flash_attn || true
+pip install -U pip setuptools wheel ninja packaging
+
+MAX_JOBS=8 TORCH_CUDA_ARCH_LIST="8.0;8.6" \
+  pip install --no-build-isolation .
+
+python -c "import flash_attn; print('flash_attn ok:', flash_attn.__version__)"
+```
+
+Additional notes:
+
+- If `RXL` cannot clone from GitHub reliably, clone the source tree locally first, sync it to the server, and then run `pip install --no-build-isolation .`
+- Even after `flash_attn` imports correctly, SAM3D on `RTX A6000` still needs explicit `ATTN_BACKEND=flash_attn` and `SPARSE_ATTN_BACKEND=flash_attn`, because the upstream auto-selection logic does not cover A6000 by default
 
 ---
 

@@ -30,22 +30,14 @@ AIWS 焊接数据上的单图 3D 重建与 CAD 生成实验进展
 
 ---
 
-## Slide 2. 数据集整理过程与正式实验口径
+## Slide 2. 当前数据结构与正式实验口径
 
 ### 标题建议
-数据集从原始平铺资源池到 `aiws5.2-usable` 结构的整理
+当前数据结构与正式实验口径
 
 ### 可以直接放这张结构图
 
 ```text
-原始数据
-├── aiws5.2-dataset/images/           所有 RGB 图像混放
-├── aiws5.2-dataset/depth/            所有深度文件混放
-├── isat_annotations/                 标注真值 JSON
-└── train.json / val.json             仅提供 split 归属
-
-        ↓ 清洗与重组
-
 aiws5.2-usable/
 ├── V1/                               无深度
 ├── V2/                               带 PNG 深度
@@ -60,11 +52,10 @@ aiws5.2-usable/
 ```
 
 ### 这一页要讲的核心点
-- 原始目录不适合稳定批处理
+- 后续实验统一基于 `aiws5.2-usable` 结构
 - `isat_annotations/` 是标注真值来源
-- `train.json / val.json` 只保留 split 信息
-- 后续实验统一基于整理后的 `aiws5.2-usable` 结构
 - `misc/` 单独存放不进入主实验主干的样本
+- 主实验主干使用的是其中更干净的单实例部分
 
 ### 可放数字
 - 正式样本总数：**1418**
@@ -82,11 +73,38 @@ aiws5.2-usable/
 - `channel_steel` 当前在主实验视图中没有实例
 
 ### 口头补充
-“这里的数据已经整理成统一的 `aiws5.2-usable` 结构，主实验主干使用的是其中的单实例部分。”
+“这里直接展示当前正式实验使用的数据结构，主实验主干使用的是其中的单实例部分。”
 
 ---
 
-## Slide 3. 运行环境与硬件条件
+## Slide 3. 项目结构
+
+### 标题建议
+项目结构：官方仓库与本地脚本
+
+### 建议内容
+- 官方仓库，SAM3D：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
+  - 当前直接使用的默认入口：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
+- 官方仓库，Cadrille：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+  - 当前直接使用的默认脚本：`test.py`、`evaluate.py`、`convert_cadquery.py`
+- 本地新增脚本：
+  - `scripts/build_aiws52_usable_view.py`
+  - `scripts/generate_aiws52_instance_masks.py`
+  - `scripts/run_sam3d_aiws52_batch.py`
+  - `scripts/analyze_sam3d_run_metrics.py`
+  - `scripts/run_sam3d_to_cadrille_e2e.py`
+  - `scripts/run_cadrille_full_modalities_4gpu.py`
+
+### 要强调的点
+- 当前正式运行路径不只是两个上游 repo
+- 可复用的批处理与桥接层主要沉淀在这些本地脚本里
+
+### 口头补充
+“后续要复现实验，不能只记住 repo 地址，也要记住我们补出来的这层批处理与桥接脚本。”
+
+---
+
+## Slide 4. 运行环境与硬件条件
 
 ### 标题建议
 实验硬件与运行环境基线
@@ -110,7 +128,7 @@ aiws5.2-usable/
 
 ---
 
-## Slide 4. SAM3D 全量实验结果
+## Slide 5. SAM3D 全量实验结果
 
 ### 标题建议
 SAM3D 全量 3D 重建结果
@@ -142,7 +160,7 @@ SAM3D 全量 3D 重建结果
 
 ---
 
-## Slide 5. Cadrille 下游实验与资源瓶颈
+## Slide 6. Cadrille 下游实验与资源瓶颈
 
 ### 标题建议
 SAM3D 输出进入 Cadrille 的验证结果
@@ -174,7 +192,7 @@ SAM3D 输出进入 Cadrille 的验证结果
 
 ---
 
-## Slide 6. 后续如何继续跑实验
+## Slide 7. 后续如何继续跑实验
 
 ### 标题建议
 后续正式推理 SOP
@@ -208,7 +226,7 @@ Cadrille-IMG 单独运行
 
 ---
 
-## Slide 7. 本次工作结论与下一步
+## Slide 8. 本次工作结论与下一步
 
 ### 标题建议
 总结与下一步计划

@@ -29,23 +29,9 @@ This round of work established a reusable end-to-end baseline from AIWS5.2 image
     - `V2`: 524
     - `NEW`: 301
 
-### 2.2 Dataset restructuring and folder semantics
+### 2.2 Current dataset structure and condition
 
-The original dataset looked much closer to a **flat resource pool** than to a model-ready experiment structure:
-
-- `aiws5.2-dataset/images/`: RGB images stored together
-- `aiws5.2-dataset/depth/`: depth files stored together
-- `isat_annotations/`: ISAT JSON annotations, used as the final annotation source of truth
-- `train.json` / `val.json`: split-membership information only
-
-That raw organization is inconvenient for large-scale reconstruction because it does not directly encode:
-
-1. subset structure (`V1 / V2 / NEW`)
-2. workpiece categories
-3. separation between clean single-instance samples and problematic samples
-4. stable traversal rules for SAM3D and downstream batch scripts
-
-To solve this, the data was reorganized into the unified `aiws5.2-usable/` structure.
+The formal experiments now use `aiws5.2-usable/` as the unified dataset root.
 
 Its core semantics are:
 
@@ -66,6 +52,8 @@ Its core semantics are:
         - `multi_instance/`: images containing multiple instances
         - `multi_label/`: images containing multiple categories
         - `unannotated_images/`: images found without usable annotations
+
+Annotation truth should still be checked against `isat_annotations/`.
 
 The main benchmark uses the cleaner single-instance portion of the dataset, so `misc/` is listed separately.
 
@@ -93,9 +81,27 @@ At present, the identified special-case counts are:
 
 In the current data, `misc/` is dominated by `multi_instance` samples.
 
-In summary, the original flat resource pool was reorganized into the unified `aiws5.2-usable/` experiment structure.
+### 2.3 Project structure (upstream repos vs. local scripts)
 
-### 2.3 Compute server (`RXL`)
+The working project structure is best understood as upstream repos plus local wrapper scripts.
+
+**Upstream repos**
+
+- SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
+    - the main upstream/default entry points used here are `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
+- Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+    - the main upstream/default scripts used here are `test.py`, `evaluate.py`, and `convert_cadquery.py`
+
+**Local scripts created for this project**
+
+- `scripts/build_aiws52_usable_view.py`: builds the cleaned `aiws5.2-usable/` dataset view
+- `scripts/generate_aiws52_instance_masks.py`: prepares instance-level masks and intermediate data from annotations
+- `scripts/run_sam3d_aiws52_batch.py`: resumable SAM3D batch runner with sharding, multi-GPU support, and runtime metrics
+- `scripts/analyze_sam3d_run_metrics.py`: summarizes and analyzes SAM3D run statistics
+- `scripts/run_sam3d_to_cadrille_e2e.py`: bridges SAM3D mesh outputs into Cadrille and writes downstream summaries
+- `scripts/run_cadrille_full_modalities_4gpu.py`: launches full-dataset Cadrille `pc/img` shard jobs across GPUs
+
+### 2.4 Compute server (`RXL`)
 
 - CPU: `2 × Intel Xeon Gold 6326 @ 2.90GHz`
 - CPU threads: `64`
@@ -104,7 +110,7 @@ In summary, the original flat resource pool was reorganized into the unified `ai
 - Per-GPU memory: `49140 MiB` (about `48 GB`)
 - Driver: `580.82.09`
 
-### 2.4 Main hardware constraints observed in this work
+### 2.5 Main hardware constraints observed in this work
 
 1. **SAM3D is primarily constrained by GPU VRAM**, but is stable on 48 GB A6000 cards.
 2. **Cadrille PC mode** is sensitive to GPU process placement. If multiple shard jobs land on the same GPU, CUDA OOM occurs.
@@ -144,7 +150,7 @@ To make `flash_attn` actually take effect on `RTX A6000`, the formal runs use:
 
 In practice, `flash_attn` had to be **compiled from source on the server**, because the prebuilt wheel was not compatible with the server environment.
 
-> Detailed setup steps and future inference commands are documented in the paired SOP.
+> The paired SOP now includes the `flash_attn` source-build commands, the verification step, and the explicit backend environment settings required on A6000.
 
 ---
 

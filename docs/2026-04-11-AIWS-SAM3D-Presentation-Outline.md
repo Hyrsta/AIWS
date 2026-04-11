@@ -31,22 +31,14 @@ Target outputs:
 
 ---
 
-## Slide 2. Dataset restructuring and formal experimental view
+## Slide 2. Current dataset structure and formal experimental view
 
 ### Suggested title
-How the raw dataset was reorganized into the `aiws5.2-usable` structure
+Current dataset structure and formal experimental view
 
 ### Suggested diagram
 
 ```text
-Raw data
-├── aiws5.2-dataset/images/           all RGB images mixed together
-├── aiws5.2-dataset/depth/            all depth files mixed together
-├── isat_annotations/                 annotation-truth JSON
-└── train.json / val.json             split membership only
-
-        ↓ cleaning and restructuring
-
 aiws5.2-usable/
 ├── V1/                               no depth
 ├── V2/                               PNG depth
@@ -61,11 +53,10 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 ```
 
 ### Main points to say
-- the original raw layout was not suitable for stable batch processing
-- `isat_annotations/` is the annotation source of truth
-- `train.json / val.json` only preserve split membership
-- later experiments all use the reorganized `aiws5.2-usable` structure
+- the formal experiments all use the unified `aiws5.2-usable` structure
+- `isat_annotations/` remains the annotation source of truth
 - `misc/` stores samples outside the main benchmark path
+- the benchmark path is the cleaner single-instance portion of the dataset
 
 ### Useful numbers to show
 - total formal samples: **1418**
@@ -83,11 +74,35 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 - `channel_steel` currently has no populated instances in the main usable view
 
 ### Suggested spoken note
-“At this stage, the dataset has been reorganized into the unified `aiws5.2-usable` structure, and the main benchmark uses the cleaner single-instance portion.”
+“At this stage, we can directly show the current dataset structure: the formal experiments use `aiws5.2-usable`, and the main benchmark uses its cleaner single-instance portion.”
 
 ---
 
-## Slide 3. Hardware and environment baseline
+## Slide 3. Project structure
+
+### Suggested title
+Project structure: upstream repos and local wrappers
+
+### Suggested content
+- upstream repo, SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
+  - default entry points used: `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
+- upstream repo, Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+  - default scripts used: `test.py`, `evaluate.py`, `convert_cadquery.py`
+- local project scripts:
+  - `scripts/build_aiws52_usable_view.py`
+  - `scripts/generate_aiws52_instance_masks.py`
+  - `scripts/run_sam3d_aiws52_batch.py`
+  - `scripts/analyze_sam3d_run_metrics.py`
+  - `scripts/run_sam3d_to_cadrille_e2e.py`
+  - `scripts/run_cadrille_full_modalities_4gpu.py`
+
+### Main point to say
+- the production path is not just the two upstream repos
+- the reusable batch and integration layer is in the local scripts built around them
+
+---
+
+## Slide 4. Hardware and environment baseline
 
 ### Suggested title
 Experimental hardware and environment baseline
@@ -111,7 +126,7 @@ Experimental hardware and environment baseline
 
 ---
 
-## Slide 4. SAM3D full-dataset results
+## Slide 5. SAM3D full-dataset results
 
 ### Suggested title
 Full-dataset SAM3D reconstruction results
@@ -143,7 +158,7 @@ Full-dataset SAM3D reconstruction results
 
 ---
 
-## Slide 5. Downstream Cadrille validation and bottlenecks
+## Slide 6. Downstream Cadrille validation and bottlenecks
 
 ### Suggested title
 Validation of SAM3D outputs in the downstream Cadrille stage
@@ -175,7 +190,7 @@ Validation of SAM3D outputs in the downstream Cadrille stage
 
 ---
 
-## Slide 6. How future runs should be executed
+## Slide 7. How future runs should be executed
 
 ### Suggested title
 Recommended future inference workflow
@@ -209,7 +224,7 @@ Run Cadrille-IMG separately
 
 ---
 
-## Slide 7. Final conclusions and next steps
+## Slide 8. Final conclusions and next steps
 
 ### Suggested title
 Conclusion and next-step plan

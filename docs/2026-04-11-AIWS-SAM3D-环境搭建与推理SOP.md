@@ -34,16 +34,9 @@
 - Cadrille IMG 成功全量输出：
     - `/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix`
 
-### 2.3 数据集目录是怎么整理出来的
+### 2.3 当前数据结构与状态
 
-原始数据更接近平铺式资源池：
-
-- `aiws5.2-dataset/images/`：RGB 图像混放
-- `aiws5.2-dataset/depth/`：深度文件混放
-- `isat_annotations/`：标注真值 JSON
-- `train.json` / `val.json`：只记录 split 归属
-
-为了方便稳定地跑批量实验，后续统一整理成 `aiws5.2-usable/` 结构。
+当前正式实验统一使用 `aiws5.2-usable/`。
 
 这个结构的含义是：
 
@@ -67,6 +60,8 @@
 - `NEW`：深度为 EXR
 - `misc/`：存放多实例、多类别、无标注等不进入主实验主干的样本
 
+标注真值仍以 `isat_annotations/` 为准。
+
 当前主实验主干采用的是单实例样本，因此 `misc/` 单独存放。
 
 当前数据状态可以直接概括为：
@@ -81,7 +76,27 @@
 
 从当前统计看，`misc/` 以 `multi_instance` 样本为主。
 
-### 2.4 后续正式运行时应该用哪个目录
+### 2.4 项目结构（官方仓库与本地脚本）
+
+当前项目可以按“上游官方仓库 + 本地封装脚本”理解：
+
+**官方仓库**
+
+- SAM3D：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
+    - 官方/默认入口主要包括：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
+- Cadrille：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+    - 当前直接使用的官方/默认脚本主要包括：`test.py`、`evaluate.py`、`convert_cadquery.py`
+
+**本地新增脚本（本项目编写）**
+
+- `scripts/build_aiws52_usable_view.py`：整理并构建 `aiws5.2-usable/` 数据视图
+- `scripts/generate_aiws52_instance_masks.py`：根据标注生成实例级 mask/中间数据
+- `scripts/run_sam3d_aiws52_batch.py`：SAM3D 全量批处理入口，支持 resume、shard、多卡与运行指标记录
+- `scripts/analyze_sam3d_run_metrics.py`：汇总并分析 SAM3D 运行统计
+- `scripts/run_sam3d_to_cadrille_e2e.py`：把 SAM3D 输出桥接到 Cadrille，并汇总下游结果
+- `scripts/run_cadrille_full_modalities_4gpu.py`：按 GPU 切分 shard，批量启动 Cadrille `pc/img` 全量运行
+
+### 2.5 后续正式运行时应该用哪个目录
 
 - **跑 SAM3D / Cadrille**：使用 `aiws5.2-usable/`
 - **检查标注真值**：以 `isat_annotations/` 为准
@@ -178,6 +193,29 @@ export SPARSE_ATTN_BACKEND=flash_attn
 
 - 预编译 `flash_attn` wheel 在服务器上不一定兼容
 - 当前稳定方案是**在服务器本地源码编译 `flash_attn`**
+
+如果需要重新构建，建议按下面的方式在 `RXL` 上执行：
+
+```bash
+mamba activate sam3d-objects
+cd /tmp
+git clone https://github.com/Dao-AILab/flash-attention.git
+cd flash-attention
+git checkout v2.8.3
+
+pip uninstall -y flash-attn flash_attn || true
+pip install -U pip setuptools wheel ninja packaging
+
+MAX_JOBS=8 TORCH_CUDA_ARCH_LIST="8.0;8.6" \
+  pip install --no-build-isolation .
+
+python -c "import flash_attn; print('flash_attn ok:', flash_attn.__version__)"
+```
+
+补充说明：
+
+- 如果 `RXL` 直接访问 GitHub 不稳定，可在本地机器先拉源码，再同步到服务器后执行 `pip install --no-build-isolation .`
+- `flash_attn` 能 import 成功后，SAM3D 在 `RTX A6000` 上仍需显式设置 `ATTN_BACKEND=flash_attn` 与 `SPARSE_ATTN_BACKEND=flash_attn`，因为仓库默认自动切换逻辑并不会覆盖 A6000
 
 ---
 
