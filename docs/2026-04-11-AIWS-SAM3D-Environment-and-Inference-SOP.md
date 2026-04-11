@@ -340,9 +340,51 @@ Resume behavior:
 
 ---
 
-## 5. Continuing from SAM3D to Cadrille
+## 5. Cadrille Environment Setup
 
-## 5.1 Single end-to-end bridge script
+## 5.1 Repository and runtime entry points
+
+Current Cadrille repo on `RXL`:
+
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+
+Current AIWS-side orchestration scripts:
+
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py`
+
+Current upstream/default Cadrille entry points used in this workflow:
+
+- `test.py`
+- `evaluate.py`
+- `convert_cadquery.py`
+
+## 5.2 Validated runtime mode on RXL
+
+The currently validated production path uses **Cadrille as a parallel module with its own runtime**, not as a minor post-processing add-on.
+
+In practice, the current stable setup on `RXL` is:
+
+- run Cadrille through `--cadrille-runtime docker`
+- use Docker image `cadrille:latest`
+- keep **one shard strictly pinned to one GPU**
+- for IMG mode, add `--ipc=host --shm-size=16g`
+
+## 5.3 Input and output contract inside AIWS
+
+Within the AIWS offline pipeline, Cadrille consumes the mesh reconstructed by SAM3D, but it is documented here as a peer module with its own input preparation and outputs.
+
+- Input to Cadrille: reconstructed mesh
+- PC mode: sample a point cloud from the mesh
+- IMG mode: render 4-view RGB images from the mesh
+- Intermediate outputs: `tmp_py / tmp_mesh / tmp_brep`
+- Selected outputs after evaluation: `selected_py / selected_mesh / selected_brep`
+
+---
+
+## 6. Cadrille Inference Workflow
+
+## 6.1 Single end-to-end bridge script
 
 Script:
 
@@ -356,7 +398,7 @@ This script can:
 4. export `tmp_py / tmp_mesh / tmp_brep`
 5. use `evaluate` to produce `selected_py / selected_mesh / selected_brep`
 
-## 5.2 Recommended future configuration for Cadrille-PC
+## 6.2 Recommended future configuration for Cadrille-PC
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
@@ -380,7 +422,7 @@ Notes:
 - This configuration has already been validated for full-dataset PC-mode inference.
 - The critical requirement is **strict one-shard-per-GPU placement**.
 
-## 5.3 Recommended future configuration for Cadrille-IMG
+## 6.3 Recommended future configuration for Cadrille-IMG
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
@@ -409,7 +451,7 @@ Notes:
     - `--shm-size=16g`
     - reduced dataloader worker pressure
 
-## 5.4 Recommended 100-sample smoke test for new settings
+## 6.4 Recommended 100-sample smoke test for new settings
 
 Before a new full-dataset run, validate with a small subset first:
 
@@ -436,9 +478,9 @@ Before a new full-dataset run, validate with a small subset first:
 
 ---
 
-## 6. Recommended Operational Strategy
+## 7. Recommended Operational Strategy
 
-## 6.1 Do not run all stages as one tightly coupled block by default
+## 7.1 Do not run all stages as one tightly coupled block by default
 
 The safer order is:
 
@@ -453,7 +495,7 @@ Why:
 - IMG mode is more DataLoader / shm sensitive
 - failure recovery is much easier when stages are decoupled
 
-## 6.2 Minimum metrics that should always be preserved
+## 7.2 Minimum metrics that should always be preserved
 
 SAM3D already logs:
 
@@ -477,7 +519,7 @@ That will make future reports much stronger, especially for per-modality memory 
 
 ---
 
-## 7. One-Page Practical Recommendation
+## 8. One-Page Practical Recommendation
 
 For future runs, the recommended procedure is:
 
@@ -489,7 +531,7 @@ For future runs, the recommended procedure is:
 
 ---
 
-## 8. Conclusion
+## 9. Conclusion
 
 At this point:
 

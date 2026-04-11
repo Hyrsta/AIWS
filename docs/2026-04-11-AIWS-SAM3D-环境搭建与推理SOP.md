@@ -339,9 +339,51 @@ done
 
 ---
 
-## 5. SAM3D → Cadrille 的后续推理方法
+## 5. Cadrille 环境搭建
 
-## 5.1 单次端到端脚本
+## 5.1 仓库与运行入口
+
+`RXL` 上当前使用的 Cadrille 仓库：
+
+- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+
+AIWS 侧当前使用的编排脚本：
+
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py`
+
+当前工作流直接调用的 Cadrille 上游/默认入口主要是：
+
+- `test.py`
+- `evaluate.py`
+- `convert_cadquery.py`
+
+## 5.2 RXL 上当前验证通过的运行方式
+
+当前稳定跑通的生产路径里，**Cadrille 是与 SAM3D 并列的独立模块**，不是一个顺手接上的附属后处理步骤。
+
+在 `RXL` 上，当前验证通过的稳定方式是：
+
+- 使用 `--cadrille-runtime docker` 跑 Cadrille
+- Docker 镜像使用 `cadrille:latest`
+- 保持**一个 shard 严格绑定一张 GPU**
+- IMG 模式额外加 `--ipc=host --shm-size=16g`
+
+## 5.3 AIWS 内部的数据输入输出约定
+
+在 AIWS 离线管线里，Cadrille 接收的是 SAM3D 重建出来的网格，但在文档结构上应被视为有自己输入准备和输出结果的并列模块。
+
+- Cadrille 输入：重建网格
+- PC 模式：从网格采样点云
+- IMG 模式：从网格渲染 4 视图 RGB 图像
+- 中间输出：`tmp_py / tmp_mesh / tmp_brep`
+- 评估筛选后的输出：`selected_py / selected_mesh / selected_brep`
+
+---
+
+## 6. Cadrille 推理方法
+
+## 6.1 单次端到端脚本
 
 脚本：
 
@@ -355,7 +397,7 @@ done
 4. 导出 `tmp_py / tmp_mesh / tmp_brep`
 5. 用 `evaluate` 选出 `selected_py / selected_mesh / selected_brep`
 
-## 5.2 未来继续跑 Cadrille-PC（推荐配置）
+## 6.2 未来继续跑 Cadrille-PC（推荐配置）
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
@@ -379,7 +421,7 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
 - 该配置已经验证可以完成全量 PC 推理。
 - 关键点是**每个 shard 严格绑定独立 GPU**，避免多进程抢同一张卡。
 
-## 5.3 未来继续跑 Cadrille-IMG（推荐稳定配置）
+## 6.3 未来继续跑 Cadrille-IMG（推荐稳定配置）
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
@@ -408,7 +450,7 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
     - `--shm-size=16g`
     - 降低 dataloader worker 压力
 
-## 5.4 小规模验证或新数据先做 100 个样本 smoke test
+## 6.4 小规模验证或新数据先做 100 个样本 smoke test
 
 如果不是立刻跑全量，推荐先做一个 100 样本的小规模验证：
 
@@ -435,9 +477,9 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
 
 ---
 
-## 6. 推荐的后续运维策略
+## 7. 推荐的后续运维策略
 
-## 6.1 不再建议一次性把所有阶段混在一起跑
+## 7.1 不再建议一次性把所有阶段混在一起跑
 
 更稳妥的顺序是：
 
@@ -452,7 +494,7 @@ OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
 - IMG 更偏 DataLoader / shm
 - 解耦后，失败更容易恢复
 
-## 6.2 建议保留的最小统计口径
+## 7.2 建议保留的最小统计口径
 
 SAM3D 当前已经记录：
 
@@ -480,7 +522,7 @@ SAM3D 当前已经记录：
 
 ---
 
-## 7. 一页版执行建议
+## 8. 一页版执行建议
 
 如果后续要继续推理，建议直接照下面执行：
 
@@ -492,7 +534,7 @@ SAM3D 当前已经记录：
 
 ---
 
-## 8. 结论
+## 9. 结论
 
 这套 SOP 的意义是：
 
