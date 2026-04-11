@@ -73,3 +73,7 @@
   Type: documentation
   Context: Leonardo rejected the previous misc wording as out of place and repetitive
   Confirmed: yes
+- [17:01] In grouped supervisor tables, merge repeated dataset-version rows when possible and remove empty zero-sample rows instead of listing placeholders
+  Type: documentation
+  Context: Leonardo corrected the table layout for the `V1/V2/NEW × workpiece` summary
+  Confirmed: yes

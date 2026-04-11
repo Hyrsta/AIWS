@@ -264,23 +264,72 @@ Notes:
 - the memory columns report **average allocated GPU memory** and the **peak reserved-memory upper bound**
 - `—` means that the current main experimental view has no samples for that combination
 
-| Dataset version | Workpiece type | Samples | Mean runtime (s) | P90 runtime (s) | Avg peak allocated GPU memory (GB) | Peak reserved-memory upper bound (GB) |
-|---|---|---:|---:|---:|---:|---:|
-| V1 | cover_plate | 200 | 13.93 | 16.77 | 18.70 | 28.02 |
-| V1 | square_tube | 99 | 16.34 | 17.28 | 19.11 | 27.34 |
-| V1 | h_beam | 100 | 11.92 | 13.27 | 18.13 | 24.86 |
-| V1 | channel_steel | 0 | — | — | — | — |
-| V1 | bellmouth | 194 | 17.83 | 34.94 | 18.30 | 26.30 |
-| V2 | cover_plate | 524 | 14.66 | 17.47 | 18.90 | 28.04 |
-| V2 | square_tube | 0 | — | — | — | — |
-| V2 | h_beam | 0 | — | — | — | — |
-| V2 | channel_steel | 0 | — | — | — | — |
-| V2 | bellmouth | 0 | — | — | — | — |
-| NEW | cover_plate | 301 | 14.11 | 18.00 | 18.71 | 28.08 |
-| NEW | square_tube | 0 | — | — | — | — |
-| NEW | h_beam | 0 | — | — | — | — |
-| NEW | channel_steel | 0 | — | — | — | — |
-| NEW | bellmouth | 0 | — | — | — | — |
+<table>
+  <thead>
+    <tr>
+      <th>Dataset version</th>
+      <th>Workpiece type</th>
+      <th>Samples</th>
+      <th>Mean runtime (s)</th>
+      <th>P90 runtime (s)</th>
+      <th>Avg peak allocated GPU memory (GB)</th>
+      <th>Peak reserved-memory upper bound (GB)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td rowspan="4">V1</td>
+      <td>cover_plate</td>
+      <td>200</td>
+      <td>13.93</td>
+      <td>16.77</td>
+      <td>18.70</td>
+      <td>28.02</td>
+    </tr>
+    <tr>
+      <td>square_tube</td>
+      <td>99</td>
+      <td>16.34</td>
+      <td>17.28</td>
+      <td>19.11</td>
+      <td>27.34</td>
+    </tr>
+    <tr>
+      <td>h_beam</td>
+      <td>100</td>
+      <td>11.92</td>
+      <td>13.27</td>
+      <td>18.13</td>
+      <td>24.86</td>
+    </tr>
+    <tr>
+      <td>bellmouth</td>
+      <td>194</td>
+      <td>17.83</td>
+      <td>34.94</td>
+      <td>18.30</td>
+      <td>26.30</td>
+    </tr>
+    <tr>
+      <td>V2</td>
+      <td>cover_plate</td>
+      <td>524</td>
+      <td>14.66</td>
+      <td>17.47</td>
+      <td>18.90</td>
+      <td>28.04</td>
+    </tr>
+    <tr>
+      <td>NEW</td>
+      <td>cover_plate</td>
+      <td>301</td>
+      <td>14.11</td>
+      <td>18.00</td>
+      <td>18.71</td>
+      <td>28.08</td>
+    </tr>
+  </tbody>
+</table>
 
 This table makes the main pattern clear:
 
