@@ -65,7 +65,7 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 - `isat_annotations/` is the annotation source of truth
 - `train.json / val.json` only preserve split membership
 - later experiments all use the reorganized `aiws5.2-usable` structure
-- `misc/` stores samples outside the main benchmark path, currently mainly multi-instance cases
+- `misc/` stores samples outside the main benchmark path
 
 ### Useful numbers to show
 - total formal samples: **1418**
@@ -74,6 +74,7 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 - `NEW`: 301
 - multi-instance samples: 23
 - unannotated images: 1
+- in the current data, `misc/` is mainly made up of `multi_instance` samples
 
 ### Current-condition points this slide should also state
 - `V1` has no depth and is currently the most diverse subset by workpiece type

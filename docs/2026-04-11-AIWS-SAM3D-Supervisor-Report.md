@@ -67,7 +67,7 @@ Its core semantics are:
         - `multi_label/`: images containing multiple categories
         - `unannotated_images/`: images found without usable annotations
 
-The main benchmark uses the cleaner single-instance portion of the dataset, so `misc/` is listed separately and currently consists mainly of multi-instance cases.
+The main benchmark uses the cleaner single-instance portion of the dataset, so `misc/` is listed separately.
 
 The current dataset condition is as follows:
 
@@ -90,6 +90,8 @@ At present, the identified special-case counts are:
 - **23** `multi_instance` samples
 - **0** `multi_label` samples
 - **1** unannotated image (`NEW-G90-BLACK-24`)
+
+In the current data, `misc/` is dominated by `multi_instance` samples.
 
 In summary, the original flat resource pool was reorganized into the unified `aiws5.2-usable/` experiment structure.
 

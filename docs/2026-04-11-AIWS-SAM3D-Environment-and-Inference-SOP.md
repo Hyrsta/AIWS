@@ -67,7 +67,7 @@ In this structure:
 - `NEW`: depth stored as EXR
 - `misc/`: special samples such as multi-instance, multi-label, or unannotated cases
 
-The current main benchmark uses single-instance samples, so `misc/` is kept separately and currently consists mainly of multi-instance cases.
+The current main benchmark uses single-instance samples, so `misc/` is kept separately.
 
 The current dataset condition can be summarized directly as:
 
@@ -78,6 +78,8 @@ The current dataset condition can be summarized directly as:
 - `channel_steel`: currently has no populated instances in the main experimental view
 
 The currently identified `misc/` cases include 23 `multi_instance` samples, 0 `multi_label` samples, and 1 unannotated image (`NEW-G90-BLACK-24`).
+
+In the current data, `misc/` is dominated by `multi_instance` samples.
 
 ### 2.4 Which directory to use in future runs
 

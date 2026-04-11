@@ -77,3 +77,7 @@
   Type: documentation
   Context: Leonardo corrected the table layout for the `V1/V2/NEW × workpiece` summary
   Confirmed: yes
+- [17:05] In dataset explanations, keep statements like "misc is mainly multi-instance" only in the current-condition block, not in the core-structure block
+  Type: documentation
+  Context: Leonardo corrected the placement of current-condition language in the AIWS docs
+  Confirmed: yes
