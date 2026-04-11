@@ -2,7 +2,7 @@
 
 **Author**: Kaiming Zhan  
 **Date**: 2026-04-11  
-**Purpose**: Reusable operating procedure for rebuilding the SAM3D environment and running the AIWS offline RGB image → Cadrille pipeline in future work.
+**Purpose**: Reusable operating procedure for rebuilding the SAM3D environment and running the AIWS offline CAD reconstruction pipeline in future work.
 
 ---
 
@@ -84,7 +84,7 @@ The correct framing is: **AIWS is split into an online pipeline and an offline p
 
 - GitHub: `https://github.com/Hyrsta/AIWS`
 - Organization: AIWS includes an online pipeline and an offline pipeline
-- This SOP covers the offline pipeline, namely: **AIWS offline RGB images → SAM3D mesh reconstruction → Cadrille CAD reconstruction**
+- This SOP covers the offline CAD reconstruction pipeline, which consists of two stages: **offline RGB images → mesh reconstruction** and **mesh reconstruction → CAD reconstruction**
 
 **Upstream model repos used inside the offline pipeline**
 

@@ -93,3 +93,7 @@
   Type: documentation
   Context: Leonardo corrected the project-structure wording after I overstated AIWS as if it were just the offline layer
   Confirmed: yes
+- [19:17] In AIWS offline-pipeline wording, describe it as the offline CAD reconstruction pipeline with two stages, "RGB image → mesh reconstruction" and "mesh reconstruction → CAD reconstruction", rather than collapsing it into "RGB image → Cadrille"
+  Type: documentation
+  Context: Leonardo corrected the pipeline wording to match the provided project framing slide
+  Confirmed: yes

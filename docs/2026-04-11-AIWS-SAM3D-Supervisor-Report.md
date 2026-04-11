@@ -89,7 +89,7 @@ The correct framing is: **AIWS is split into an online pipeline and an offline p
 
 - GitHub: `https://github.com/Hyrsta/AIWS`
 - Organization: AIWS includes an online pipeline and an offline pipeline
-- This document covers the offline pipeline, namely: **AIWS offline RGB images → SAM3D mesh reconstruction → Cadrille CAD reconstruction**
+- This document covers the offline CAD reconstruction pipeline, which consists of two stages: **offline RGB images → mesh reconstruction** and **mesh reconstruction → CAD reconstruction**
 
 **Upstream model repos used inside the offline pipeline**
 
