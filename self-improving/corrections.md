@@ -45,3 +45,7 @@
   Type: documentation
   Context: Leonardo corrected the report tone and asked that supervisor documents read as if written directly by him
   Confirmed: yes
+- [16:27] In dataset explanations, include the current dataset condition, not just the folder structure: present workpiece coverage, depth availability, subset population, and notable empty/missing categories
+  Type: documentation
+  Context: Leonardo asked the AIWS docs to explain what currently exists in the dataset, not only how folders are organized
+  Confirmed: yes

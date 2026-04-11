@@ -57,12 +57,22 @@ Its semantics are:
   - `metadata/`
   - `misc/`
 
+The current dataset condition can be summarized directly as:
+
+- total usable samples in the main experimental view: **1418**
+- `V1`: **593** samples, no depth, currently covering `cover_plate / square_tube / h_beam / bellmouth`
+- `V2`: **524** samples, all with PNG depth, currently all labeled as `cover_plate` in the main view
+- `NEW`: **301** samples, all with EXR depth, currently all labeled as `cover_plate` in the main view
+- `channel_steel`: currently has no populated instances in the main experimental view
+
 In this structure:
 
 - `V1`: no depth
 - `V2`: depth stored as PNG
 - `NEW`: depth stored as EXR
 - `misc/`: special samples such as multi-instance, multi-label, or unannotated cases
+
+The currently identified `misc/` cases include 23 `multi_instance` samples, 0 `multi_label` samples, and 1 unannotated image (`NEW-G90-BLACK-24`).
 
 The current formal pipeline does not include `misc/` mainly because many of those samples contain **multi-instance labels**. The present main path is organized around cleaner single-instance cases, so those samples likely need future fixes in multi-instance parsing or instance splitting before they can be safely folded into the batch pipeline.
 

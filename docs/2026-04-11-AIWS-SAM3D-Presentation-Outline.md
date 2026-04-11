@@ -75,6 +75,12 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 - multi-instance samples: 23
 - unannotated images: 1
 
+### Current-condition points this slide should also state
+- `V1` has no depth and is currently the most diverse subset by workpiece type
+- `V2` is fully depth-enabled with PNG depth, and its current main-view samples are all `cover_plate`
+- `NEW` is fully depth-enabled with EXR depth, and its current main-view samples are all `cover_plate`
+- `channel_steel` currently has no populated instances in the main usable view
+
 ### Suggested spoken note
 “You can summarize this part simply as reorganizing the raw mixed dataset into the unified `aiws5.2-usable` experiment structure. The `misc/` part is temporarily left out mainly because multi-instance labels still need a dedicated fix.”
 

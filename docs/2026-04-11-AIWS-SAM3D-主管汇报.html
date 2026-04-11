@@ -80,11 +80,33 @@
 <li><code>metadata/</code>：机器可读统计与样本清单</li>
 <li><code>misc/</code>：不进入主实验主干的特殊样本</li>
 </ul>
+<p>当前数据状态如下：</p>
+<ul>
+<li>当前主实验可用样本共 <strong>1418</strong> 个</li>
+<li><code>V1</code> 共 <strong>593</strong> 个样本，<strong>无深度</strong>，当前覆盖的工件为：</li>
+<li><code>cover_plate</code>: 200</li>
+<li><code>square_tube</code>: 99</li>
+<li><code>h_beam</code>: 100</li>
+<li><code>bellmouth</code>: 194</li>
+<li><code>channel_steel</code>: 0</li>
+<li><code>V2</code> 共 <strong>524</strong> 个样本，<strong>全部带 PNG 深度</strong>，当前主实验样本均为 <code>cover_plate</code></li>
+<li><code>NEW</code> 共 <strong>301</strong> 个样本，<strong>全部带 EXR 深度</strong>，当前主实验样本均为 <code>cover_plate</code></li>
+<li>因此，从“工件类型实际分布”来看：</li>
+<li><code>V1</code> 是当前工件类型最完整的子集</li>
+<li><code>V2</code> 与 <code>NEW</code> 当前主要是带深度的 <code>cover_plate</code> 数据</li>
+<li><code>channel_steel</code> 在当前可用主视图中<strong>暂无实例</strong></li>
+</ul>
 <p>其中，<code>misc/</code> 主要用于隔离：</p>
 <ul>
 <li><code>multi_instance/</code>：一张图中有多个实例</li>
 <li><code>multi_label/</code>：一张图中有多个不同类别</li>
 <li><code>unannotated_images/</code>：有图像但无标注</li>
+</ul>
+<p>当前 <code>misc/</code> 中已识别的特殊情况包括：</p>
+<ul>
+<li><strong>23</strong> 个 <code>multi_instance</code> 样本</li>
+<li><strong>0</strong> 个 <code>multi_label</code> 样本</li>
+<li><strong>1</strong> 个无标注图像样本（<code>NEW-G90-BLACK-24</code>）</li>
 </ul>
 <p>当前没有把 <code>misc/</code> 数据纳入正式主实验，主要原因是这部分样本里以 <strong>multi-instance 标注</strong> 为主，而当前 SAM3D / Cadrille 主流程默认处理的是更干净的单实例样本。若直接并入，会给标注解析、实例对应和后续批处理带来额外不确定性。</p>
 <p>因此，<code>misc/</code> 更准确地说是<strong>暂时未纳入当前正式口径</strong>，并不是永久废弃。后续如果补齐多实例样本的解析、拆分或主目标选择策略，这部分数据仍然可以进一步修复并重新利用。</p>

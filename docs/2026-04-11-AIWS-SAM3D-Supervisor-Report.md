@@ -64,11 +64,33 @@ Its core semantics are:
   - `metadata/`: manifests and summary statistics
   - `misc/`: special samples excluded from the main pipeline
 
+The current dataset condition is as follows:
+
+- the current main experimental view contains **1418** usable samples
+- `V1` contains **593** samples, with **no depth**, and currently covers:
+  - `cover_plate`: 200
+  - `square_tube`: 99
+  - `h_beam`: 100
+  - `bellmouth`: 194
+  - `channel_steel`: 0
+- `V2` contains **524** samples, **all with PNG depth**, and the current main-view labels are all `cover_plate`
+- `NEW` contains **301** samples, **all with EXR depth**, and the current main-view labels are all `cover_plate`
+- in other words:
+  - `V1` is currently the most diverse subset by workpiece type
+  - `V2` and `NEW` are currently dominated by depth-enabled `cover_plate` samples
+  - `channel_steel` currently has **no populated instances** in the usable main view
+
 Inside `misc/`, the main cases are:
 
 - `multi_instance/`: images containing multiple instances
 - `multi_label/`: images containing multiple categories
 - `unannotated_images/`: images found without usable annotations
+
+At present, the identified special-case counts are:
+
+- **23** `multi_instance` samples
+- **0** `multi_label` samples
+- **1** unannotated image (`NEW-G90-BLACK-24`)
 
 The current formal pipeline does **not** include `misc/` data mainly because these samples are dominated by **multi-instance labels**, while the present SAM3D / Cadrille batch path assumes cleaner single-instance cases. Including them directly would add ambiguity to annotation parsing, instance matching, and downstream batch stability.
 
