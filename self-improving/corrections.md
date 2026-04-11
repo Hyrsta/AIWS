@@ -85,3 +85,7 @@
   Type: documentation
   Context: Leonardo asked the report to match the original Cadrille paper’s metric convention
   Confirmed: yes
+- [17:31] In Cadrille reporting, use the successful-output basis only for runtime/throughput summaries, and explicitly note that PC is slower partly because it generates 5 candidates per input (`n_samples=5`)
+  Type: documentation
+  Context: Leonardo corrected the reporting basis and asked the report to explain the PC-vs-IMG runtime difference more directly
+  Confirmed: yes

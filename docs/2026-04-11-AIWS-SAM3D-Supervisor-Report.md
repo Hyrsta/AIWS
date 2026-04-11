@@ -349,6 +349,8 @@ The main long-tail came from the `V1 / bellmouth` subset, which should be the fi
 
 ## 4.2 Cadrille full-dataset results
 
+Reporting note: in this section, Cadrille runtime, throughput, and end-to-end timing are all reported on the **successful-output basis**. `Samples prepared for Cadrille` is kept only as a completeness note, not as a separate efficiency denominator.
+
 ### 4.2.1 PC mode (full-dataset success)
 
 The statistics come from a mixed full-modal run where **PC completed successfully** but the later IMG stage failed. The top-level folder was archived during cleanup, but the **PC shard outputs remain intact and usable**.
@@ -361,7 +363,7 @@ Configuration:
 
 - Mode: `pc`
 - Input: SAM3D-exported STL
-- `n_samples=5`
+- `n_samples=5` (five candidates are generated per input and `evaluate.py` selects the best one, which increases wall-clock time)
 - `batch_size=64`
 - 4-GPU parallel execution
 - Selection strategy: `evaluate`
@@ -370,11 +372,11 @@ Results:
 
 | Metric | Value |
 |---|---:|
-| Samples prepared for Cadrille | 1418 |
-| Samples with selected best candidate | 1418 |
-| Selection success rate | 100.0% |
+| Samples prepared for Cadrille (completeness note only) | 1418 |
+| Final successful outputs | 1418 |
+| Success rate | 100.0% |
 | Wall-clock time | about 80.1 minutes |
-| Effective throughput | about 1061.7 samples/hour |
+| Effective throughput (successful-output basis) | about 1061.7 successful outputs/hour |
 
 Additional quality indicators (average across shard summaries, reported in the original Cadrille convention):
 
@@ -402,13 +404,13 @@ Results:
 
 | Metric | Value |
 |---|---:|
-| Samples prepared for Cadrille | 1418 |
-| Samples with selected best candidate | 1213 |
-| Selection success rate | 85.54% |
+| Samples prepared for Cadrille (completeness note only) | 1418 |
+| Final successful outputs | 1213 |
+| Success rate | 85.54% |
 | Selected STL outputs | 1213 |
 | Selected STEP outputs | 1211 |
 | Wall-clock time | about 25.9 minutes |
-| Effective throughput | about 3290.3 samples/hour |
+| Effective throughput (successful-output basis) | about 2814.6 successful outputs/hour |
 
 Additional quality indicators (average across shard summaries, reported in the original Cadrille convention):
 
@@ -455,29 +457,29 @@ Since SAM3D, Cadrille-PC, and Cadrille-IMG were not all executed as one single u
 
 Here, “average end-to-end time” is defined as:
 
-- **total full-run wall-clock time divided by sample count**
+- **total full-run wall-clock time divided by successful outputs**
 - representing the **batch-throughput-equivalent time** under the current 4-GPU setup
 - rather than a single-sample serial latency on one GPU
+- for SAM3D this still equals the full `1418` formal samples, while for Cadrille it is reported on the final selected-output count
 
 The stage-wise wall-clock equivalents are:
 
 - SAM3D: about `1.60` hours, equivalent to about **4.07 s/sample**
-- Cadrille-PC: about `80.1` minutes, equivalent to about **3.39 s/sample**
-- Cadrille-IMG: about `25.9` minutes, equivalent to about **1.10 s/sample**
+- Cadrille-PC: about `80.1` minutes, equivalent to about **3.39 s/successful output**
+- Cadrille-IMG: about `25.9` minutes, equivalent to about **1.28 s/successful output**
 
 This gives the following end-to-end baselines:
 
 | Pipeline | Computation | Average end-to-end time |
 |---|---:|---:|
-| SAM3D → Cadrille-PC | `4.07 + 3.39` | **7.46 s/sample** |
-| SAM3D → Cadrille-IMG (attempted-sample basis) | `4.07 + 1.10` | **5.17 s/sample** |
+| SAM3D → Cadrille-PC | `4.07 + 3.39` | **7.46 s/successful output** |
 | SAM3D → Cadrille-IMG (successful-output basis) | `(SAM3D total wall-clock + IMG total wall-clock) / 1213` | **6.04 s/successful output** |
 
 The interpretation is:
 
-1. **On an attempted-sample basis, the IMG pipeline is currently faster end-to-end.**
-2. **On a successful-output basis, the IMG advantage becomes smaller**, because the current IMG selection success rate is about `85.54%`.
-3. **The PC pipeline is currently slower, but more stable**, since it achieved `100%` selection success in the validated full-dataset run.
+1. **On the current successful-output basis, the IMG pipeline is still faster end-to-end.**
+2. **The IMG advantage is smaller than a raw attempted-sample view would suggest**, because the current IMG success rate is about `85.54%`.
+3. **The PC pipeline is currently slower in part because it uses `n_samples=5`**, meaning five candidates are generated per input before evaluation selects the best one. That increases compute cost, but the validated full-dataset run also achieved `100%` success.
 
 One caveat is important: this is not a perfectly apples-to-apples modality comparison, because the currently validated stable settings are different:
 
