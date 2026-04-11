@@ -16,3 +16,5 @@
   - Notes:
     - `run_sam3d_to_cadrille_e2e.py` now mounts `AIWS/scripts/` into Docker and calls wrapper scripts instead of modified Cadrille repo files.
     - `run_cadrille_full_modalities_4gpu.py` now passes through `--cadrille-root`, checkpoint, processor path, and encodes docker extra args safely.
+    - Old modified repo archived to `/ssd1/rxl/zhankaiming/AIWS/backups/cadrille-aiws-fork-20260411-202652`.
+    - `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille` now symlinks to `/ssd1/rxl/zhankaiming/cadrille-official-col14m` for compatibility.
