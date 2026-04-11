@@ -133,3 +133,7 @@
   Type: documentation
   Context: Leonardo said the professor wants to hear the `end-to-end` wording in this section title
   Confirmed: yes
+- [20:33] For AIWS integration with official upstream repos, keep upstream model/runtime code untouched whenever possible; put only HF id or local-path handling, argument translation, and GPU-memory logging in thin wrappers instead of copying model files
+  Type: workflow
+  Context: Leonardo corrected the Cadrille cleanup approach and asked to keep only the minimum wrapper layer, removing the copied model helper once official `cadrille.py` was verified to work
+  Confirmed: yes
