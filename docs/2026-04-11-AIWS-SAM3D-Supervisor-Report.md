@@ -67,9 +67,7 @@ Its core semantics are:
         - `multi_label/`: images containing multiple categories
         - `unannotated_images/`: images found without usable annotations
 
-`misc/` is currently excluded from the formal main pipeline mainly because these samples are dominated by **multi-instance labels**, while the present SAM3D / Cadrille batch path assumes cleaner single-instance cases. Including them directly would add ambiguity to annotation parsing, instance matching, and downstream batch stability.
-
-So `misc/` should be understood as **temporarily excluded from the current formal scope**, not as permanently discarded. If multi-instance parsing, splitting, or main-object selection is improved later, these samples can still be repaired and reused.
+The main benchmark uses the cleaner single-instance portion of the dataset, so `misc/` is listed separately and currently consists mainly of multi-instance cases.
 
 The current dataset condition is as follows:
 

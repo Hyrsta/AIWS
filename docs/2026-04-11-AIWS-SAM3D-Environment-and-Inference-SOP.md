@@ -67,7 +67,7 @@ In this structure:
 - `NEW`: depth stored as EXR
 - `misc/`: special samples such as multi-instance, multi-label, or unannotated cases
 
-The current formal pipeline does not include `misc/` mainly because many of those samples contain **multi-instance labels**. The present main path is organized around cleaner single-instance cases, so those samples likely need future fixes in multi-instance parsing or instance splitting before they can be safely folded into the batch pipeline.
+The current main benchmark uses single-instance samples, so `misc/` is kept separately and currently consists mainly of multi-instance cases.
 
 The current dataset condition can be summarized directly as:
 

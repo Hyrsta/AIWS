@@ -65,7 +65,7 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 - `isat_annotations/` is the annotation source of truth
 - `train.json / val.json` only preserve split membership
 - later experiments all use the reorganized `aiws5.2-usable` structure
-- `misc/` is currently excluded mainly because multi-instance labels still need future handling fixes
+- `misc/` stores samples outside the main benchmark path, currently mainly multi-instance cases
 
 ### Useful numbers to show
 - total formal samples: **1418**
@@ -82,7 +82,7 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 - `channel_steel` currently has no populated instances in the main usable view
 
 ### Suggested spoken note
-“You can summarize this part simply as reorganizing the raw mixed dataset into the unified `aiws5.2-usable` experiment structure. The `misc/` part is temporarily left out mainly because multi-instance labels still need a dedicated fix.”
+“At this stage, the dataset has been reorganized into the unified `aiws5.2-usable` structure, and the main benchmark uses the cleaner single-instance portion.”
 
 ---
 

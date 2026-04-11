@@ -69,3 +69,7 @@
   Type: documentation
   Context: Leonardo corrected the readability of the run-summary tables
   Confirmed: yes
+- [16:56] Avoid repetitive or overly defensive wording around `misc/`; prefer a short neutral explanation such as the main benchmark using the cleaner single-instance portion while `misc/` stores separate cases, currently mainly multi-instance samples
+  Type: documentation
+  Context: Leonardo rejected the previous misc wording as out of place and repetitive
+  Confirmed: yes
