@@ -67,6 +67,10 @@ Its core semantics are:
         - `multi_label/`: images containing multiple categories
         - `unannotated_images/`: images found without usable annotations
 
+`misc/` is currently excluded from the formal main pipeline mainly because these samples are dominated by **multi-instance labels**, while the present SAM3D / Cadrille batch path assumes cleaner single-instance cases. Including them directly would add ambiguity to annotation parsing, instance matching, and downstream batch stability.
+
+So `misc/` should be understood as **temporarily excluded from the current formal scope**, not as permanently discarded. If multi-instance parsing, splitting, or main-object selection is improved later, these samples can still be repaired and reused.
+
 The current dataset condition is as follows:
 
 - the current main experimental view contains **1418** usable samples
@@ -88,10 +92,6 @@ At present, the identified special-case counts are:
 - **23** `multi_instance` samples
 - **0** `multi_label` samples
 - **1** unannotated image (`NEW-G90-BLACK-24`)
-
-The current formal pipeline does **not** include `misc/` data mainly because these samples are dominated by **multi-instance labels**, while the present SAM3D / Cadrille batch path assumes cleaner single-instance cases. Including them directly would add ambiguity to annotation parsing, instance matching, and downstream batch stability.
-
-So `misc/` should be understood as **temporarily excluded from the current formal scope**, not as permanently discarded. If multi-instance parsing, splitting, or main-object selection is improved later, these samples can still be repaired and reused.
 
 In summary, the original flat resource pool was reorganized into the unified `aiws5.2-usable/` experiment structure.
 

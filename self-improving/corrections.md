@@ -61,3 +61,7 @@
   Type: documentation
   Context: Leonardo asked for clearer run-summary wording and a `V1/V2/NEW × workpiece` breakdown of runtime and memory
   Confirmed: yes
+- [16:47] In dataset sections, place the conceptual explanation of `misc/` in the core-semantics/structure part, and keep only the current counts in the later current-condition part
+  Type: documentation
+  Context: Leonardo asked for a cleaner separation between dataset structure and current dataset status
+  Confirmed: yes

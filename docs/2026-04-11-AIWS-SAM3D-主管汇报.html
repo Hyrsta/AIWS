@@ -93,6 +93,8 @@
 </ul>
 </li>
 </ul>
+<p><code>misc/</code> 当前没有纳入正式主实验，主要原因是这部分样本里以 <strong>multi-instance 标注</strong> 为主，而当前 SAM3D / Cadrille 主流程默认处理的是更干净的单实例样本。若直接并入，会给标注解析、实例对应和后续批处理带来额外不确定性。</p>
+<p>因此，<code>misc/</code> 更准确地说是<strong>暂时未纳入当前正式口径</strong>，并不是永久废弃。后续如果补齐多实例样本的解析、拆分或主目标选择策略，这部分数据仍然可以进一步修复并重新利用。</p>
 <p>当前数据状态如下：</p>
 <ul>
 <li>当前主实验可用样本共 <strong>1418</strong> 个</li>
@@ -119,8 +121,6 @@
 <li><strong>0</strong> 个 <code>multi_label</code> 样本</li>
 <li><strong>1</strong> 个无标注图像样本（<code>NEW-G90-BLACK-24</code>）</li>
 </ul>
-<p>当前没有把 <code>misc/</code> 数据纳入正式主实验，主要原因是这部分样本里以 <strong>multi-instance 标注</strong> 为主，而当前 SAM3D / Cadrille 主流程默认处理的是更干净的单实例样本。若直接并入，会给标注解析、实例对应和后续批处理带来额外不确定性。</p>
-<p>因此，<code>misc/</code> 更准确地说是<strong>暂时未纳入当前正式口径</strong>，并不是永久废弃。后续如果补齐多实例样本的解析、拆分或主目标选择策略，这部分数据仍然可以进一步修复并重新利用。</p>
 <p>最终，原始平铺资源池被整理为统一的 <code>aiws5.2-usable/</code> 实验结构。</p>
 <h3 id="23-rxl">2.3 运行服务器（RXL）</h3>
 <ul>
