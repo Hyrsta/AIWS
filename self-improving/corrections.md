@@ -105,3 +105,7 @@
   Type: documentation
   Context: Leonardo asked the docs to explain the online/offline split with the actual model stacks, not just the words "online" and "offline"
   Confirmed: yes
+- [19:24] For Cadrille framing, say it starts from the reconstructed mesh, then either samples point clouds from that mesh for PC mode or renders 4-view RGB images from that mesh for IMG mode before CAD reconstruction
+  Type: documentation
+  Context: Leonardo corrected the Cadrille description and pointed to `Cadrille 方法研究.pptx` as the reference framing
+  Confirmed: yes

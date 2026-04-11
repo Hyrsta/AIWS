@@ -94,7 +94,7 @@ Project structure: AIWS online/offline split and the offline CAD pipeline
   - `FoundationPose`: precise CAD alignment
 - offline side responsibilities:
   - `SAM3D`: offline RGB images → mesh reconstruction
-  - `Cadrille`: mesh / point cloud → CAD reconstruction
+  - `Cadrille`: start from the reconstructed mesh, then either sample point clouds from that mesh for PC mode or render 4-view RGB images from that mesh for IMG mode, before CAD reconstruction
 - upstream repo, SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
   - default entry points used: `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
 - upstream repo, Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`

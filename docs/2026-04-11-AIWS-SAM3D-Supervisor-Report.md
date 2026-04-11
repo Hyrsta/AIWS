@@ -95,7 +95,7 @@ In the current data, `misc/` is dominated by `multi_instance` samples.
     - `FoundationPose`: precise pose alignment against CAD models
 - The offline CAD reconstruction pipeline is: **SAM3D + Cadrille**
     - `SAM3D`: offline RGB images → mesh reconstruction
-    - `Cadrille`: mesh / point-cloud representation → CAD reconstruction
+    - `Cadrille`: starts from the reconstructed mesh, then either samples a point cloud from that mesh for PC mode or renders 4-view RGB images from that mesh for IMG mode, before reconstructing CAD
 - This document focuses on the offline CAD reconstruction pipeline
 
 **Upstream model repos used inside the offline pipeline**
@@ -111,7 +111,7 @@ In the current data, `misc/` is dominated by `multi_instance` samples.
 - `scripts/generate_aiws52_instance_masks.py`: prepares instance-level masks and intermediate data from annotations
 - `scripts/run_sam3d_aiws52_batch.py`: resumable SAM3D batch runner with sharding, multi-GPU support, and runtime metrics
 - `scripts/analyze_sam3d_run_metrics.py`: summarizes and analyzes SAM3D run statistics
-- `scripts/run_sam3d_to_cadrille_e2e.py`: bridges SAM3D mesh outputs into Cadrille and writes downstream summaries
+- `scripts/run_sam3d_to_cadrille_e2e.py`: bridges SAM3D mesh outputs into Cadrille by preparing the mesh-derived inputs required by each mode, and writes downstream summaries
 - `scripts/run_cadrille_full_modalities_4gpu.py`: launches full-dataset Cadrille `pc/img` shard jobs across GPUs
 
 ### 2.4 Compute server (`RXL`)

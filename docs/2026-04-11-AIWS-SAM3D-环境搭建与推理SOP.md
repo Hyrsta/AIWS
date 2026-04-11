@@ -90,7 +90,7 @@
     - `FoundationPose`：基于 CAD 模型的精对齐
 - 离线 CAD 重建管线为：**SAM3D + Cadrille**
     - `SAM3D`：离线 RGB 图像 → 网格重建
-    - `Cadrille`：网格 / 点云表示 → CAD 重建
+    - `Cadrille`：从重建得到的网格出发，再根据模式选择后续输入形式, PC 模式从网格采样点云，IMG 模式从网格渲染 4 视图 RGB 图像，随后再做 CAD 重建
 - 本 SOP 聚焦的是离线 CAD 重建管线
 
 **离线流水线中使用的上游模型仓库**
@@ -106,7 +106,7 @@
 - `scripts/generate_aiws52_instance_masks.py`：根据标注生成实例级 mask/中间数据
 - `scripts/run_sam3d_aiws52_batch.py`：SAM3D 全量批处理入口，支持 resume、shard、多卡与运行指标记录
 - `scripts/analyze_sam3d_run_metrics.py`：汇总并分析 SAM3D 运行统计
-- `scripts/run_sam3d_to_cadrille_e2e.py`：把 SAM3D 输出桥接到 Cadrille，并汇总下游结果
+- `scripts/run_sam3d_to_cadrille_e2e.py`：把 SAM3D 网格输出整理为 Cadrille 各模式所需的 mesh-derived 输入，并汇总下游结果
 - `scripts/run_cadrille_full_modalities_4gpu.py`：按 GPU 切分 shard，批量启动 Cadrille `pc/img` 全量运行
 
 ### 2.5 后续正式运行时应该用哪个目录
