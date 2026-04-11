@@ -31,10 +31,10 @@ Target outputs:
 
 ---
 
-## Slide 2. Dataset evolution and formal experimental view
+## Slide 2. Dataset restructuring and formal experimental view
 
 ### Suggested title
-How the dataset evolved from raw storage to a formal experiment-ready view
+How the raw dataset was reorganized into the `aiws5.2-usable` structure
 
 ### Suggested diagram
 
@@ -47,29 +47,24 @@ Raw data
 
         ↓ cleaning and restructuring
 
-aiws5.2-usable-split/
-└── train|val / V1|V2|NEW / workpiece/
-   preserves train/val semantics
-
 aiws5.2-usable/
-└── V1|V2|NEW / workpiece/ + misc/
-   isolates clean single-instance samples from problematic cases
+├── V1/                               no depth
+├── V2/                               PNG depth
+├── NEW/                              EXR depth
+├── metadata/                         manifests and summary statistics
+└── misc/                             multi-instance, multi-label, and unannotated cases
 
-aiws5.2-usable-materialized/
-└── V1|V2|NEW / workpiece /
-    ├── images/
-    ├── annotations/
-    ├── depth_png/ or depth_exr/
-    ├── masks/
-    └── metadata/
-   the formal dataset root actually used in experiments
+Under each subset, samples are grouped by workpiece, and each workpiece folder typically contains:
+- images/
+- annotations/
+- depth_png/ or depth_exr/
 ```
 
 ### Main points to say
 - the original raw layout was not suitable for stable batch processing
 - `isat_annotations/` is the annotation source of truth
 - `train.json / val.json` only preserve split membership
-- all formal experiments reported here use `aiws5.2-usable-materialized`
+- later experiments all use the reorganized `aiws5.2-usable` structure
 
 ### Useful numbers to show
 - total formal samples: **1418**
@@ -80,7 +75,7 @@ aiws5.2-usable-materialized/
 - unannotated images: 1
 
 ### Suggested spoken note
-“All results in this report use the same final dataset definition, namely `aiws5.2-usable-materialized`.”
+“You can summarize this part simply as reorganizing the raw mixed dataset into the unified `aiws5.2-usable` experiment structure.”
 
 ---
 
@@ -182,7 +177,7 @@ Recommended future inference workflow
 ```text
 AIWS dataset
    ↓
-aiws5.2-usable-materialized
+aiws5.2-usable
    ↓
 SAM3D full-dataset inference
    ↓ STL outputs
@@ -240,6 +235,6 @@ You can compress the story into:
 
 ## Three sentences worth emphasizing in the talk
 
-1. **The formal dataset definition has been unified as `aiws5.2-usable-materialized`.**
+1. **The formal experiment dataset has been unified as the `aiws5.2-usable` structure.**
 2. **SAM3D already achieved 100% reconstruction completion on 1418 formal samples.**
 3. **The remaining challenge is no longer whether the pipeline runs, but how to schedule each modality more robustly and measure resources more precisely.**

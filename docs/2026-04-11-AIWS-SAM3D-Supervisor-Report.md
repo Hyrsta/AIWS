@@ -22,7 +22,7 @@ This round of work established a reusable end-to-end baseline from AIWS5.2 image
 
 ### 2.1 Official dataset scope
 
-- Dataset: `aiws5.2-usable-materialized`
+- Dataset: `aiws5.2-usable`
 - Total formal tasks: **1418**
 - Subset breakdown:
   - `V1`: 593
@@ -31,99 +31,46 @@ This round of work established a reusable end-to-end baseline from AIWS5.2 image
 
 ### 2.2 Dataset restructuring and folder semantics
 
-The dataset did not start in a directly model-friendly layout. The original assets were closer to a **flat resource pool**:
+The original dataset looked much closer to a **flat resource pool** than to a model-ready experiment structure:
 
-- `aiws5.2-dataset/images/`: RGB images largely stored together in one place
-- `aiws5.2-dataset/depth/`: depth files stored together in one place
-- `isat_annotations/`: ISAT JSON annotations, used as the final source of annotation truth
-- `train.json` / `val.json`: useful for train/val membership, but not sufficient as the only source of instance-level ground truth
+- `aiws5.2-dataset/images/`: RGB images stored together
+- `aiws5.2-dataset/depth/`: depth files stored together
+- `isat_annotations/`: ISAT JSON annotations, used as the final annotation source of truth
+- `train.json` / `val.json`: split-membership information only
 
-That original organization is inconvenient for large-scale reconstruction because it does not directly encode:
+That raw organization is inconvenient for large-scale reconstruction because it does not directly encode:
 
 1. subset structure (`V1 / V2 / NEW`)
 2. workpiece categories
-3. separation of clean single-instance samples from problematic samples
+3. separation between clean single-instance samples and problematic samples
 4. stable traversal rules for SAM3D and downstream batch scripts
 
-To solve this, the data was reorganized into three progressively more usable views.
+To solve this, the data was reorganized into the unified `aiws5.2-usable/` structure.
 
-#### (1) `aiws5.2-usable-split/`
-
-This is a **split-aware, non-destructive symlink view** with the structure:
-
-- `train/`, `val/`
-- under each split: `V1/`, `V2/`, `NEW/`
-- under each subset: five workpiece folders
-
-The five workpiece folders are:
-
-- `cover_plate`
-- `square_tube`
-- `h_beam`
-- `channel_steel`
-- `bellmouth`
-
-Purpose:
-
-- preserve train/val semantics
-- validate split membership
-- support split-aware statistics when needed
-
-#### (2) `aiws5.2-usable/`
-
-This is a **cleaned usable view** that no longer emphasizes train/val, but instead emphasizes whether a sample is appropriate for the main reconstruction pipeline.
-
-It is organized as:
+Its core semantics are:
 
 - top level: `V1 / V2 / NEW`
-- second level: workpiece category
-- special cases moved under `misc/`
+- under each subset: five workpiece folders
+  - `cover_plate`
+  - `square_tube`
+  - `h_beam`
+  - `channel_steel`
+  - `bellmouth`
+- inside each workpiece folder, the typical contents are:
+  - `images/`: RGB inputs
+  - `annotations/`: ISAT annotation JSON files
+  - `depth_png/` or `depth_exr/`: depth inputs when available
+- supporting top-level folders:
+  - `metadata/`: manifests and summary statistics
+  - `misc/`: special samples excluded from the main pipeline
 
-Inside `misc/`:
+Inside `misc/`, the main cases are:
 
-- `misc/multi_instance/`: images containing multiple instances
-- `misc/multi_label/`: images containing multiple categories
-- `misc/unannotated_images/`: images found without usable annotations
+- `multi_instance/`: images containing multiple instances
+- `multi_label/`: images containing multiple categories
+- `unannotated_images/`: images found without usable annotations
 
-Purpose:
-
-- define the clean experimental subset
-- separate clean single-instance data from problematic samples
-
-#### (3) `aiws5.2-usable-materialized/`
-
-This is the **final formal dataset root used in the production experiments**, and the one actually consumed by the SAM3D batch runner.
-
-It keeps the clear `subset / workpiece` hierarchy and adds the supporting files needed for formal runs, for example:
-
-- `metadata/samples.csv`
-- `metadata/summary.json`
-- `metadata/masks.csv`
-- per-workpiece `masks/` folders
-
-#### Meaning of the formal experiment folders
-
-Using `aiws5.2-usable-materialized/` as the example:
-
-- `V1/`: no depth
-- `V2/`: depth stored under `depth_png/`
-- `NEW/`: depth stored under `depth_exr/`
-
-Inside each workpiece folder, the typical contents are:
-
-- `images/`: RGB inputs
-- `annotations/`: ISAT annotation JSON files
-- `depth_png/` or `depth_exr/`: depth inputs when available
-- `masks/`: rasterized instance masks generated from polygon annotations
-
-Supporting folders:
-
-- `metadata/`: machine-readable manifests and summary statistics
-- `misc/`: special samples excluded from the main formal pipeline
-
-In short, the dataset evolution is:
-
-**flat raw resource pool → split-aware view → cleaned usable view → formal materialized experiment view.**
+So for presentation purposes, the dataset story can be summarized simply as: **the original flat resource pool was reorganized into the unified `aiws5.2-usable/` experiment structure.**
 
 ### 2.3 Compute server (`RXL`)
 

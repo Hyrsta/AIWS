@@ -33,7 +33,7 @@ AIWS 焊接数据上的单图 3D 重建与 CAD 生成实验进展
 ## Slide 2. 数据集整理过程与正式实验口径
 
 ### 标题建议
-数据集从原始平铺资源池到正式实验视图的演化
+数据集从原始平铺资源池到 `aiws5.2-usable` 结构的整理
 
 ### 可以直接放这张结构图
 
@@ -46,29 +46,24 @@ AIWS 焊接数据上的单图 3D 重建与 CAD 生成实验进展
 
         ↓ 清洗与重组
 
-aiws5.2-usable-split/
-└── train|val / V1|V2|NEW / workpiece/
-   用于保留 train/val 语义
-
 aiws5.2-usable/
-└── V1|V2|NEW / workpiece/ + misc/
-   用于隔离单实例主实验样本与异常样本
+├── V1/                               无深度
+├── V2/                               带 PNG 深度
+├── NEW/                              带 EXR 深度
+├── metadata/                         样本清单与统计
+└── misc/                             多实例、多类别、无标注等特殊样本
 
-aiws5.2-usable-materialized/
-└── V1|V2|NEW / workpiece /
-    ├── images/
-    ├── annotations/
-    ├── depth_png/ 或 depth_exr/
-    ├── masks/
-    └── metadata/
-   正式实验实际使用的数据集根目录
+每个 subset 下再按 5 类工件分组，工件目录中通常包含：
+- images/
+- annotations/
+- depth_png/ 或 depth_exr/
 ```
 
 ### 这一页要讲的核心点
 - 原始目录不适合稳定批处理
 - `isat_annotations/` 是标注真值来源
 - `train.json / val.json` 只保留 split 信息
-- 正式实验统一使用 `aiws5.2-usable-materialized`
+- 后续实验统一基于整理后的 `aiws5.2-usable` 结构
 
 ### 可放数字
 - 正式样本总数：**1418**
@@ -79,7 +74,7 @@ aiws5.2-usable-materialized/
 - 无标注样本：1
 
 ### 口头补充
-“我现在报告中的所有实验结果，统一都基于 `aiws5.2-usable-materialized` 这一正式口径。”
+“可以把这一部分简单理解成，我把原始混放的数据整理成了统一的 `aiws5.2-usable` 实验结构。”
 
 ---
 
@@ -181,7 +176,7 @@ SAM3D 输出进入 Cadrille 的验证结果
 ```text
 AIWS 数据集
    ↓
-aiws5.2-usable-materialized
+aiws5.2-usable
    ↓
 SAM3D 全量推理
    ↓ 输出 STL
@@ -239,6 +234,6 @@ Cadrille-IMG 单独运行
 
 ## 附：汇报时建议强调的三句话
 
-1. **正式实验口径已经统一为 `aiws5.2-usable-materialized`。**
+1. **正式实验数据集已经统一整理为 `aiws5.2-usable` 结构。**
 2. **SAM3D 已在 1418 个正式样本上实现 100% 全量重建。**
 3. **后续难点不再是能不能跑，而是如何按模态更稳地调度和统计资源。**

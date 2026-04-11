@@ -5,58 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>2026-04-11-AIWS-SAM3D-主管汇报</title>
 <style>
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-    margin: 0;
-    background: #fff;
-    color: #111827;
-  }
-  .page {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 40px 48px 72px;
-    line-height: 1.7;
-    font-size: 15px;
-  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; margin: 0; background: #fff; color: #111827; }
+  .page { max-width: 920px; margin: 0 auto; padding: 40px 48px 72px; line-height: 1.7; font-size: 15px; }
   h1, h2, h3, h4 { line-height: 1.3; margin-top: 1.6em; }
   h1 { font-size: 30px; margin-top: 0; }
   h2 { font-size: 22px; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; }
   h3 { font-size: 18px; }
   p, li { margin: 0.5em 0; }
-  code {
-    background: #f3f4f6;
-    padding: 0.15em 0.35em;
-    border-radius: 4px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.92em;
-  }
-  pre {
-    background: #0f172a;
-    color: #e5e7eb;
-    padding: 14px 16px;
-    border-radius: 10px;
-    overflow-x: auto;
-  }
+  code { background: #f3f4f6; padding: 0.15em 0.35em; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+  pre { background: #0f172a; color: #e5e7eb; padding: 14px 16px; border-radius: 10px; overflow-x: auto; }
   pre code { background: transparent; padding: 0; color: inherit; }
   table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
   th, td { border: 1px solid #d1d5db; padding: 8px 10px; text-align: left; vertical-align: top; }
   th { background: #f9fafb; }
-  blockquote {
-    margin: 1em 0;
-    padding: 0.2em 1em;
-    border-left: 4px solid #93c5fd;
-    background: #eff6ff;
-    color: #1f2937;
-  }
+  blockquote { margin: 1em 0; padding: 0.2em 1em; border-left: 4px solid #93c5fd; background: #eff6ff; color: #1f2937; }
   hr { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
 </style>
 </head>
-<body>
-  <main class="page">
-    <h1 id="2026-04-11-aiws-sam3d-cadrille">2026-04-11 AIWS × SAM3D × Cadrille 主管汇报</h1>
-<p><strong>作者</strong>: Weld<br />
+<body><main class="page"><h1 id="2026-04-11-aiws-sam3d-cadrille">2026-04-11 AIWS × SAM3D × Cadrille 主管汇报</h1>
+<p><strong>作者</strong>: 詹铠铭<br />
 <strong>日期</strong>: 2026-04-11<br />
-<strong>对象</strong>: 导师 / 项目主管<br />
 <strong>定位</strong>: 面向汇报的高层总结，重点回答环境、全量实验规模、运行时间、显存/共享内存约束，以及后续如何继续推理。</p>
 <hr />
 <h2 id="1">1. 本次工作的核心结论</h2>
@@ -72,7 +40,7 @@
 <h2 id="2">2. 数据集与硬件约束</h2>
 <h3 id="21">2.1 正式数据口径</h3>
 <ul>
-<li>数据集：<code>aiws5.2-usable-materialized</code></li>
+<li>数据集：<code>aiws5.2-usable</code></li>
 <li>正式任务总数：<strong>1418</strong></li>
 <li>子集分布：</li>
 <li><code>V1</code>: 593</li>
@@ -80,87 +48,45 @@
 <li><code>NEW</code>: 301</li>
 </ul>
 <h3 id="22">2.2 数据集整理过程与目录含义</h3>
-<p>本项目的数据不是一开始就天然按“子集 / 工件 / 输入类型”排好的。原始状态更接近<strong>平铺式资源池</strong>：</p>
+<p>本项目的数据原始状态更接近<strong>平铺式资源池</strong>：</p>
 <ul>
 <li><code>aiws5.2-dataset/images/</code>：所有 RGB 图像基本混放在同一个目录</li>
 <li><code>aiws5.2-dataset/depth/</code>：所有深度文件混放在同一个目录</li>
 <li><code>isat_annotations/</code>：ISAT 标注 JSON，作为最终标注真值来源</li>
-<li><code>train.json</code> / <code>val.json</code>：只提供 train / val 归属关系，不适合作为后续实例级重建的唯一真值来源</li>
+<li><code>train.json</code> / <code>val.json</code>：只提供 train / val 归属信息</li>
 </ul>
-<p>这种原始组织方式的问题是：</p>
+<p>这种原始组织方式不利于批量实验，主要问题是：</p>
 <ol>
 <li>不方便直接按 <code>V1 / V2 / NEW</code> 管理</li>
 <li>不方便按工件类别批量遍历</li>
 <li>多实例样本、无标注样本、异常样本不容易隔离</li>
 <li>不利于 SAM3D / Cadrille 这种需要稳定目录约定的批处理流程</li>
 </ol>
-<p>因此，后续把数据逐步整理成了 3 层视图：</p>
-<h4 id="1aiws52-usable-split">（1）<code>aiws5.2-usable-split/</code></h4>
-<p>这是<strong>保留 train / val 划分</strong>的非破坏性符号链接视图，结构为：</p>
+<p>因此，后续把数据统一整理成 <code>aiws5.2-usable/</code> 结构。</p>
+<p>这个结构的核心语义是：</p>
 <ul>
-<li><code>train/</code>、<code>val/</code></li>
-<li>每个 split 下再分 <code>V1/</code>、<code>V2/</code>、<code>NEW/</code></li>
-<li>每个 subset 下再分 5 类工件：</li>
+<li>顶层按 <code>V1 / V2 / NEW</code> 分组</li>
+<li>每个 subset 下再按 5 类工件分组：</li>
 <li><code>cover_plate</code>（盖板）</li>
 <li><code>square_tube</code>（方管）</li>
 <li><code>h_beam</code>（H 型钢）</li>
 <li><code>channel_steel</code>（槽钢）</li>
 <li><code>bellmouth</code>（喇叭口）</li>
-</ul>
-<p>用途：</p>
-<ul>
-<li>保留 train / val 语义</li>
-<li>检查 split 归属是否正确</li>
-<li>方便后续做按 split 的统计</li>
-</ul>
-<h4 id="2aiws52-usable">（2）<code>aiws5.2-usable/</code></h4>
-<p>这是<strong>不强调 train / val，只强调“可用于正式重建”</strong>的清洗视图，结构为：</p>
-<ul>
-<li>顶层按 <code>V1 / V2 / NEW</code></li>
-<li>子层按工件类别分组</li>
-<li>把不适合直接进入主干实验的样本移到 <code>misc/</code></li>
-</ul>
-<p>其中：</p>
-<ul>
-<li><code>misc/multi_instance/</code>：一张图中有多个实例</li>
-<li><code>misc/multi_label/</code>：一张图中有多个不同类别</li>
-<li><code>misc/unannotated_images/</code>：有图像但无标注</li>
-</ul>
-<p>用途：</p>
-<ul>
-<li>明确主实验样本边界</li>
-<li>把干净单实例样本与异常样本隔离</li>
-</ul>
-<h4 id="3aiws52-usable-materialized">（3）<code>aiws5.2-usable-materialized/</code></h4>
-<p>这是<strong>最终正式实验使用的数据集根目录</strong>，也是 SAM3D 批处理脚本实际读取的目录。</p>
-<p>它延续了 <code>subset / workpiece</code> 的清晰组织方式，并补充了更适合正式运行的配套文件，例如：</p>
-<ul>
-<li><code>metadata/samples.csv</code></li>
-<li><code>metadata/summary.json</code></li>
-<li><code>metadata/masks.csv</code></li>
-<li>各工件目录下的 <code>masks/</code></li>
-</ul>
-<h4 id="_1">正式实验目录的含义</h4>
-<p>以 <code>aiws5.2-usable-materialized/</code> 为例：</p>
-<ul>
-<li><code>V1/</code>：无深度版本</li>
-<li><code>V2/</code>：带 <code>depth_png/</code> 的版本</li>
-<li><code>NEW/</code>：带 <code>depth_exr/</code> 的版本</li>
-</ul>
-<p>每个工件目录下通常包含：</p>
-<ul>
+<li>每个工件目录下通常包含：</li>
 <li><code>images/</code>：RGB 图像</li>
 <li><code>annotations/</code>：对应 ISAT 标注 JSON</li>
 <li><code>depth_png/</code> 或 <code>depth_exr/</code>：深度输入（如果该 subset 有深度）</li>
-<li><code>masks/</code>：由标注 polygon 栅格化生成的实例 mask</li>
-</ul>
-<p>辅助目录：</p>
-<ul>
+<li>顶层辅助目录包括：</li>
 <li><code>metadata/</code>：机器可读统计与样本清单</li>
 <li><code>misc/</code>：不进入主实验主干的特殊样本</li>
 </ul>
-<p>因此，最终可以把数据组织概括为：</p>
-<p><strong>原始平铺资源池 → split-aware 视图 → cleaned usable 视图 → 正式 materialized 实验视图。</strong></p>
+<p>其中，<code>misc/</code> 主要用于隔离：</p>
+<ul>
+<li><code>multi_instance/</code>：一张图中有多个实例</li>
+<li><code>multi_label/</code>：一张图中有多个不同类别</li>
+<li><code>unannotated_images/</code>：有图像但无标注</li>
+</ul>
+<p>因此，这次汇报里可以把数据集整理概括为：<strong>把原始平铺资源池整理成了统一的 <code>aiws5.2-usable/</code> 实验结构。</strong></p>
 <h3 id="23-rxl">2.3 运行服务器（RXL）</h3>
 <ul>
 <li>CPU: <code>2 × Intel Xeon Gold 6326 @ 2.90GHz</code></li>
@@ -567,21 +493,18 @@
 </ul>
 <hr />
 <h2 id="7">7. 附：本次汇报引用的关键输出目录</h2>
-<h3 id="_2">成功保留目录</h3>
+<h3 id="_1">成功保留目录</h3>
 <ul>
 <li>SAM3D 正式成功输出：</li>
 <li><code>/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527</code></li>
 <li>Cadrille IMG 正式成功输出：</li>
 <li><code>/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-20260411-143505-shmfix</code></li>
 </ul>
-<h3 id="_3">归档但仍可恢复的统计目录</h3>
+<h3 id="_2">归档但仍可恢复的统计目录</h3>
 <ul>
 <li>Cadrille PC 全量成功统计目录：</li>
 <li><code>/ssd1/rxl/zhankaiming/AIWS/.trash/outputs-cleanup-20260411-153952/cadrille-full-modalities-20260411-090531-bs64/pc</code></li>
 </ul>
 <hr />
 <h2 id="8">8. 一句话总结</h2>
-<p><strong>在 4×RTX A6000 条件下，SAM3D 已经具备全量稳定重建能力，Cadrille 链路也已经验证可行；真正需要精细调优的重点不再是“能不能跑”，而是“如何在不同模态下更稳、更可测地跑”。</strong></p>
-  </main>
-</body>
-</html>
+<p><strong>在 4×RTX A6000 条件下，SAM3D 已经具备全量稳定重建能力，Cadrille 链路也已经验证可行；真正需要精细调优的重点不再是“能不能跑”，而是“如何在不同模态下更稳、更可测地跑”。</strong></p></main></body></html>

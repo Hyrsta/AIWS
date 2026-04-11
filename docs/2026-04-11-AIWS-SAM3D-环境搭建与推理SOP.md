@@ -24,7 +24,7 @@
 - 项目根目录：`/ssd1/rxl/zhankaiming/AIWS`
 - SAM3D 仓库：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
 - Cadrille 仓库：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
-- 数据集目录：`/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized`
+- 数据集目录：`/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable`
 - SAM3D Python 环境：`/home/rxl/anaconda3/envs/sam3d-objects`
 
 ### 2.2 当前成功输出
@@ -36,73 +36,39 @@
 
 ### 2.3 数据集目录是怎么整理出来的
 
-后续自己跑实验时，最容易困惑的一点是：**为什么正式输入目录不是原始数据目录，而是 `aiws5.2-usable-materialized/`？**
-
-原因是原始数据更接近平铺式组织：
+原始数据更接近平铺式资源池：
 
 - `aiws5.2-dataset/images/`：RGB 图像混放
 - `aiws5.2-dataset/depth/`：深度文件混放
 - `isat_annotations/`：标注真值 JSON
-- `train.json` / `val.json`：只描述 split 归属
+- `train.json` / `val.json`：只记录 split 归属
 
-这对批处理不够友好，所以整理出了 3 个更清晰的视图：
+为了方便稳定地跑批量实验，后续统一整理成 `aiws5.2-usable/` 结构。
 
-#### `aiws5.2-usable-split/`
+这个结构的含义是：
 
-用于保留 train / val 语义：
+- 顶层按 `V1 / V2 / NEW` 分组
+- 每个 subset 下再按工件类别分组
+- 每个工件目录下通常包含：
+  - `images/`
+  - `annotations/`
+  - `depth_png/` 或 `depth_exr/`
+- 顶层辅助目录：
+  - `metadata/`
+  - `misc/`
 
-- `train/`、`val/`
-- 每个 split 下是 `V1 / V2 / NEW`
-- 每个 subset 下再是工件类别目录
+其中：
 
-适合：
+- `V1`：无深度
+- `V2`：深度为 PNG
+- `NEW`：深度为 EXR
+- `misc/`：存放多实例、多类别、无标注等不进入主实验主干的样本
 
-- 做 split-aware 统计
-- 核对 train / val 归属
+### 2.4 后续正式运行时应该用哪个目录
 
-#### `aiws5.2-usable/`
-
-用于定义“干净可用样本”：
-
-- 顶层只保留 `V1 / V2 / NEW`
-- 下一层按工件类别整理
-- `misc/` 下单独存放特殊样本：
-  - `multi_instance/`
-  - `multi_label/`
-  - `unannotated_images/`
-
-适合：
-
-- 隔离单实例主实验样本
-- 把异常样本移出主干路径
-
-#### `aiws5.2-usable-materialized/`
-
-这是**后续正式运行应该使用的目录**。
-
-它的目录语义是：
-
-- `V1/`：无深度
-- `V2/`：深度在 `depth_png/`
-- `NEW/`：深度在 `depth_exr/`
-
-每个工件目录下常见内容：
-
-- `images/`
-- `annotations/`
-- `depth_png/` 或 `depth_exr/`
-- `masks/`
-
-辅助目录：
-
-- `metadata/`：样本清单、统计结果、mask 清单
-- `misc/`：不进主实验主干的特殊样本
-
-### 2.4 后续应该用哪个目录
-
-- **正式跑 SAM3D / Cadrille**：用 `aiws5.2-usable-materialized/`
-- **要查 train / val 归属**：看 `aiws5.2-usable-split/`
-- **要理解哪些样本被排除到主实验之外**：看 `aiws5.2-usable/` 和 `misc/`
+- **跑 SAM3D / Cadrille**：使用 `aiws5.2-usable/`
+- **检查标注真值**：以 `isat_annotations/` 为准
+- **查看被排除的特殊样本**：看 `misc/`
 
 ---
 
@@ -239,7 +205,7 @@ SPARSE_ATTN_BACKEND=flash_attn \
 CUDA_VISIBLE_DEVICES=0 \
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python -u \
 /ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py \
-  --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized \
+  --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable \
   --dataset-layout subset \
   --repo-root /ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects \
   --output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-yourrun/shard-0 \
@@ -256,7 +222,7 @@ CUDA_VISIBLE_DEVICES=0 \
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-$(date +%Y%m%d-%H%M%S)
 PY=/home/rxl/anaconda3/envs/sam3d-objects/bin/python
 SCRIPT=/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py
-DATA=/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized
+DATA=/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable
 REPO=/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects
 
 for i in 0 1 2 3; do

@@ -24,7 +24,7 @@ This SOP answers three questions:
 - Project root: `/ssd1/rxl/zhankaiming/AIWS`
 - SAM3D repo: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
 - Cadrille repo: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
-- Dataset root: `/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized`
+- Dataset root: `/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable`
 - SAM3D Python env: `/home/rxl/anaconda3/envs/sam3d-objects`
 
 ### 2.2 Current successful outputs
@@ -36,73 +36,39 @@ This SOP answers three questions:
 
 ### 2.3 How the dataset directories were organized
 
-One easy source of confusion is why the formal experiment uses `aiws5.2-usable-materialized/` instead of the original raw folder directly.
-
-The reason is that the original data was closer to a flat resource layout:
+The original data was closer to a flat resource pool:
 
 - `aiws5.2-dataset/images/`: RGB images stored together
 - `aiws5.2-dataset/depth/`: depth files stored together
 - `isat_annotations/`: annotation-truth JSON files
-- `train.json` / `val.json`: split membership only
+- `train.json` / `val.json`: split-membership information only
 
-That is not ideal for stable batch inference, so the data was reorganized into three clearer views.
-
-#### `aiws5.2-usable-split/`
-
-This preserves train/val semantics:
-
-- `train/`, `val/`
-- under each split: `V1 / V2 / NEW`
-- under each subset: workpiece folders
-
-Use it for:
-
-- split-aware statistics
-- checking train/val membership
-
-#### `aiws5.2-usable/`
-
-This defines the cleaned usable subset:
-
-- top level: `V1 / V2 / NEW`
-- second level: workpiece category
-- special cases moved under `misc/`, including:
-  - `multi_instance/`
-  - `multi_label/`
-  - `unannotated_images/`
-
-Use it for:
-
-- understanding which samples are in the clean main pipeline
-- separating problematic samples from the main reconstruction set
-
-#### `aiws5.2-usable-materialized/`
-
-This is the **directory you should use for formal future runs**.
+For stable batch experiments, the data was reorganized into the unified `aiws5.2-usable/` structure.
 
 Its semantics are:
 
-- `V1/`: no depth
-- `V2/`: depth under `depth_png/`
-- `NEW/`: depth under `depth_exr/`
+- top level: `V1 / V2 / NEW`
+- under each subset: workpiece folders
+- inside each workpiece folder, the typical contents are:
+  - `images/`
+  - `annotations/`
+  - `depth_png/` or `depth_exr/`
+- supporting top-level folders:
+  - `metadata/`
+  - `misc/`
 
-Inside each workpiece folder you will typically find:
+In this structure:
 
-- `images/`
-- `annotations/`
-- `depth_png/` or `depth_exr/`
-- `masks/`
-
-Supporting folders:
-
-- `metadata/`: manifests, summary files, mask inventory
-- `misc/`: special samples excluded from the main formal path
+- `V1`: no depth
+- `V2`: depth stored as PNG
+- `NEW`: depth stored as EXR
+- `misc/`: special samples such as multi-instance, multi-label, or unannotated cases
 
 ### 2.4 Which directory to use in future runs
 
-- **For formal SAM3D / Cadrille runs**: use `aiws5.2-usable-materialized/`
-- **To inspect train/val split membership**: use `aiws5.2-usable-split/`
-- **To understand which samples were excluded from the main clean subset**: inspect `aiws5.2-usable/` and `misc/`
+- **For SAM3D / Cadrille runs**: use `aiws5.2-usable/`
+- **For annotation truth**: use `isat_annotations/`
+- **For excluded special cases**: inspect `misc/`
 
 ---
 
@@ -240,7 +206,7 @@ SPARSE_ATTN_BACKEND=flash_attn \
 CUDA_VISIBLE_DEVICES=0 \
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python -u \
 /ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py \
-  --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized \
+  --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable \
   --dataset-layout subset \
   --repo-root /ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects \
   --output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-yourrun/shard-0 \
@@ -257,7 +223,7 @@ Recommended `tmux`-friendly launch:
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-$(date +%Y%m%d-%H%M%S)
 PY=/home/rxl/anaconda3/envs/sam3d-objects/bin/python
 SCRIPT=/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py
-DATA=/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized
+DATA=/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable
 REPO=/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects
 
 for i in 0 1 2 3; do
