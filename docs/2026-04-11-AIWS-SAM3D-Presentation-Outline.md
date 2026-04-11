@@ -81,14 +81,17 @@ Under each subset, samples are grouped by workpiece, and each workpiece folder t
 ## Slide 3. Project structure
 
 ### Suggested title
-Project structure: upstream repos and local wrappers
+Project structure: AIWS offline layer plus upstream model repos
 
 ### Suggested content
+- AIWS offline repo: `https://github.com/Hyrsta/AIWS`
+  - role: offline CAD reconstruction part of the broader AIWS system
+  - framing: **offline RGB images → mesh reconstruction → CAD reconstruction**
 - upstream repo, SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
   - default entry points used: `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
 - upstream repo, Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
   - default scripts used: `test.py`, `evaluate.py`, `convert_cadquery.py`
-- local project scripts:
+- AIWS offline scripts added in this work:
   - `scripts/build_aiws52_usable_view.py`
   - `scripts/generate_aiws52_instance_masks.py`
   - `scripts/run_sam3d_aiws52_batch.py`
@@ -97,8 +100,8 @@ Project structure: upstream repos and local wrappers
   - `scripts/run_cadrille_full_modalities_4gpu.py`
 
 ### Main point to say
-- the production path is not just the two upstream repos
-- the reusable batch and integration layer is in the local scripts built around them
+- this is the offline part of AIWS, not just two isolated third-party repos
+- the reusable batch and integration layer lives in the AIWS offline repo around the upstream models
 
 ---
 

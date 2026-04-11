@@ -81,18 +81,24 @@ At present, the identified special-case counts are:
 
 In the current data, `misc/` is dominated by `multi_instance` samples.
 
-### 2.3 Project structure (upstream repos vs. local scripts)
+### 2.3 Project structure (AIWS offline layer plus upstream model repos)
 
-The working project structure is best understood as upstream repos plus local wrapper scripts.
+The framing should be: this work belongs to the **offline part of AIWS**, and the offline repo wraps two upstream model repos into one RGB-image-to-CAD pipeline.
 
-**Upstream repos**
+**AIWS offline project repo**
+
+- GitHub: `https://github.com/Hyrsta/AIWS`
+- Role: the offline CAD reconstruction layer in the broader AIWS system
+- Pipeline framing used here: **AIWS offline RGB images → SAM3D mesh reconstruction → Cadrille CAD reconstruction**
+
+**Upstream model repos used inside the offline pipeline**
 
 - SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
     - the main upstream/default entry points used here are `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
 - Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
     - the main upstream/default scripts used here are `test.py`, `evaluate.py`, and `convert_cadquery.py`
 
-**Local scripts created for this project**
+**AIWS offline scripts added in this work**
 
 - `scripts/build_aiws52_usable_view.py`: builds the cleaned `aiws5.2-usable/` dataset view
 - `scripts/generate_aiws52_instance_masks.py`: prepares instance-level masks and intermediate data from annotations
