@@ -34,7 +34,7 @@ Only the final accepted workflow is kept. Discarded intermediate dataset stories
 
 - Project root: `/ssd1/rxl/zhankaiming/AIWS`
 - SAM3D repo: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
-- Cadrille repo: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+- Cadrille repo: `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
 - Dataset root: `/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized`
 - Batch runner: `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py`
 - Output root: `/ssd1/rxl/zhankaiming/AIWS/outputs`

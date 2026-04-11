@@ -23,7 +23,7 @@ DEFAULT_REMOTE_WORKDIR = "/ssd1/rxl/zhankaiming/AIWS"
 DEFAULT_REMOTE_PYTHON = "/home/rxl/anaconda3/envs/sam3d-objects/bin/python"
 DEFAULT_REMOTE_SAM3D_OUTPUT_ROOT = "/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527"
 DEFAULT_REMOTE_DATASET_ROOT = "/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized"
-DEFAULT_REMOTE_CADRILLE_ROOT = "/ssd1/rxl/zhankaiming/AIWS/repos/cadrille"
+DEFAULT_REMOTE_CADRILLE_ROOT = "/ssd1/rxl/zhankaiming/cadrille-official-col14m"
 DEFAULT_REMOTE_CADRILLE_IMAGE = "cadrille:latest"
 
 

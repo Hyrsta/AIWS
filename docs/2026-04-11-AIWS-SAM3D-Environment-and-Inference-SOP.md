@@ -23,7 +23,7 @@ This SOP answers three questions:
 - Server alias: `RXL`
 - Project root: `/ssd1/rxl/zhankaiming/AIWS`
 - SAM3D repo: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
-- Cadrille repo: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+- Cadrille repo: `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
 - Dataset root: `/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable`
 - SAM3D Python env: `/home/rxl/anaconda3/envs/sam3d-objects`
 
@@ -97,8 +97,14 @@ In the current data, `misc/` is dominated by `multi_instance` samples.
 
 - SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
     - the main upstream/default entry points used here are `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
-- Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+- Cadrille: `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
     - the main upstream/default scripts used here are `test.py`, `evaluate.py`, and `convert_cadquery.py`
+
+**AIWS wrapper scripts used around the official Cadrille repo**
+
+- `scripts/cadrille_test_wrapper.py`: thin wrapper for processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
+- `scripts/cadrille_evaluate.py`: evaluation wrapper used by the AIWS e2e pipeline
+- `scripts/cadrille_convert_cadquery.py`: CAD conversion wrapper used by the AIWS e2e pipeline
 
 **AIWS offline scripts added for this work**
 
@@ -346,7 +352,9 @@ Resume behavior:
 
 Current Cadrille repo on `RXL`:
 
-- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+- `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
+
+The old modified repo under `AIWS/repos/cadrille` is no longer the active inference baseline. The current baseline keeps the upstream repo clean and applies AIWS-specific behavior through wrapper scripts.
 
 Current AIWS-side orchestration scripts:
 
@@ -366,7 +374,7 @@ Based on the previously used environment-creation history, a usable Cadrille run
 Recommended current repo-tree layout on `RXL`:
 
 ```text
-/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/
+/ssd1/rxl/zhankaiming/cadrille-official-col14m/
 ├── ckpt/
 │   ├── Qwen2-VL-2B-Instruct/
 │   ├── cadrille_rl/
@@ -415,10 +423,10 @@ scp cadrille_linux_amd64.tar rxl@<host>:/tmp/
 
 4. Copy those staged assets into:
 
-- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/ckpt/`
-- `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille/data/`
+- `/ssd1/rxl/zhankaiming/cadrille-official-col14m/ckpt/`
+- `/ssd1/rxl/zhankaiming/cadrille-official-col14m/data/`
 
-This is the same operational idea as the earlier note, but rewritten for the current AIWS workspace instead of the old standalone Cadrille paths.
+This is the same operational idea as the earlier note, but the active baseline is now the official upstream clone plus AIWS wrapper scripts, rather than the old modified repo copy.
 
 ## 5.4 Validated runtime mode on RXL
 

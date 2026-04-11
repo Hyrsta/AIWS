@@ -102,8 +102,14 @@ In the current data, `misc/` is dominated by `multi_instance` samples.
 
 - SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
     - the main upstream/default entry points used here are `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
-- Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
+- Cadrille: `/ssd1/rxl/zhankaiming/cadrille-official-col14m`
     - the main upstream/default scripts used here are `test.py`, `evaluate.py`, and `convert_cadquery.py`
+
+**AIWS wrapper scripts used around the official Cadrille repo**
+
+- `scripts/cadrille_test_wrapper.py`: thin wrapper for processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
+- `scripts/cadrille_evaluate.py`: evaluation wrapper used by the AIWS e2e pipeline
+- `scripts/cadrille_convert_cadquery.py`: CAD conversion wrapper used by the AIWS e2e pipeline
 
 **AIWS offline scripts added in this work**
 
