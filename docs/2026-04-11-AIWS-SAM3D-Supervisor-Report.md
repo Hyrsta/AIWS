@@ -311,6 +311,43 @@ So for this iteration, the Cadrille memory summary is best described as:
 
 This does not change the operational conclusion, but it should be added before paper writing or a formal defense.
 
+### 4.3 Average end-to-end inference time (estimated from existing full-run statistics)
+
+Since SAM3D, Cadrille-PC, and Cadrille-IMG were not all executed as one single uninterrupted job under exactly the same settings, the most practical way to report end-to-end timing here is to derive it from the **existing successful full-run wall-clock statistics**.
+
+Here, “average end-to-end time” is defined as:
+
+- **total full-run wall-clock time divided by sample count**
+- representing the **batch-throughput-equivalent time** under the current 4-GPU setup
+- rather than a single-sample serial latency on one GPU
+
+The stage-wise wall-clock equivalents are:
+
+- SAM3D: about `1.60` hours, equivalent to about **4.07 s/sample**
+- Cadrille-PC: about `80.1` minutes, equivalent to about **3.39 s/sample**
+- Cadrille-IMG: about `25.9` minutes, equivalent to about **1.10 s/sample**
+
+This gives the following end-to-end baselines:
+
+| Pipeline | Computation | Average end-to-end time |
+|---|---:|---:|
+| SAM3D → Cadrille-PC | `4.07 + 3.39` | **7.46 s/sample** |
+| SAM3D → Cadrille-IMG (attempted-sample basis) | `4.07 + 1.10` | **5.17 s/sample** |
+| SAM3D → Cadrille-IMG (successful-output basis) | `(SAM3D total wall-clock + IMG total wall-clock) / 1213` | **6.04 s/successful output** |
+
+The interpretation is:
+
+1. **On an attempted-sample basis, the IMG pipeline is currently faster end-to-end.**
+2. **On a successful-output basis, the IMG advantage becomes smaller**, because the current IMG selection success rate is about `85.54%`.
+3. **The PC pipeline is currently slower, but more stable**, since it achieved `100%` selection success in the validated full-dataset run.
+
+One caveat is important: this is not a perfectly apples-to-apples modality comparison, because the currently validated stable settings are different:
+
+- PC: `n_samples=5`
+- IMG: `n_samples=1`
+
+Therefore, these numbers are best interpreted as **operational baselines under the current production configuration**, rather than as a pure academic comparison with all other variables strictly controlled.
+
 ---
 
 ## 5. Main Conclusions
