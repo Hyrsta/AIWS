@@ -80,40 +80,29 @@ aiws5.2-usable/
 ## Slide 3. 项目结构
 
 ### 标题建议
-项目结构：AIWS 在线/离线划分与离线 CAD 管线
+AIWS 项目结构
 
 ### 建议内容
 - AIWS 仓库：`https://github.com/Hyrsta/AIWS`
-- 在线管线, 用于现场焊接阶段：
-  - 作用：针对真实工件完成识别、位姿估计与基于 CAD 的对齐，支撑后续定位与焊接路径规划
+- 在线视觉管线：
+  - 作用：识别真实工件、估计位姿，并与 CAD 模型对齐，支撑后续定位与焊接路径规划
   - 模型栈：`YOLOv11-seg + GenPose++ + FoundationPose`
-  - `YOLOv11-seg`：识别与分割
-  - `GenPose++`：粗尺寸 / 粗位姿估计
-  - `FoundationPose`：基于 CAD 模型的精对齐
-- 离线管线, 用于部署前阶段：
-  - 作用：构建 CAD 模型库
+- 离线 CAD 重建管线：
+  - 作用：在部署前构建 CAD 模型库
   - 模型栈：`SAM3D + Cadrille`
   - `SAM3D`：离线 RGB 图像 → 网格重建
-  - `Cadrille`：从重建得到的网格出发, PC 模式从网格采样点云，IMG 模式从网格渲染 4 视图 RGB 图像，随后再做 CAD 重建
-- 官方仓库，SAM3D：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
-  - 当前直接使用的默认入口：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
-- 官方仓库，Cadrille：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
-  - 当前直接使用的默认脚本：`test.py`、`evaluate.py`、`convert_cadquery.py`
-- 围绕官方 Cadrille 运行的 AIWS wrapper 脚本：
-  - `scripts/cadrille_test_wrapper.py`
-  - `scripts/cadrille_evaluate.py`
-  - `scripts/cadrille_convert_cadquery.py`
-- AIWS 离线部分新增脚本：
-  - `scripts/build_aiws52_usable_view.py`
-  - `scripts/generate_aiws52_instance_masks.py`
-  - `scripts/sam3d_aiws52_batch.py`
-  - `scripts/sam3d_run_metrics_analysis.py`
-  - `scripts/sam3d_to_cadrille_e2e.py`
-  - `scripts/cadrille_full_modalities_4gpu.py`
+  - `Cadrille`：从重建得到的网格出发，PC 模式从网格采样点云，IMG 模式从网格渲染 4 视图 RGB 图像，随后再做 CAD 重建
+- 当前仓库结构：
+  - `repos/sam-3d-objects`、`repos/cadrille`：官方上游 submodule
+  - `scripts/`：AIWS 自己的 wrapper、编排、数据准备与分析脚本
+  - `docs/`、`gui/`：文档与本地工具
+- 离线管线直接使用的入口：
+  - SAM3D：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
+  - Cadrille：`test.py`、`evaluate.py`、`convert_cadquery.py`
 
 ### 要强调的点
-- 先讲清楚在线和离线各自是干什么的，再讲每一部分用了什么模型
-- 这次汇报讲的是离线 CAD 管线，但它的产出会服务在线视觉管线中的后续对齐与定位
+- 先讲清楚在线和离线各自承担什么角色，再讲每一部分用了什么模型
+- 强调 AIWS 保持上游仓库干净，把项目特有逻辑集中放在 `scripts/`
 
 ### 口头补充
 “后续要复现实验，不能只记住上游模型仓库，还要明确这是 AIWS 的 offline pipeline。”

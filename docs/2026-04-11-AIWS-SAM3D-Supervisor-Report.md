@@ -83,36 +83,34 @@ In the current data, `misc/` is dominated by `multi_instance` samples.
 
 ### 2.3 AIWS project structure
 
-AIWS has two parts: an online pipeline and an offline pipeline. This report focuses on the offline CAD reconstruction pipeline.
+AIWS has two connected parts:
 
-**AIWS project**
+- **Online vision pipeline**: used during on-site welding to recognize the real workpiece, estimate its pose, and align it with CAD models for downstream localization and weld path planning.
+    - model stack: `YOLOv11-seg + GenPose++ + FoundationPose`
+- **Offline CAD reconstruction pipeline**: used before deployment to build the CAD model database.
+    - model stack: `SAM3D + Cadrille`
+    - `SAM3D`: offline RGB images → mesh reconstruction
+    - `Cadrille`: starts from the reconstructed mesh, then either samples point clouds for PC mode or renders 4-view RGB images for IMG mode before CAD reconstruction
+
+**Current repository layout**
 
 - GitHub: `https://github.com/Hyrsta/AIWS`
-- AIWS is split into an **online vision pipeline** and an **offline CAD reconstruction pipeline**
-- The **online vision pipeline** is used during on-site welding. It takes RGB-D observations of the real workpiece, identifies the workpiece, estimates its pose, and aligns it against CAD models so downstream localization and weld path planning can proceed.
-    - `YOLOv11-seg`: workpiece recognition and segmentation
-    - `GenPose++`: coarse size and pose estimation
-    - `FoundationPose`: precise pose alignment against CAD models
-- The **offline CAD reconstruction pipeline** is used before deployment to build the CAD model database.
-    - `SAM3D`: offline RGB images → mesh reconstruction
-    - `Cadrille`: starts from the reconstructed mesh, then either samples a point cloud from that mesh for PC mode or renders 4-view RGB images from that mesh for IMG mode, before reconstructing CAD
-- This document focuses on the offline CAD reconstruction pipeline
+- `repos/sam-3d-objects`: upstream SAM3D repo, tracked as a submodule
+- `repos/cadrille`: upstream Cadrille repo, tracked as a submodule
+- `scripts/`: AIWS orchestration, wrappers, dataset preparation, and analysis scripts
+- `docs/`: reports, SOPs, and presentation materials
+- `gui/`: local GUI for launching runs and inspecting outputs
 
-**Upstream model repos used inside the offline pipeline**
+**Upstream entry points used in the offline pipeline**
 
-- SAM3D: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
-    - the main upstream/default entry points used here are `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
-- Cadrille: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
-    - the main upstream/default scripts used here are `test.py`, `evaluate.py`, and `convert_cadquery.py`
+- SAM3D (`repos/sam-3d-objects`): `demo.py`, `notebook/inference.py`, `checkpoints/hf/pipeline.yaml`
+- Cadrille (`repos/cadrille`): `test.py`, `evaluate.py`, `convert_cadquery.py`
 
-**AIWS wrapper scripts used around the official Cadrille repo**
+**AIWS wrapper and orchestration scripts**
 
 - `scripts/cadrille_test_wrapper.py`: thin wrapper for processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
 - `scripts/cadrille_evaluate.py`: evaluation wrapper used by the AIWS e2e pipeline
 - `scripts/cadrille_convert_cadquery.py`: CAD conversion wrapper used by the AIWS e2e pipeline
-
-**AIWS offline scripts added in this work**
-
 - `scripts/build_aiws52_usable_view.py`: builds the cleaned `aiws5.2-usable/` dataset view
 - `scripts/generate_aiws52_instance_masks.py`: prepares instance-level masks and intermediate data from annotations
 - `scripts/sam3d_aiws52_batch.py`: resumable SAM3D batch runner with sharding, multi-GPU support, and runtime metrics

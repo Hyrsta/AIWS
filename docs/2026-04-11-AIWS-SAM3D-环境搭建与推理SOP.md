@@ -78,36 +78,34 @@
 
 ### 2.4 AIWS 项目结构
 
-AIWS 包含 online pipeline 和 offline pipeline 两部分。本文档聚焦于 offline CAD 重建管线。
+AIWS 当前包含两个相互衔接的部分：
 
-**AIWS 项目**
+- **在线视觉管线**：用于现场焊接阶段，负责识别真实工件、估计位姿，并与 CAD 模型对齐，以支撑后续定位与焊接路径规划。
+    - 模型栈：`YOLOv11-seg + GenPose++ + FoundationPose`
+- **离线 CAD 重建管线**：用于部署前构建 CAD 模型库。
+    - 模型栈：`SAM3D + Cadrille`
+    - `SAM3D`：离线 RGB 图像 → 网格重建
+    - `Cadrille`：从重建得到的网格出发，PC 模式从网格采样点云，IMG 模式从网格渲染 4 视图 RGB 图像，随后再做 CAD 重建
+
+**当前仓库结构**
 
 - GitHub：`https://github.com/Hyrsta/AIWS`
-- AIWS 分为**在线视觉管线**与**离线 CAD 重建管线**
-- **在线视觉管线**服务于现场焊接阶段。它接收真实工件的 RGB-D 观测，完成工件识别、位姿估计以及与 CAD 模型的对齐，从而支撑后续定位与焊接路径规划。
-    - `YOLOv11-seg`：工件识别与分割
-    - `GenPose++`：粗尺寸与粗位姿估计
-    - `FoundationPose`：基于 CAD 模型的精对齐
-- **离线 CAD 重建管线**服务于部署前的 CAD 模型库构建。
-    - `SAM3D`：离线 RGB 图像 → 网格重建
-    - `Cadrille`：从重建得到的网格出发，再根据模式选择后续输入形式, PC 模式从网格采样点云，IMG 模式从网格渲染 4 视图 RGB 图像，随后再做 CAD 重建
-- 本 SOP 聚焦的是离线 CAD 重建管线
+- `repos/sam-3d-objects`：SAM3D 官方上游仓库，以 submodule 方式跟踪
+- `repos/cadrille`：Cadrille 官方上游仓库，以 submodule 方式跟踪
+- `scripts/`：AIWS 自己的编排、wrapper、数据准备与分析脚本
+- `docs/`：报告、SOP 与汇报材料
+- `gui/`：本地运行与结果查看界面
 
-**离线流水线中使用的上游模型仓库**
+**离线管线直接使用的上游入口**
 
-- SAM3D：`/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
-    - 官方/默认入口主要包括：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
-- Cadrille：`/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
-    - 当前直接使用的官方/默认脚本主要包括：`test.py`、`evaluate.py`、`convert_cadquery.py`
+- SAM3D（`repos/sam-3d-objects`）：`demo.py`、`notebook/inference.py`、`checkpoints/hf/pipeline.yaml`
+- Cadrille（`repos/cadrille`）：`test.py`、`evaluate.py`、`convert_cadquery.py`
 
-**围绕官方 Cadrille 运行的 AIWS wrapper 脚本**
+**AIWS 的 wrapper 与编排脚本**
 
 - `scripts/cadrille_test_wrapper.py`：薄封装，只负责 processor/checkpoint 覆盖、sample 数控制、batch size 控制，以及 GPU 显存日志
 - `scripts/cadrille_evaluate.py`：AIWS e2e 流程里使用的评估 wrapper
 - `scripts/cadrille_convert_cadquery.py`：AIWS e2e 流程里使用的 CAD 转换 wrapper
-
-**本次工作新增的 AIWS 离线脚本**
-
 - `scripts/build_aiws52_usable_view.py`：整理并构建 `aiws5.2-usable/` 数据视图
 - `scripts/generate_aiws52_instance_masks.py`：根据标注生成实例级 mask/中间数据
 - `scripts/sam3d_aiws52_batch.py`：SAM3D 全量批处理入口，支持 resume、shard、多卡与运行指标记录
