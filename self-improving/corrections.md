@@ -33,7 +33,7 @@
   Type: documentation
   Context: Leonardo corrected the author metadata and asked to remove audience lines from the generated report materials
   Confirmed: yes
-- [16:14] For dataset explanations in these AIWS report docs, describe only the unified `aiws5.2-usable` structure and avoid mentioning `aiws5.2-usable-split`, `materialized`, or symlink implementation details
+- [16:14] For dataset explanations in these AIWS report docs, describe only the unified `aiws5.2-usable` structure and avoid mentioning legacy intermediate layouts or symlink implementation details
   Type: documentation
   Context: Leonardo asked to simplify the dataset story for the docs and presentation
   Confirmed: yes

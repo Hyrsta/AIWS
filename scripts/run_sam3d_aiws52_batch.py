@@ -21,8 +21,8 @@ SUBSETS = ("V1", "V2", "NEW")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run SAM3D on all AIWS5.2 split-materialized samples")
-    parser.add_argument("--dataset-root", type=Path, required=True, help="Root of aiws5.2-usable-split-materialized")
+    parser = argparse.ArgumentParser(description="Run SAM3D on all AIWS5.2 usable samples")
+    parser.add_argument("--dataset-root", type=Path, required=True, help="Root of aiws5.2-usable dataset")
     parser.add_argument("--repo-root", type=Path, required=True, help="Root of sam-3d-objects repo")
     parser.add_argument("--output-root", type=Path, required=True, help="Directory for batch outputs and logs")
     parser.add_argument("--seed", type=int, default=42)
