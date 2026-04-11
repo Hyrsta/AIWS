@@ -247,7 +247,7 @@ def save_job(job: dict[str, Any]) -> None:
 def build_full_run_command(request: FullRunRequest) -> list[str]:
     cmd = [
         request.remote_python,
-        f"{request.remote_workdir}/scripts/run_cadrille_full_modalities_4gpu.py",
+        f"{request.remote_workdir}/scripts/cadrille_full_modalities_4gpu.py",
         "--sam3d-output-root",
         request.sam3d_output_root,
         "--output-root",
@@ -284,7 +284,7 @@ def build_full_run_command(request: FullRunRequest) -> list[str]:
 def build_e2e_command(request: E2ERunRequest) -> list[str]:
     cmd = [
         request.remote_python,
-        f"{request.remote_workdir}/scripts/run_sam3d_to_cadrille_e2e.py",
+        f"{request.remote_workdir}/scripts/sam3d_to_cadrille_e2e.py",
         "--sam3d-output-root",
         request.sam3d_output_root,
         "--dataset-root",

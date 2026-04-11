@@ -115,10 +115,10 @@ AIWS has two parts: an online pipeline and an offline pipeline. This report focu
 
 - `scripts/build_aiws52_usable_view.py`: builds the cleaned `aiws5.2-usable/` dataset view
 - `scripts/generate_aiws52_instance_masks.py`: prepares instance-level masks and intermediate data from annotations
-- `scripts/run_sam3d_aiws52_batch.py`: resumable SAM3D batch runner with sharding, multi-GPU support, and runtime metrics
-- `scripts/analyze_sam3d_run_metrics.py`: summarizes and analyzes SAM3D run statistics
-- `scripts/run_sam3d_to_cadrille_e2e.py`: bridges SAM3D mesh outputs into Cadrille by preparing the mesh-derived inputs required by each mode, and writes downstream summaries
-- `scripts/run_cadrille_full_modalities_4gpu.py`: launches full-dataset Cadrille `pc/img` shard jobs across GPUs
+- `scripts/sam3d_aiws52_batch.py`: resumable SAM3D batch runner with sharding, multi-GPU support, and runtime metrics
+- `scripts/sam3d_run_metrics_analysis.py`: summarizes and analyzes SAM3D run statistics
+- `scripts/sam3d_to_cadrille_e2e.py`: bridges SAM3D mesh outputs into Cadrille by preparing the mesh-derived inputs required by each mode, and writes downstream summaries
+- `scripts/cadrille_full_modalities_4gpu.py`: launches full-dataset Cadrille `pc/img` shard jobs across GPUs
 
 ### 2.4 Compute server (`RXL`)
 

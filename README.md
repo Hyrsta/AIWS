@@ -64,10 +64,10 @@ AIWS/
 
 - `scripts/build_aiws52_usable_view.py`
 - `scripts/generate_aiws52_instance_masks.py`
-- `scripts/run_sam3d_aiws52_batch.py`
-- `scripts/analyze_sam3d_run_metrics.py`
-- `scripts/run_sam3d_to_cadrille_e2e.py`
-- `scripts/run_cadrille_full_modalities_4gpu.py`
+- `scripts/sam3d_aiws52_batch.py`
+- `scripts/sam3d_run_metrics_analysis.py`
+- `scripts/sam3d_to_cadrille_e2e.py`
+- `scripts/cadrille_full_modalities_4gpu.py`
 
 ## Clone and initialize
 

@@ -31,8 +31,8 @@ def parse_args() -> argparse.Namespace:
     sam.add_argument(
         "--sam3d-script",
         type=Path,
-        default=Path("/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py"),
-        help="Path to run_sam3d_aiws52_batch.py",
+        default=Path("/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py"),
+        help="Path to sam3d_aiws52_batch.py",
     )
     sam.add_argument(
         "--dataset-root",

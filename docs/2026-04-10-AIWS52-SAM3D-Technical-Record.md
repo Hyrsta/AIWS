@@ -28,7 +28,7 @@ Only the final accepted workflow is kept. Discarded intermediate dataset stories
 - Key scripts:
   - `scripts/build_aiws52_usable_view.py`
   - `scripts/generate_aiws52_instance_masks.py`
-  - `scripts/run_sam3d_aiws52_batch.py`
+  - `scripts/sam3d_aiws52_batch.py`
 
 ### 2.2 Remote server (RXL)
 
@@ -36,7 +36,7 @@ Only the final accepted workflow is kept. Discarded intermediate dataset stories
 - SAM3D repo: `/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects`
 - Cadrille repo: `/ssd1/rxl/zhankaiming/AIWS/repos/cadrille`
 - Dataset root: `/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized`
-- Batch runner: `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py`
+- Batch runner: `/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py`
 - Output root: `/ssd1/rxl/zhankaiming/AIWS/outputs`
 - Conda env: `/home/rxl/anaconda3/envs/sam3d-objects`
 
@@ -86,7 +86,7 @@ Do not reintroduce intermediate path variants.
 
 ## 4. Batch Runner Technical Specification
 
-Script: `scripts/run_sam3d_aiws52_batch.py`
+Script: `scripts/sam3d_aiws52_batch.py`
 
 ### 4.1 Key parameters
 
@@ -225,7 +225,7 @@ ATTN_BACKEND=flash_attn \
 SPARSE_ATTN_BACKEND=flash_attn \
 CUDA_VISIBLE_DEVICES=0 \
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python -u \
-/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py \
+/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py \
   --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized \
   --dataset-layout subset \
   --repo-root /ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects \

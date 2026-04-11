@@ -117,6 +117,10 @@
   Type: documentation
   Context: Leonardo explicitly called out the heading and opening sentence as bad wording
   Confirmed: yes
+- [22:04] For AIWS scripts, do not use `run_...`-style filenames for module workflows; prefer module-first names such as `sam3d_*` and `cadrille_*`
+  Type: naming
+  Context: Leonardo asked for more consistent script naming based on module names
+  Confirmed: yes
 - [19:38] In the SOP structure, SAM3D and Cadrille should be framed as parallel modules. If there is `SAM3D Environment Setup` and `SAM3D Inference Workflow`, there should also be `Cadrille Environment Setup` and `Cadrille Inference Workflow`
   Type: documentation
   Context: Leonardo rejected the old `Continuing from SAM3D to Cadrille` framing because it made Cadrille look subordinate instead of parallel

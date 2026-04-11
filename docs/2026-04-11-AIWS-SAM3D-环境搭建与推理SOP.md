@@ -110,10 +110,10 @@ AIWS 包含 online pipeline 和 offline pipeline 两部分。本文档聚焦于 
 
 - `scripts/build_aiws52_usable_view.py`：整理并构建 `aiws5.2-usable/` 数据视图
 - `scripts/generate_aiws52_instance_masks.py`：根据标注生成实例级 mask/中间数据
-- `scripts/run_sam3d_aiws52_batch.py`：SAM3D 全量批处理入口，支持 resume、shard、多卡与运行指标记录
-- `scripts/analyze_sam3d_run_metrics.py`：汇总并分析 SAM3D 运行统计
-- `scripts/run_sam3d_to_cadrille_e2e.py`：把 SAM3D 网格输出整理为 Cadrille 各模式所需的 mesh-derived 输入，并汇总下游结果
-- `scripts/run_cadrille_full_modalities_4gpu.py`：按 GPU 切分 shard，批量启动 Cadrille `pc/img` 全量运行
+- `scripts/sam3d_aiws52_batch.py`：SAM3D 全量批处理入口，支持 resume、shard、多卡与运行指标记录
+- `scripts/sam3d_run_metrics_analysis.py`：汇总并分析 SAM3D 运行统计
+- `scripts/sam3d_to_cadrille_e2e.py`：把 SAM3D 网格输出整理为 Cadrille 各模式所需的 mesh-derived 输入，并汇总下游结果
+- `scripts/cadrille_full_modalities_4gpu.py`：按 GPU 切分 shard，批量启动 Cadrille `pc/img` 全量运行
 
 ### 2.5 后续正式运行时应该用哪个目录
 
@@ -279,7 +279,7 @@ output["glb"].export("mesh.stl")
 
 当前正式脚本：
 
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py`
 
 单个 shard 示例：
 
@@ -288,7 +288,7 @@ ATTN_BACKEND=flash_attn \
 SPARSE_ATTN_BACKEND=flash_attn \
 CUDA_VISIBLE_DEVICES=0 \
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python -u \
-/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py \
+/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py \
   --dataset-root /ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable \
   --dataset-layout subset \
   --repo-root /ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects \
@@ -305,7 +305,7 @@ CUDA_VISIBLE_DEVICES=0 \
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-$(date +%Y%m%d-%H%M%S)
 PY=/home/rxl/anaconda3/envs/sam3d-objects/bin/python
-SCRIPT=/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_aiws52_batch.py
+SCRIPT=/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_aiws52_batch.py
 DATA=/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable
 REPO=/ssd1/rxl/zhankaiming/AIWS/repos/sam-3d-objects
 
@@ -357,8 +357,8 @@ done
 
 AIWS 侧当前使用的编排脚本：
 
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py`
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_to_cadrille_e2e.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/cadrille_full_modalities_4gpu.py`
 
 当前工作流直接调用的 Cadrille 上游/默认入口主要是：
 
@@ -479,14 +479,14 @@ docker load -i /tmp/cadrille_linux_amd64.tar
 
 当前 AIWS 正式脚本：
 
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/cadrille_full_modalities_4gpu.py`
 
 PC 示例：
 
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python \
-/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py \
+/ssd1/rxl/zhankaiming/AIWS/scripts/cadrille_full_modalities_4gpu.py \
   --output-root "$OUT" \
   --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
   --modalities pc \
@@ -505,7 +505,7 @@ IMG 示例：
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python \
-/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py \
+/ssd1/rxl/zhankaiming/AIWS/scripts/cadrille_full_modalities_4gpu.py \
   --output-root "$OUT" \
   --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
   --modalities img \
@@ -529,7 +529,7 @@ PC 示例：
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-pc-only-$(date +%Y%m%d-%H%M%S)
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python \
-/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py \
+/ssd1/rxl/zhankaiming/AIWS/scripts/cadrille_full_modalities_4gpu.py \
   --output-root "$OUT" \
   --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
   --modalities pc \
@@ -548,7 +548,7 @@ IMG 示例：
 ```bash
 OUT=/ssd1/rxl/zhankaiming/AIWS/outputs/cadrille-img-only-$(date +%Y%m%d-%H%M%S)
 /home/rxl/anaconda3/envs/sam3d-objects/bin/python \
-/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_full_modalities_4gpu.py \
+/ssd1/rxl/zhankaiming/AIWS/scripts/cadrille_full_modalities_4gpu.py \
   --output-root "$OUT" \
   --sam3d-output-root /ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527 \
   --modalities img \
@@ -586,7 +586,7 @@ Cadrille 这部分最重要的运行检查点是：
 
 脚本：
 
-- `/ssd1/rxl/zhankaiming/AIWS/scripts/run_sam3d_to_cadrille_e2e.py`
+- `/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_to_cadrille_e2e.py`
 
 这个脚本可以：
 
