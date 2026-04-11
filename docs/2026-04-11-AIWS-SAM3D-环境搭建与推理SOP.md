@@ -572,7 +572,7 @@ Cadrille 这部分最重要的运行检查点是：
 
 ---
 
-## 7. SAM3D-Cadrille 桥接与编排
+## 7. SAM3D-Cadrille 端到端桥接与编排
 
 ## 7.1 单次端到端脚本
 

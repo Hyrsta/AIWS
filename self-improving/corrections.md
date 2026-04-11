@@ -129,3 +129,7 @@
   Type: documentation
   Context: Leonardo rejected the meta phrasing in Part 6 and explicitly asked to remember not to do this again
   Confirmed: yes
+- [19:54] When Section 7 covers the cross-module bridge, explicitly include `end-to-end` in the heading because that framing matters for professor-facing communication
+  Type: documentation
+  Context: Leonardo said the professor wants to hear the `end-to-end` wording in this section title
+  Confirmed: yes

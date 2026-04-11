@@ -573,7 +573,7 @@ In practice:
 
 ---
 
-## 7. SAM3D-Cadrille Bridge and Orchestration
+## 7. SAM3D-Cadrille End-to-End Bridge and Orchestration
 
 ## 7.1 Single end-to-end bridge script
 
