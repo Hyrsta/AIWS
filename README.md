@@ -58,7 +58,7 @@ AIWS/
 - `scripts/cadrille_evaluate.py`
   - evaluation wrapper used by the AIWS e2e pipeline
 - `scripts/cadrille_convert_cadquery.py`
-  - CAD conversion wrapper used by the AIWS e2e pipeline
+  - legacy CAD conversion wrapper; the main AIWS e2e path now materializes meshes/BRep via `scripts/cadrille_evaluate.py`
 
 ### Main offline pipeline scripts
 
@@ -67,7 +67,8 @@ AIWS/
 - `scripts/sam3d_batch.py`
 - `scripts/sam3d_run_metrics_analysis.py`
 - `scripts/sam3d_to_cadrille_e2e.py`
-- `scripts/cadrille_full_modalities_4gpu.py`
+- `scripts/cadrille_batch.py`
+- `scripts/cadrille_run_metrics_analysis.py`
 
 ## Clone and initialize
 

@@ -7,7 +7,7 @@ V1 uses:
 
 ## What v1 supports
 
-- Launch a **4-GPU full run** with `cadrille_full_modalities_4gpu.py`
+- Launch a **full multi-GPU Cadrille batch run** with `cadrille_batch.py`
 - Launch a **single e2e run** with `sam3d_to_cadrille_e2e.py`
 - Track background jobs by remote PID + status file
 - Tail job logs from the GUI
