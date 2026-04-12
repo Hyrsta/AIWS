@@ -30,9 +30,10 @@ graph TD
 
 ```text
 AIWS/
-├── repos/
-│   ├── sam-3d-objects/   # upstream SAM3D repo (submodule)
-│   └── cadrille/         # upstream Cadrille repo (submodule)
+├── repos/               # upstream model repos tracked as submodules
+│   ├── sam-3d-objects/   # upstream SAM3D repo
+│   └── cadrille/         # upstream Cadrille repo
+├── runtime/             # AIWS-owned runtime assets (checkpoints, caches, prepared data)
 ├── scripts/             # AIWS orchestration, wrappers, and experiment runners
 ├── docs/                # reports, SOPs, technical records, and outlines
 ├── gui/                 # local GUI for launching and inspecting runs
@@ -47,7 +48,7 @@ AIWS/
   - main entry points used by this workflow include `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
 - `repos/cadrille`
   - upstream Cadrille codebase
-  - main entry points used by this workflow include `test.py`, `evaluate.py`, and `convert_cadquery.py`
+  - main entry points used by this workflow include `test.py` and `evaluate.py`
 
 ## AIWS-specific integration code
 
@@ -97,6 +98,17 @@ This repo is meant to contain:
 - local GUI and analysis tooling
 
 This repo is **not** meant to vendor large upstream codebases directly into AIWS when a clean submodule can track them instead.
+
+## Runtime asset ownership
+
+Model checkpoints and prepared runtime data should live under AIWS-owned runtime paths, not inside the upstream repos.
+
+- preferred Cadrille runtime root: `runtime/cadrille/`
+- example paths:
+  - `runtime/cadrille/ckpt/`
+  - `runtime/cadrille/data/`
+
+This keeps upstream repos under `repos/` clean and treats checkpoints and prepared data as AIWS runtime state.
 
 ## Current focus
 
