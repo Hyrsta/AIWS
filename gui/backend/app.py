@@ -22,9 +22,12 @@ DEFAULT_REMOTE_HOST = "RXL"
 DEFAULT_REMOTE_WORKDIR = "/ssd1/rxl/zhankaiming/AIWS"
 DEFAULT_REMOTE_PYTHON = "/home/rxl/anaconda3/envs/sam3d-objects/bin/python"
 DEFAULT_REMOTE_SAM3D_OUTPUT_ROOT = "/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527"
-DEFAULT_REMOTE_DATASET_ROOT = "/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized"
+DEFAULT_REMOTE_DATASET_ROOT = "/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable"
 DEFAULT_REMOTE_CADRILLE_ROOT = "/ssd1/rxl/zhankaiming/AIWS/repos/cadrille"
 DEFAULT_REMOTE_CADRILLE_IMAGE = "cadrille:latest"
+DEFAULT_CADRILLE_CHECKPOINT = "ckpt/cadrille_sft"
+DEFAULT_CADRILLE_PROCESSOR_PATH = "ckpt/Qwen2-VL-2B-Instruct"
+DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS = "--ipc=host --shm-size=16g"
 
 
 app = FastAPI(title="AIWS E2E GUI Backend", version="0.1.0")
@@ -36,7 +39,7 @@ class FullRunRequest(BaseModel):
     remote_python: str = DEFAULT_REMOTE_PYTHON
     sam3d_output_root: str = DEFAULT_REMOTE_SAM3D_OUTPUT_ROOT
     output_root: str = Field(..., min_length=1)
-    split_prefix: str = "sam3d_bridge_gui"
+    split_prefix: str = "sam3d_bridge_sft_gui"
     modalities: str = "pc,img"
     gpus: str = "0,1,2,3"
     pc_n_samples: int = 5
@@ -46,6 +49,9 @@ class FullRunRequest(BaseModel):
     allow_selection_fallback: bool = False
     cadrille_runtime: Literal["auto", "docker", "host"] = "docker"
     cadrille_docker_image: str = DEFAULT_REMOTE_CADRILLE_IMAGE
+    cadrille_docker_extra_args: str = DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS
+    cadrille_checkpoint: str = DEFAULT_CADRILLE_CHECKPOINT
+    cadrille_processor_path: str = DEFAULT_CADRILLE_PROCESSOR_PATH
     export_brep: bool = True
     force: bool = False
     dry_run: bool = False
@@ -59,11 +65,14 @@ class E2ERunRequest(BaseModel):
     dataset_root: str = DEFAULT_REMOTE_DATASET_ROOT
     cadrille_root: str = DEFAULT_REMOTE_CADRILLE_ROOT
     cadrille_output_root: str = Field(..., min_length=1)
-    cadrille_split_name: str = "sam3d_bridge_gui_single"
+    cadrille_split_name: str = "sam3d_bridge_sft_gui_single"
     skip_sam3d: bool = True
     cadrille_runtime: Literal["auto", "docker", "host"] = "docker"
     cadrille_docker_image: str = DEFAULT_REMOTE_CADRILLE_IMAGE
+    cadrille_docker_extra_args: str = DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS
     cadrille_docker_gpus: str = "device=0"
+    cadrille_checkpoint: str = DEFAULT_CADRILLE_CHECKPOINT
+    cadrille_processor_path: str = DEFAULT_CADRILLE_PROCESSOR_PATH
     cadrille_mode: Literal["pc", "img"] = "pc"
     cadrille_input_source: Literal["mesh", "point_cloud", "multi_view"] = "mesh"
     cadrille_n_samples: int = 5
@@ -111,6 +120,9 @@ def health() -> dict[str, Any]:
             "dataset_root": DEFAULT_REMOTE_DATASET_ROOT,
             "cadrille_root": DEFAULT_REMOTE_CADRILLE_ROOT,
             "cadrille_docker_image": DEFAULT_REMOTE_CADRILLE_IMAGE,
+            "cadrille_docker_extra_args": DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS,
+            "cadrille_checkpoint": DEFAULT_CADRILLE_CHECKPOINT,
+            "cadrille_processor_path": DEFAULT_CADRILLE_PROCESSOR_PATH,
         },
     }
 
@@ -270,6 +282,11 @@ def build_full_run_command(request: FullRunRequest) -> list[str]:
         request.cadrille_runtime,
         "--cadrille-docker-image",
         request.cadrille_docker_image,
+        f"--cadrille-docker-extra-args={request.cadrille_docker_extra_args}",
+        "--cadrille-checkpoint",
+        request.cadrille_checkpoint,
+        "--cadrille-processor-path",
+        request.cadrille_processor_path,
     ]
     if request.allow_selection_fallback:
         cmd.append("--allow-selection-fallback")
@@ -299,8 +316,13 @@ def build_e2e_command(request: E2ERunRequest) -> list[str]:
         request.cadrille_runtime,
         "--cadrille-docker-image",
         request.cadrille_docker_image,
+        f"--cadrille-docker-extra-args={request.cadrille_docker_extra_args}",
         "--cadrille-docker-gpus",
         request.cadrille_docker_gpus,
+        "--cadrille-checkpoint",
+        request.cadrille_checkpoint,
+        "--cadrille-processor-path",
+        request.cadrille_processor_path,
         "--cadrille-mode",
         request.cadrille_mode,
         "--cadrille-input-source",

@@ -49,9 +49,9 @@ def ensure_state_default(key: str, value: Any) -> None:
         st.session_state[key] = value
 
 
-ensure_state_default("full_output_root", default_output_root("cadrille-gui-full"))
-ensure_state_default("single_cadrille_output_root", default_output_root("cadrille-gui-single"))
-ensure_state_default("summary_root", default_output_root("cadrille-gui-full"))
+ensure_state_default("full_output_root", default_output_root("cadrille-sft-gui-full"))
+ensure_state_default("single_cadrille_output_root", default_output_root("cadrille-sft-gui-single"))
+ensure_state_default("summary_root", default_output_root("cadrille-sft-gui-full"))
 
 
 def render_job_summary(summary: dict[str, Any]) -> None:
@@ -204,6 +204,7 @@ tab_full, tab_single, tab_jobs, tab_outputs = st.tabs(
 
 with tab_full:
     st.subheader("Launch 4-GPU full run")
+    st.caption("Default preset targets the current SFT baseline. Switch checkpoint preset to ckpt/cadrille_rl when launching the RL comparison run.")
     with st.form("full_run_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -212,8 +213,11 @@ with tab_full:
             remote_python = st.text_input("Remote python", defaults["remote_python"])
             sam3d_output_root = st.text_input("SAM3D output root", defaults["sam3d_output_root"])
             output_root = st.text_input("Output root", key="full_output_root")
-            split_prefix = st.text_input("Split prefix", "sam3d_bridge_gui")
+            split_prefix = st.text_input("Split prefix", "sam3d_bridge_sft_gui")
             modalities = st.text_input("Modalities", "pc,img")
+            checkpoint_preset = st.selectbox("Checkpoint preset", ["ckpt/cadrille_sft", "ckpt/cadrille_rl"], index=0)
+            custom_checkpoint = st.text_input("Custom checkpoint path (optional)", "")
+            processor_path = st.text_input("Processor path", defaults["cadrille_processor_path"])
         with col2:
             gpus = st.text_input("GPU list", "0,1,2,3")
             pc_n_samples = st.number_input("PC n_samples", min_value=1, value=5)
@@ -222,6 +226,7 @@ with tab_full:
             selection_mode = st.selectbox("Selection mode", ["evaluate", "index"])
             cadrille_runtime = st.selectbox("Cadrille runtime", ["docker", "auto", "host"])
             docker_image = st.text_input("Cadrille docker image", defaults["cadrille_docker_image"])
+            docker_extra_args = st.text_input("Docker extra args", defaults["cadrille_docker_extra_args"])
             allow_selection_fallback = st.checkbox("Allow selection fallback", value=False)
             export_brep = st.checkbox("Export BRep / STEP", value=True)
             force = st.checkbox("Force overwrite", value=False)
@@ -245,6 +250,9 @@ with tab_full:
             "allow_selection_fallback": allow_selection_fallback,
             "cadrille_runtime": cadrille_runtime,
             "cadrille_docker_image": docker_image,
+            "cadrille_docker_extra_args": docker_extra_args,
+            "cadrille_checkpoint": custom_checkpoint.strip() or checkpoint_preset,
+            "cadrille_processor_path": processor_path,
             "export_brep": export_brep,
             "force": force,
             "dry_run": dry_run,
@@ -258,6 +266,7 @@ with tab_full:
 
 with tab_single:
     st.subheader("Launch single e2e run")
+    st.caption("Single-run launch now exposes the same checkpoint and docker knobs as the batch workflow.")
     with st.form("single_e2e_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -268,7 +277,10 @@ with tab_single:
             dataset_root = st.text_input("Dataset root", defaults["dataset_root"])
             cadrille_root = st.text_input("Cadrille root", defaults["cadrille_root"])
             cadrille_output_root = st.text_input("Cadrille output root", key="single_cadrille_output_root")
-            split_name = st.text_input("Cadrille split name", "sam3d_bridge_gui_single")
+            split_name = st.text_input("Cadrille split name", "sam3d_bridge_sft_gui_single")
+            checkpoint_preset = st.selectbox("Checkpoint preset ", ["ckpt/cadrille_sft", "ckpt/cadrille_rl"], index=0)
+            custom_checkpoint = st.text_input("Custom checkpoint path (optional) ", "")
+            processor_path = st.text_input("Processor path ", defaults["cadrille_processor_path"])
         with col2:
             cadrille_mode = st.selectbox("Cadrille mode", ["pc", "img"])
             cadrille_input_source = st.selectbox("Input source", ["mesh", "point_cloud", "multi_view"])
@@ -278,8 +290,10 @@ with tab_single:
             max_samples = st.number_input("Max samples (0 = none)", min_value=0, value=0)
             selection_mode = st.selectbox("Selection mode ", ["evaluate", "index"])
             selected_candidate_index = st.number_input("Selected candidate index", min_value=0, value=0)
+            cadrille_runtime = st.selectbox("Cadrille runtime ", ["docker", "auto", "host"], index=0)
             docker_gpus = st.text_input("Docker GPU selector", "device=0")
             docker_image = st.text_input("Docker image", defaults["cadrille_docker_image"], key="single_docker_image")
+            docker_extra_args = st.text_input("Docker extra args ", defaults["cadrille_docker_extra_args"])
             skip_sam3d = st.checkbox("Skip SAM3D", value=True)
             allow_selection_fallback = st.checkbox("Allow selection fallback ", value=False)
             export_brep = st.checkbox("Export BRep / STEP ", value=True)
@@ -298,9 +312,12 @@ with tab_single:
             "cadrille_output_root": cadrille_output_root,
             "cadrille_split_name": split_name,
             "skip_sam3d": skip_sam3d,
-            "cadrille_runtime": "docker",
+            "cadrille_runtime": cadrille_runtime,
             "cadrille_docker_image": docker_image,
+            "cadrille_docker_extra_args": docker_extra_args,
             "cadrille_docker_gpus": docker_gpus,
+            "cadrille_checkpoint": custom_checkpoint.strip() or checkpoint_preset,
+            "cadrille_processor_path": processor_path,
             "cadrille_mode": cadrille_mode,
             "cadrille_input_source": cadrille_input_source,
             "cadrille_n_samples": int(cadrille_n_samples),
