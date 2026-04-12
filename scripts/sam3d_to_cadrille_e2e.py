@@ -86,7 +86,7 @@ def parse_args() -> argparse.Namespace:
     )
     cad.add_argument("--cadrille-docker-image", default="cadrille:latest", help="Docker image for Cadrille runtime")
     cad.add_argument("--cadrille-docker-python", default="python", help="Python executable inside Cadrille Docker image")
-    cad.add_argument("--cadrille-docker-gpus", default="all", help="Value for docker --gpus (for example all, 0, \"device=0\")")
+    cad.add_argument("--cadrille-docker-gpus", default="device=0", help="Value for docker --gpus (for example device=0, all, 0)")
     cad.add_argument(
         "--cadrille-docker-extra-args",
         default="",
