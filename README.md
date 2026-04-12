@@ -54,9 +54,9 @@ AIWS/
 ### Cadrille wrappers around the upstream repo
 
 - `scripts/cadrille_infer_wrapper.py`
-  - thin wrapper for processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
+  - thin AIWS wrapper around the Cadrille inference flow, adding processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
 - `scripts/cadrille_evaluate_wrapper.py`
-  - evaluation wrapper used by the AIWS e2e pipeline
+  - thin AIWS wrapper around the Cadrille evaluation flow, adding CAD materialization, best-candidate selection, and metrics output
 
 ### Main offline pipeline scripts
 
