@@ -62,13 +62,17 @@ AIWS/
 
 ### Main offline pipeline scripts
 
-- `scripts/dataset_usable_view_build.py`
-- `scripts/dataset_instance_masks_generate.py`
-- `scripts/sam3d_batch.py`
-- `scripts/sam3d_run_metrics_analysis.py`
-- `scripts/sam3d_to_cadrille_e2e.py`
-- `scripts/cadrille_batch.py`
-- `scripts/cadrille_run_metrics_analysis.py`
+- **Data preparation**
+  - `scripts/dataset_usable_view_build.py`
+  - `scripts/dataset_instance_masks_generate.py`
+- **SAM3D**
+  - `scripts/sam3d_batch.py`
+  - `scripts/sam3d_run_metrics_analysis.py`
+- **Cadrille**
+  - `scripts/cadrille_batch.py`
+  - `scripts/cadrille_run_metrics_analysis.py`
+- **End-to-end bridge/orchestration**
+  - `scripts/sam3d_to_cadrille_e2e.py`
 
 ## Clone and initialize
 
