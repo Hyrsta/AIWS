@@ -266,7 +266,7 @@ with tab_full:
 
 with tab_single:
     st.subheader("Launch single e2e run")
-    st.caption("Single-run launch now exposes the same checkpoint and docker knobs as the batch workflow.")
+    st.caption("Single-run launch now matches the current e2e bridge CLI instead of the older split-run wrapper interface.")
     with st.form("single_e2e_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -277,17 +277,15 @@ with tab_single:
             dataset_root = st.text_input("Dataset root", defaults["dataset_root"])
             cadrille_root = st.text_input("Cadrille root", defaults["cadrille_root"])
             cadrille_output_root = st.text_input("Cadrille output root", key="single_cadrille_output_root")
-            split_name = st.text_input("Cadrille split name", "sam3d_bridge_sft_gui_single")
+            split_name = st.text_input("Bridge split name", "sam3d_bridge_sft_gui_single")
             checkpoint_preset = st.selectbox("Checkpoint preset ", ["ckpt/cadrille_sft", "ckpt/cadrille_rl"], index=0)
             custom_checkpoint = st.text_input("Custom checkpoint path (optional) ", "")
             processor_path = st.text_input("Processor path ", defaults["cadrille_processor_path"])
         with col2:
             cadrille_mode = st.selectbox("Cadrille mode", ["pc", "img"])
-            cadrille_input_source = st.selectbox("Input source", ["mesh", "point_cloud", "multi_view"])
             cadrille_n_samples = st.number_input("Cadrille n_samples", min_value=1, value=5)
             batch_size = st.number_input("Cadrille batch size ", min_value=1, value=64)
-            sample_offset = st.number_input("Sample offset", min_value=0, value=0)
-            max_samples = st.number_input("Max samples (0 = none)", min_value=0, value=0)
+            limit = st.number_input("Sample limit (0 = none)", min_value=0, value=0)
             selection_mode = st.selectbox("Selection mode ", ["evaluate", "index"])
             selected_candidate_index = st.number_input("Selected candidate index", min_value=0, value=0)
             cadrille_runtime = st.selectbox("Cadrille runtime ", ["docker", "auto", "host"], index=0)
@@ -310,7 +308,7 @@ with tab_single:
             "dataset_root": dataset_root,
             "cadrille_root": cadrille_root,
             "cadrille_output_root": cadrille_output_root,
-            "cadrille_split_name": split_name,
+            "bridge_split_name": split_name,
             "skip_sam3d": skip_sam3d,
             "cadrille_runtime": cadrille_runtime,
             "cadrille_docker_image": docker_image,
@@ -319,11 +317,9 @@ with tab_single:
             "cadrille_checkpoint": custom_checkpoint.strip() or checkpoint_preset,
             "cadrille_processor_path": processor_path,
             "cadrille_mode": cadrille_mode,
-            "cadrille_input_source": cadrille_input_source,
             "cadrille_n_samples": int(cadrille_n_samples),
             "cadrille_batch_size": int(batch_size),
-            "sample_offset": int(sample_offset),
-            "max_samples": int(max_samples) if max_samples > 0 else None,
+            "limit": int(limit) if limit > 0 else None,
             "selection_mode": selection_mode,
             "allow_selection_fallback": allow_selection_fallback,
             "selected_candidate_index": int(selected_candidate_index),

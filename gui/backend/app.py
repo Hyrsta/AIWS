@@ -65,7 +65,7 @@ class E2ERunRequest(BaseModel):
     dataset_root: str = DEFAULT_REMOTE_DATASET_ROOT
     cadrille_root: str = DEFAULT_REMOTE_CADRILLE_ROOT
     cadrille_output_root: str = Field(..., min_length=1)
-    cadrille_split_name: str = "sam3d_bridge_sft_gui_single"
+    bridge_split_name: str = "sam3d_bridge_sft_gui_single"
     skip_sam3d: bool = True
     cadrille_runtime: Literal["auto", "docker", "host"] = "docker"
     cadrille_docker_image: str = DEFAULT_REMOTE_CADRILLE_IMAGE
@@ -74,11 +74,9 @@ class E2ERunRequest(BaseModel):
     cadrille_checkpoint: str = DEFAULT_CADRILLE_CHECKPOINT
     cadrille_processor_path: str = DEFAULT_CADRILLE_PROCESSOR_PATH
     cadrille_mode: Literal["pc", "img"] = "pc"
-    cadrille_input_source: Literal["mesh", "point_cloud", "multi_view"] = "mesh"
     cadrille_n_samples: int = 5
     cadrille_batch_size: int = 64
-    sample_offset: int = 0
-    max_samples: Optional[int] = None
+    limit: Optional[int] = None
     selection_mode: Literal["evaluate", "index"] = "evaluate"
     allow_selection_fallback: bool = False
     selected_candidate_index: int = 0
@@ -310,8 +308,8 @@ def build_e2e_command(request: E2ERunRequest) -> list[str]:
         request.cadrille_root,
         "--cadrille-output-root",
         request.cadrille_output_root,
-        "--cadrille-split-name",
-        request.cadrille_split_name,
+        "--bridge-split-name",
+        request.bridge_split_name,
         "--cadrille-runtime",
         request.cadrille_runtime,
         "--cadrille-docker-image",
@@ -325,8 +323,6 @@ def build_e2e_command(request: E2ERunRequest) -> list[str]:
         request.cadrille_processor_path,
         "--cadrille-mode",
         request.cadrille_mode,
-        "--cadrille-input-source",
-        request.cadrille_input_source,
         "--cadrille-n-samples",
         str(request.cadrille_n_samples),
         "--cadrille-batch-size",
@@ -335,13 +331,11 @@ def build_e2e_command(request: E2ERunRequest) -> list[str]:
         request.selection_mode,
         "--selected-candidate-index",
         str(request.selected_candidate_index),
-        "--sample-offset",
-        str(request.sample_offset),
     ]
     if request.skip_sam3d:
         cmd.append("--skip-sam3d")
-    if request.max_samples is not None:
-        cmd.extend(["--max-samples", str(request.max_samples)])
+    if request.limit is not None:
+        cmd.extend(["--limit", str(request.limit)])
     if request.allow_selection_fallback:
         cmd.append("--allow-selection-fallback")
     cmd.append("--export-brep" if request.export_brep else "--no-export-brep")
@@ -362,8 +356,9 @@ def create_ssh_job(
     request_payload: dict[str, Any],
 ) -> dict[str, Any]:
     job_id = f"{kind}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
-    status_path = f"{output_root.rstrip('/')}/.gui_job_status.json"
-    log_path = f"{output_root.rstrip('/')}/gui_job.log"
+    remote_meta_root = f"{remote_workdir.rstrip('/')}/outputs/gui-jobs/{job_id}"
+    status_path = f"{remote_meta_root}/status.json"
+    log_path = f"{remote_meta_root}/job.log"
 
     remote_pid = launch_remote_job(
         ssh_host=ssh_host,
@@ -405,14 +400,14 @@ def launch_remote_job(
     log_path: str,
 ) -> int:
     command_text = shell_join(command)
+    runner_path = f"{Path(status_path).parent.as_posix()}/runner.sh"
     script = f"""#!/usr/bin/env bash
 set -euo pipefail
 OUTPUT_ROOT={shlex.quote(output_root)}
 STATUS_PATH={shlex.quote(status_path)}
 LOG_PATH={shlex.quote(log_path)}
-WORKDIR={shlex.quote(remote_workdir)}
-CMD={shlex.quote(command_text)}
-mkdir -p "$OUTPUT_ROOT"
+RUNNER_PATH={shlex.quote(runner_path)}
+mkdir -p "$(dirname \"$STATUS_PATH\")" "$(dirname \"$LOG_PATH\")"
 python3 - "$STATUS_PATH" <<'PY'
 import json
 import pathlib
@@ -420,7 +415,13 @@ import sys
 import time
 pathlib.Path(sys.argv[1]).write_text(json.dumps({{"status": "running", "started_at": time.time()}}, indent=2))
 PY
-nohup bash -lc "cd \"$WORKDIR\" && $CMD; rc=$?; python3 - \"$STATUS_PATH\" \"$rc\" <<'PY'
+cat > "$RUNNER_PATH" <<'BASH'
+#!/usr/bin/env bash
+set -uo pipefail
+cd {shlex.quote(remote_workdir)}
+{command_text}
+rc=$?
+python3 - {shlex.quote(status_path)} "$rc" <<'PY'
 import json
 import pathlib
 import sys
@@ -433,7 +434,10 @@ payload = {{
 }}
 pathlib.Path(sys.argv[1]).write_text(json.dumps(payload, indent=2))
 PY
-exit $rc" > "$LOG_PATH" 2>&1 < /dev/null &
+exit "$rc"
+BASH
+chmod +x "$RUNNER_PATH"
+nohup bash "$RUNNER_PATH" > "$LOG_PATH" 2>&1 < /dev/null &
 echo $!
 """
     result = run_ssh_script(ssh_host, script)
