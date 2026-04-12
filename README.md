@@ -53,12 +53,12 @@ AIWS/
 
 ### Cadrille wrappers around the upstream repo
 
-- `scripts/cadrille_test_wrapper.py`
+- `scripts/cadrille_infer_wrapper.py`
   - thin wrapper for processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
-- `scripts/cadrille_evaluate.py`
+- `scripts/cadrille_evaluate_wrapper.py`
   - evaluation wrapper used by the AIWS e2e pipeline
 - `scripts/cadrille_convert_cadquery.py`
-  - legacy CAD conversion wrapper; the main AIWS e2e path now materializes meshes/BRep via `scripts/cadrille_evaluate.py`
+  - legacy CAD conversion wrapper; the main AIWS e2e path now materializes meshes/BRep via `scripts/cadrille_evaluate_wrapper.py`
 
 ### Main offline pipeline scripts
 

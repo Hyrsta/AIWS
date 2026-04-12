@@ -136,7 +136,7 @@ def parse_args() -> argparse.Namespace:
     cad.add_argument("--point-cloud-exts", default="ply,pcd,xyz,txt,npz,npy", help="Reserved for future wrapper expansion")
     cad.add_argument("--image-exts", default="png,jpg,jpeg,bmp", help="Reserved for future wrapper expansion")
     cad.add_argument("--export-brep", dest="export_brep", action="store_true", default=True,
-                     help="Export STEP/BRep during cadrille_evaluate.py materialization (default on)")
+                     help="Export STEP/BRep during cadrille_evaluate_wrapper.py materialization (default on)")
     cad.add_argument("--no-export-brep", dest="export_brep", action="store_false", help="Skip STEP/BRep export during materialization")
     cad.add_argument("--brep-ext", default="step", help="BRep extension produced during materialization")
     cad.add_argument("--convert-timeout-sec", type=float, default=5.0, help="Timeout per CadQuery file conversion/materialization")
@@ -160,9 +160,9 @@ def parse_args() -> argparse.Namespace:
         help="When selection-mode=evaluate and best_names is missing for a sample, fallback to --selected-candidate-index",
     )
     misc.add_argument("--eval-gt-path", type=Path, default=None,
-                      help="Ground-truth path for cadrille_evaluate.py (default: prepared Cadrille split)")
+                      help="Ground-truth path for cadrille_evaluate_wrapper.py (default: prepared Cadrille split)")
     misc.add_argument("--eval-gt-format", choices=("mesh", "point_cloud"), default="mesh",
-                      help="Ground-truth format for cadrille_evaluate.py")
+                      help="Ground-truth format for cadrille_evaluate_wrapper.py")
     misc.add_argument("--eval-gt-mesh-ext", default=None,
                       help="Ground-truth mesh extension for evaluate.py (default: --mesh-ext)")
     misc.add_argument("--eval-gt-point-cloud-exts", default=None,
@@ -464,8 +464,8 @@ def main() -> None:
     selected_brep_dir = cadrille_output_root / "selected_brep"
 
     wrapper_scripts_root = Path(__file__).resolve().parent
-    cadrille_test_wrapper_script = wrapper_scripts_root / "cadrille_test_wrapper.py"
-    cadrille_evaluate_script = wrapper_scripts_root / "cadrille_evaluate.py"
+    cadrille_infer_wrapper_script = wrapper_scripts_root / "cadrille_infer_wrapper.py"
+    cadrille_evaluate_wrapper_script = wrapper_scripts_root / "cadrille_evaluate_wrapper.py"
     container_wrapper_scripts_root = Path("/workspace/integration_scripts")
 
     cadrille_runtime = choose_cadrille_runtime(args)
@@ -612,8 +612,8 @@ def main() -> None:
         if processor_path.is_absolute():
             processor_arg = str(map_host_to_container(processor_path.resolve(), docker_mounts))
 
-        test_script_arg = str(container_wrapper_scripts_root / cadrille_test_wrapper_script.name)
-        evaluate_script_arg = str(container_wrapper_scripts_root / cadrille_evaluate_script.name)
+        infer_wrapper_script_arg = str(container_wrapper_scripts_root / cadrille_infer_wrapper_script.name)
+        evaluate_wrapper_script_arg = str(container_wrapper_scripts_root / cadrille_evaluate_wrapper_script.name)
 
         py_exec = args.cadrille_docker_python
 
@@ -635,8 +635,8 @@ def main() -> None:
         eval_gt_arg = str(eval_gt_host)
         checkpoint_arg = args.cadrille_checkpoint
         processor_arg = args.cadrille_processor_path
-        test_script_arg = str(cadrille_test_wrapper_script)
-        evaluate_script_arg = str(cadrille_evaluate_script)
+        infer_wrapper_script_arg = str(cadrille_infer_wrapper_script)
+        evaluate_wrapper_script_arg = str(cadrille_evaluate_wrapper_script)
         py_exec = args.cadrille_python
 
         def run_cadrille_inner(inner_cmd: list[str]) -> None:
@@ -645,7 +645,7 @@ def main() -> None:
     # Run Cadrille inference
     test_cmd = [
         py_exec,
-        test_script_arg,
+        infer_wrapper_script_arg,
         "--cadrille-root",
         str(container_cadrille_root) if cadrille_runtime == "docker" else str(cadrille_root),
         "--data-path",
@@ -680,7 +680,7 @@ def main() -> None:
     # Materialize CadQuery outputs to meshes/BRep and optionally compute evaluation metrics.
     evaluate_cmd = [
         py_exec,
-        evaluate_script_arg,
+        evaluate_wrapper_script_arg,
         "--gt-path",
         eval_gt_arg,
         "--gt-format",
