@@ -72,7 +72,7 @@ def compound_to_mesh(compound):
     return trimesh.Trimesh([(v.x, v.y, v.z) for v in vertices], faces)
 
 
-def py_file_to_mesh_and_brep_files(py_path, mesh_path, brep_path):
+def py_file_to_mesh_and_brep_files(py_path, mesh_path, brep_path, export_brep):
     try:
         with open(py_path, 'r') as f:
             py_string = f.read()
@@ -81,18 +81,18 @@ def py_file_to_mesh_and_brep_files(py_path, mesh_path, brep_path):
         mesh = compound_to_mesh(compound)
         assert len(mesh.faces) > 2
         mesh.export(mesh_path)
-        # comment this line if no need to export brep
-        cq.exporters.export(compound, brep_path)
+        if export_brep:
+            cq.exporters.export(compound, brep_path)
     except:
         pass
 
 
-def py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path):
+def py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path, export_brep, timeout_sec):
     process = Process(
         target=py_file_to_mesh_and_brep_files,
-        args=(py_path, mesh_path, brep_path))
+        args=(py_path, mesh_path, brep_path, export_brep))
     process.start()
-    process.join(3)
+    process.join(timeout_sec)
 
     if process.is_alive():
         print('process alive:', py_path)
@@ -101,13 +101,14 @@ def py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path):
 
 
 def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt_path,
-                  n_points, gt_format, point_cloud_exts, mesh_ext):
+                  n_points, gt_format, point_cloud_exts, mesh_ext, export_brep, brep_ext, convert_timeout_sec):
     eval_file_name = py_file_name[:py_file_name.rfind('+')]
     py_path = os.path.join(pred_py_path, py_file_name)
     mesh_path = os.path.join(pred_mesh_path, py_file_name[:-3] + '.stl')
-    brep_path = os.path.join(pred_brep_path, py_file_name[:-3] + '.step')
-    if not os.path.exists(mesh_path):
-        py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path)
+    brep_path = os.path.join(pred_brep_path, py_file_name[:-3] + f'.{brep_ext}')
+    needs_materialization = (not os.path.exists(mesh_path)) or (export_brep and not os.path.exists(brep_path))
+    if needs_materialization:
+        py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path, export_brep, convert_timeout_sec)
 
     cd, iou = None, None
     try:  # apply_transform fails for some reason; or mesh path can not exist
@@ -133,14 +134,15 @@ def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt
     return dict(file_name=eval_file_name, id=index, cd=cd, iou=iou)
 
 
-def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext):
+def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext, export_brep, brep_ext, convert_timeout_sec):
     pred_mesh_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_mesh')
     pred_brep_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_brep')
     best_names_path = os.path.join(os.path.dirname(pred_py_path), 'tmp.txt')
     metrics_path = os.path.join(os.path.dirname(pred_py_path), 'metrics.json')
 
     os.makedirs(pred_mesh_path, exist_ok=True)
-    os.makedirs(pred_brep_path, exist_ok=True)
+    if export_brep:
+        os.makedirs(pred_brep_path, exist_ok=True)
 
     # compute chamfer distance and iou for each sample
     py_file_names = os.listdir(pred_py_path)
@@ -155,7 +157,10 @@ def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext):
                 n_points=n_points,
                 gt_format=gt_format,
                 point_cloud_exts=point_cloud_exts,
-                mesh_ext=mesh_ext),
+                mesh_ext=mesh_ext,
+                export_brep=export_brep,
+                brep_ext=brep_ext,
+                convert_timeout_sec=convert_timeout_sec),
             py_file_names), total=len(py_file_names)))
 
     # aggregate metrics per eval_file_name
@@ -297,6 +302,10 @@ if __name__ == '__main__':
     parser.add_argument('--gt-mesh-ext', type=str, default='stl')
     parser.add_argument('--pred-py-path', type=str, default='./work_dirs/tmp_py')
     parser.add_argument('--n-points', type=int, default=8192)
+    parser.add_argument('--export-brep', dest='export_brep', action='store_true', default=True)
+    parser.add_argument('--no-export-brep', dest='export_brep', action='store_false')
+    parser.add_argument('--brep-ext', type=str, default='step')
+    parser.add_argument('--convert-timeout-sec', type=float, default=3.0)
     args = parser.parse_args()
     run(
         args.gt_path,
@@ -304,4 +313,7 @@ if __name__ == '__main__':
         args.n_points,
         args.gt_format,
         tuple(ext.strip().lower() for ext in args.gt_point_cloud_exts.split(',') if ext.strip()),
-        args.gt_mesh_ext.lower())
+        args.gt_mesh_ext.lower(),
+        args.export_brep,
+        args.brep_ext.lower(),
+        args.convert_timeout_sec)

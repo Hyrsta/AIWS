@@ -136,10 +136,10 @@ def parse_args() -> argparse.Namespace:
     cad.add_argument("--point-cloud-exts", default="ply,pcd,xyz,txt,npz,npy", help="Reserved for future wrapper expansion")
     cad.add_argument("--image-exts", default="png,jpg,jpeg,bmp", help="Reserved for future wrapper expansion")
     cad.add_argument("--export-brep", dest="export_brep", action="store_true", default=True,
-                     help="Export STEP/BRep via cadrille_convert_cadquery.py (default on)")
-    cad.add_argument("--no-export-brep", dest="export_brep", action="store_false", help="Skip STEP/BRep export")
-    cad.add_argument("--brep-ext", default="step", help="BRep extension for cadrille_convert_cadquery.py")
-    cad.add_argument("--convert-timeout-sec", type=float, default=5.0, help="Timeout per CadQuery file conversion")
+                     help="Export STEP/BRep during cadrille_evaluate.py materialization (default on)")
+    cad.add_argument("--no-export-brep", dest="export_brep", action="store_false", help="Skip STEP/BRep export during materialization")
+    cad.add_argument("--brep-ext", default="step", help="BRep extension produced during materialization")
+    cad.add_argument("--convert-timeout-sec", type=float, default=5.0, help="Timeout per CadQuery file conversion/materialization")
 
     # Selection / safety
     misc = parser.add_argument_group("Selection and safety")
@@ -465,7 +465,6 @@ def main() -> None:
 
     wrapper_scripts_root = Path(__file__).resolve().parent
     cadrille_test_wrapper_script = wrapper_scripts_root / "cadrille_test_wrapper.py"
-    cadrille_convert_script = wrapper_scripts_root / "cadrille_convert_cadquery.py"
     cadrille_evaluate_script = wrapper_scripts_root / "cadrille_evaluate.py"
     container_wrapper_scripts_root = Path("/workspace/integration_scripts")
 
@@ -614,7 +613,6 @@ def main() -> None:
             processor_arg = str(map_host_to_container(processor_path.resolve(), docker_mounts))
 
         test_script_arg = str(container_wrapper_scripts_root / cadrille_test_wrapper_script.name)
-        convert_script_arg = str(container_wrapper_scripts_root / cadrille_convert_script.name)
         evaluate_script_arg = str(container_wrapper_scripts_root / cadrille_evaluate_script.name)
 
         py_exec = args.cadrille_docker_python
@@ -638,7 +636,6 @@ def main() -> None:
         checkpoint_arg = args.cadrille_checkpoint
         processor_arg = args.cadrille_processor_path
         test_script_arg = str(cadrille_test_wrapper_script)
-        convert_script_arg = str(cadrille_convert_script)
         evaluate_script_arg = str(cadrille_evaluate_script)
         py_exec = args.cadrille_python
 
@@ -675,52 +672,40 @@ def main() -> None:
     if not args.dry_run and gpu_memory_path.exists():
         gpu_memory_summary = json.loads(gpu_memory_path.read_text(encoding='utf-8'))
 
-    # Convert CadQuery outputs to CAD meshes/BRep
-    convert_cmd = [
-        py_exec,
-        convert_script_arg,
-        "--src",
-        tmp_py_arg,
-        "--mesh-out",
-        tmp_mesh_arg,
-        "--timeout",
-        str(args.convert_timeout_sec),
-    ]
-    if args.export_brep:
-        convert_cmd.extend([
-            "--export-brep",
-            "--brep-out",
-            tmp_brep_arg,
-            "--brep-ext",
-            args.brep_ext,
-        ])
-    run_cadrille_inner(convert_cmd)
-
     metrics_path = cadrille_output_root / "metrics.json"
     best_names_path = cadrille_output_root / "tmp.txt"
     best_candidate_map: dict[str, str] = {}
     evaluate_summary: dict[str, Any] | None = None
-    if args.selection_mode == "evaluate":
-        evaluate_cmd = [
-            py_exec,
-            evaluate_script_arg,
-            "--gt-path",
-            eval_gt_arg,
-            "--gt-format",
-            args.eval_gt_format,
-            "--gt-point-cloud-exts",
-            eval_gt_point_cloud_exts,
-            "--gt-mesh-ext",
-            eval_gt_mesh_ext,
-            "--pred-py-path",
-            tmp_py_arg,
-            "--n-points",
-            str(args.eval_n_points),
-        ]
-        run_cadrille_inner(evaluate_cmd)
-        if not args.dry_run:
-            best_candidate_map, evaluate_summary = load_best_candidate_map(metrics_path, best_names_path)
-            print(f"[INFO] evaluate.py selected best candidates for {len(best_candidate_map)} samples")
+
+    # Materialize CadQuery outputs to meshes/BRep and optionally compute evaluation metrics.
+    evaluate_cmd = [
+        py_exec,
+        evaluate_script_arg,
+        "--gt-path",
+        eval_gt_arg,
+        "--gt-format",
+        args.eval_gt_format,
+        "--gt-point-cloud-exts",
+        eval_gt_point_cloud_exts,
+        "--gt-mesh-ext",
+        eval_gt_mesh_ext,
+        "--pred-py-path",
+        tmp_py_arg,
+        "--n-points",
+        str(args.eval_n_points),
+        "--brep-ext",
+        args.brep_ext,
+        "--convert-timeout-sec",
+        str(args.convert_timeout_sec),
+    ]
+    if args.export_brep:
+        evaluate_cmd.append("--export-brep")
+    else:
+        evaluate_cmd.append("--no-export-brep")
+    run_cadrille_inner(evaluate_cmd)
+    if not args.dry_run and args.selection_mode == "evaluate":
+        best_candidate_map, evaluate_summary = load_best_candidate_map(metrics_path, best_names_path)
+        print(f"[INFO] evaluate.py selected best candidates for {len(best_candidate_map)} samples")
 
     # Select one candidate per input sample
     selected_rows: list[dict[str, Any]] = []
