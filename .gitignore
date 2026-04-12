@@ -50,9 +50,12 @@ val.json
 archives/
 backups/
 data/
+metadata/
 models/
 outputs/
 .trash/
+run_sam3d_demo.sh
+SAM3D_RUNTIME.md
 
 # Generated documentation artifacts
 docs/*.html
