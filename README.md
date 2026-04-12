@@ -54,21 +54,24 @@ AIWS/
 
 ### Cadrille wrappers around the upstream repo
 
-- `scripts/cadrille_test_wrapper.py`
-  - thin wrapper for processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
-- `scripts/cadrille_evaluate.py`
-  - evaluation wrapper used by the AIWS e2e pipeline
-- `scripts/cadrille_convert_cadquery.py`
-  - CAD conversion wrapper used by the AIWS e2e pipeline
+- `scripts/cadrille_infer_wrapper.py`
+  - thin AIWS wrapper around the Cadrille inference flow, adding processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
+- `scripts/cadrille_evaluate_wrapper.py`
+  - thin AIWS wrapper around the Cadrille evaluation flow, adding CAD materialization, best-candidate selection, and metrics output
 
 ### Main offline pipeline scripts
 
-- `scripts/dataset_usable_view_build.py`
-- `scripts/dataset_instance_masks_generate.py`
-- `scripts/sam3d_batch.py`
-- `scripts/sam3d_run_metrics_analysis.py`
-- `scripts/sam3d_to_cadrille_e2e.py`
-- `scripts/cadrille_full_modalities_4gpu.py`
+- **Data preparation**
+  - `scripts/dataset_usable_view_build.py`
+  - `scripts/dataset_instance_masks_generate.py`
+- **SAM3D**
+  - `scripts/sam3d_batch.py`
+  - `scripts/sam3d_run_metrics_analysis.py`
+- **Cadrille**
+  - `scripts/cadrille_batch.py`
+  - `scripts/cadrille_run_metrics_analysis.py`
+- **End-to-end bridge/orchestration**
+  - `scripts/e2e_sam3d_to_cadrille.py`
 
 ## Clone and initialize
 
