@@ -284,7 +284,7 @@ def build_full_run_command(request: FullRunRequest) -> list[str]:
 def build_e2e_command(request: E2ERunRequest) -> list[str]:
     cmd = [
         request.remote_python,
-        f"{request.remote_workdir}/scripts/sam3d_to_cadrille_e2e.py",
+        f"{request.remote_workdir}/scripts/e2e_sam3d_to_cadrille.py",
         "--sam3d-output-root",
         request.sam3d_output_root,
         "--dataset-root",

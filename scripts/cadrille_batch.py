@@ -25,8 +25,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--e2e-script",
         type=Path,
-        default=Path("/ssd1/rxl/zhankaiming/AIWS/scripts/sam3d_to_cadrille_e2e.py"),
-        help="Path to sam3d_to_cadrille_e2e.py",
+        default=Path("/ssd1/rxl/zhankaiming/AIWS/scripts/e2e_sam3d_to_cadrille.py"),
+        help="Path to e2e_sam3d_to_cadrille.py",
     )
     parser.add_argument(
         "--sam3d-output-root",

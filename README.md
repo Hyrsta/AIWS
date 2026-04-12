@@ -72,7 +72,7 @@ AIWS/
   - `scripts/cadrille_batch.py`
   - `scripts/cadrille_run_metrics_analysis.py`
 - **End-to-end bridge/orchestration**
-  - `scripts/sam3d_to_cadrille_e2e.py`
+  - `scripts/e2e_sam3d_to_cadrille.py`
 
 ## Clone and initialize
 
