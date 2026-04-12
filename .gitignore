@@ -1,0 +1,59 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+~$*
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.python-version
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OpenClaw / workspace-local assistant state
+.openclaw/
+.clawhub/
+AGENTS.md
+BOOTSTRAP.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+memory/
+proactivity/
+self-improving/
+skills/
+
+# Local binaries / office exports / references
+*.docx
+*.pptx
+*.pdf
+
+# Local datasets and annotations
+aiws5.2-dataset/
+aiws5.2-usable/
+aiws5.2-usable-materialized/
+aiws5.2-usable-split/
+aiws5.2-usable-split-materialized/
+isat_annotations/
+train.json
+val.json
+
+# Project runtime artifacts
+archives/
+backups/
+data/
+models/
+outputs/
+.trash/
+
+# Generated documentation artifacts
+docs/*.html
+docs/*.pdf
