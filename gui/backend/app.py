@@ -145,7 +145,7 @@ def health() -> dict[str, Any]:
             "cadrille_processor_path": DEFAULT_CADRILLE_PROCESSOR_PATH,
         },
         "simple_defaults": {
-            "ssh_host": DEFAULT_REMOTE_HOST,
+            "ssh_host": "local",
             "remote_workdir": DEFAULT_REMOTE_WORKDIR,
             "remote_root": DEFAULT_SIMPLE_REMOTE_ROOT,
             "cadrille_mode": DEFAULT_SIMPLE_CADRILLE_MODE,
