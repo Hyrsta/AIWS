@@ -235,8 +235,8 @@ active_job_id = get_active_job_id()
 if not active_job_id and not st.session_state.get("suppress_auto_resume"):
     latest_job = get_latest_simple_job()
     if latest_job and (time.time() - float(latest_job.get("updated_at") or latest_job.get("created_at") or 0) < 12 * 3600):
-        set_active_job_id(latest_job["job_id"])
-        st.rerun()
+        active_job_id = latest_job["job_id"]
+        st.session_state["active_job_id"] = active_job_id
 
 if not active_job_id:
     image_file = st.file_uploader(
