@@ -206,27 +206,30 @@ if not active_job_id:
             st.image(mask_file.getvalue(), use_column_width=True)
 
     if st.button("Start reconstruction", type="primary", disabled=not (image_file and mask_file)):
-        try:
-            result = api_post_multipart(
-                "/jobs/simple-reconstruct",
-                data={"cadrille_checkpoint_preset": checkpoint_preset},
-                files={
-                    "image": (
-                        image_file.name,
-                        image_file.getvalue(),
-                        image_file.type or "application/octet-stream",
-                    ),
-                    "mask": (
-                        mask_file.name,
-                        mask_file.getvalue(),
-                        mask_file.type or "application/octet-stream",
-                    ),
-                },
-            )
-            set_active_job_id(result["job_id"])
-            st.rerun()
-        except Exception as exc:  # pragma: no cover - UI only
-            st.error(exc)
+        if image_file is None or mask_file is None:
+            st.error("Please select both the photo and the mask again, then retry.")
+        else:
+            try:
+                result = api_post_multipart(
+                    "/jobs/simple-reconstruct",
+                    data={"cadrille_checkpoint_preset": checkpoint_preset},
+                    files={
+                        "image": (
+                            image_file.name or "image.png",
+                            image_file.getvalue(),
+                            image_file.type or "application/octet-stream",
+                        ),
+                        "mask": (
+                            mask_file.name or "mask.png",
+                            mask_file.getvalue(),
+                            mask_file.type or "application/octet-stream",
+                        ),
+                    },
+                )
+                set_active_job_id(result["job_id"])
+                st.rerun()
+            except Exception as exc:  # pragma: no cover - UI only
+                st.error(exc)
 else:
     try:
         job = api_get(f"/jobs/{active_job_id}")
