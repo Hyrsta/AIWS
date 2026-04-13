@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import time
@@ -14,6 +15,16 @@ import torch
 from torch.utils.data import ConcatDataset, DataLoader
 from tqdm import tqdm
 from transformers import AutoProcessor
+
+
+def cuda_synchronize_all() -> None:
+    if not torch.cuda.is_available():
+        return
+    for device_idx in range(torch.cuda.device_count()):
+        try:
+            torch.cuda.synchronize(device_idx)
+        except Exception:
+            pass
 
 
 def reset_cuda_peak_stats() -> None:
@@ -51,6 +62,58 @@ def collect_cuda_memory_stats() -> list[dict[str, object]]:
     return stats
 
 
+def _percentile(sorted_values: list[float], q: float) -> float | None:
+    if not sorted_values:
+        return None
+    if q <= 0:
+        return sorted_values[0]
+    if q >= 1:
+        return sorted_values[-1]
+    pos = (len(sorted_values) - 1) * q
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return sorted_values[lo]
+    weight = pos - lo
+    return sorted_values[lo] * (1 - weight) + sorted_values[hi] * weight
+
+
+def summarize_values(values: list[float], *, digits: int) -> dict[str, object]:
+    if not values:
+        return {
+            "count": 0,
+            "min": None,
+            "max": None,
+            "mean": None,
+            "median": None,
+            "p90": None,
+            "p95": None,
+            "p99": None,
+            "std": None,
+        }
+    vals = sorted(float(v) for v in values)
+    n = len(vals)
+    avg = sum(vals) / n
+    var = sum((x - avg) ** 2 for x in vals) / n
+    return {
+        "count": n,
+        "min": round(vals[0], digits),
+        "max": round(vals[-1], digits),
+        "mean": round(avg, digits),
+        "median": round(_percentile(vals, 0.5), digits),
+        "p90": round(_percentile(vals, 0.9), digits),
+        "p95": round(_percentile(vals, 0.95), digits),
+        "p99": round(_percentile(vals, 0.99), digits),
+        "std": round(math.sqrt(var), digits),
+    }
+
+
+def write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+    with path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
 def write_gpu_memory_report(
     output_root: Path,
     *,
@@ -66,10 +129,25 @@ def write_gpu_memory_report(
     generated_file_count: int,
     started_at_epoch: float,
     finished_at_epoch: float,
+    batch_trace_rows: list[dict[str, object]],
+    sample_trace_rows: list[dict[str, object]],
     error: dict[str, object] | None = None,
 ) -> None:
     output_path = output_root / "gpu_memory.json"
+    batch_trace_path = output_root / "gpu_memory_batches.jsonl"
+    sample_trace_path = output_root / "gpu_memory_samples.jsonl"
+
     device_stats = collect_cuda_memory_stats()
+    per_batch_runtime_sec = [float(row["batch_duration_sec"]) for row in batch_trace_rows if row.get("batch_duration_sec") is not None]
+    per_sample_runtime_sec = [float(row["estimated_runtime_sec"]) for row in sample_trace_rows if row.get("estimated_runtime_sec") is not None]
+    per_sample_peak_allocated_mb = [float(row["batch_peak_memory_allocated_mb"]) for row in sample_trace_rows if row.get("batch_peak_memory_allocated_mb") is not None]
+    per_sample_peak_reserved_mb = [float(row["batch_peak_memory_reserved_mb"]) for row in sample_trace_rows if row.get("batch_peak_memory_reserved_mb") is not None]
+
+    if batch_trace_rows:
+        write_jsonl(batch_trace_path, batch_trace_rows)
+    if sample_trace_rows:
+        write_jsonl(sample_trace_path, sample_trace_rows)
+
     report: dict[str, object] = {
         "split": split,
         "mode": mode,
@@ -88,6 +166,17 @@ def write_gpu_memory_report(
         "torch_version": torch.__version__,
         "torch_cuda_version": torch.version.cuda,
         "devices": device_stats,
+        "measurement_note": (
+            "Per-sample runtime and memory summaries are batch-derived: "
+            "batch wall-clock generation time is divided evenly across samples in that batch, "
+            "and each sample inherits that batch peak GPU memory."
+        ),
+        "batch_trace_jsonl": str(batch_trace_path),
+        "sample_trace_jsonl": str(sample_trace_path),
+        "per_batch_runtime_sec": summarize_values(per_batch_runtime_sec, digits=6),
+        "per_sample_runtime_sec": summarize_values(per_sample_runtime_sec, digits=6),
+        "per_sample_peak_memory_allocated_mb": summarize_values(per_sample_peak_allocated_mb, digits=2),
+        "per_sample_peak_memory_reserved_mb": summarize_values(per_sample_peak_reserved_mb, digits=2),
     }
     if device_stats:
         report["peak_memory_allocated_mb_max"] = round(
@@ -100,6 +189,10 @@ def write_gpu_memory_report(
         report["error"] = error
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"[gpu-memory] wrote {output_path}")
+    if batch_trace_rows:
+        print(f"[gpu-memory] wrote {batch_trace_path}")
+    if sample_trace_rows:
+        print(f"[gpu-memory] wrote {sample_trace_path}")
 
 
 def _load_kwargs(path_or_id: str) -> dict[str, Any]:
@@ -140,6 +233,8 @@ def run(
     generated_count = 0
     batches_processed = 0
     error = None
+    batch_trace_rows: list[dict[str, object]] = []
+    sample_trace_rows: list[dict[str, object]] = []
     started_at_epoch = time.time()
 
     reset_cuda_peak_stats()
@@ -190,7 +285,12 @@ def run(
             collate_fn=partial(collate, processor=processor, n_points=256, eval=True),
         )
 
-        for batch in tqdm(dataloader):
+        for batch_idx, batch in enumerate(tqdm(dataloader), start=1):
+            batch_file_names = [str(v) for v in batch["file_name"]]
+            batch_item_count = len(batch_file_names)
+            cuda_synchronize_all()
+            reset_cuda_peak_stats()
+            batch_started = time.perf_counter()
             generated_ids = model.generate(
                 input_ids=batch["input_ids"].to(model.device),
                 attention_mask=batch["attention_mask"].to(model.device),
@@ -205,6 +305,22 @@ def run(
                 else None,
                 max_new_tokens=768,
             )
+            cuda_synchronize_all()
+            batch_finished = time.perf_counter()
+            batch_duration_sec = batch_finished - batch_started
+            batch_device_stats = collect_cuda_memory_stats()
+            batch_peak_allocated_mb = (
+                round(max(d["peak_memory_allocated_mb"] for d in batch_device_stats), 2)
+                if batch_device_stats
+                else None
+            )
+            batch_peak_reserved_mb = (
+                round(max(d["peak_memory_reserved_mb"] for d in batch_device_stats), 2)
+                if batch_device_stats
+                else None
+            )
+            estimated_runtime_sec = (batch_duration_sec / batch_item_count) if batch_item_count else None
+
             generated_ids_trimmed = [
                 out_ids[len(in_ids) :] for in_ids, out_ids in zip(batch.input_ids, generated_ids)
             ]
@@ -214,10 +330,35 @@ def run(
                 clean_up_tokenization_spaces=False,
             )
 
-            for stem, py_string in zip(batch["file_name"], py_strings):
+            batch_trace_rows.append(
+                {
+                    "batch_index": batch_idx,
+                    "batch_size_actual": batch_item_count,
+                    "batch_duration_sec": round(batch_duration_sec, 6),
+                    "estimated_runtime_sec_per_sample": round(estimated_runtime_sec, 6) if estimated_runtime_sec is not None else None,
+                    "batch_peak_memory_allocated_mb": batch_peak_allocated_mb,
+                    "batch_peak_memory_reserved_mb": batch_peak_reserved_mb,
+                    "generated_count_before_batch": generated_count,
+                    "file_names": batch_file_names,
+                    "device_stats": batch_device_stats,
+                }
+            )
+
+            for stem, py_string in zip(batch_file_names, py_strings):
                 generation_id = generated_count // len(dataset)
                 file_name = f"{stem}+{generation_id}.py"
                 (py_path / file_name).write_text(py_string, encoding="utf-8")
+                sample_trace_rows.append(
+                    {
+                        "batch_index": batch_idx,
+                        "source_stem": stem,
+                        "output_file_name": file_name,
+                        "generation_id": generation_id,
+                        "estimated_runtime_sec": round(estimated_runtime_sec, 6) if estimated_runtime_sec is not None else None,
+                        "batch_peak_memory_allocated_mb": batch_peak_allocated_mb,
+                        "batch_peak_memory_reserved_mb": batch_peak_reserved_mb,
+                    }
+                )
                 generated_count += 1
             batches_processed += 1
     except Exception as exc:
@@ -238,6 +379,8 @@ def run(
             generated_file_count=generated_count,
             started_at_epoch=started_at_epoch,
             finished_at_epoch=time.time(),
+            batch_trace_rows=batch_trace_rows,
+            sample_trace_rows=sample_trace_rows,
             error=error,
         )
 

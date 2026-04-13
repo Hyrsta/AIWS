@@ -1,35 +1,16 @@
 import os
 import json
-import shutil
+import tempfile
 import trimesh
 import numpy as np
 import cadquery as cq
 from tqdm import tqdm
-from functools import partial
 from scipy.spatial import cKDTree
 from collections import defaultdict
 from argparse import ArgumentParser
 from multiprocessing import Process
-from multiprocessing.pool import Pool
 
 import open3d
-
-
-class NonDaemonProcess(Process):
-    def _get_daemon(self):
-        return False
-
-    def _set_daemon(self, value):
-        pass
-
-    daemon = property(_get_daemon, _set_daemon)
-
-
-class NonDaemonPool(Pool):
-    def Process(self, *args, **kwargs):
-        proc = super(NonDaemonPool, self).Process(*args, **kwargs)
-        proc.__class__ = NonDaemonProcess
-        return proc
 
 
 def sample_mesh_points(mesh, n_points):
@@ -57,13 +38,13 @@ def compute_iou(gt_mesh, pred_mesh):
                 intersection = gt_mesh_i.intersection(pred_mesh_i)
                 volume = intersection.volume if intersection is not None else 0
                 intersection_volume += volume
-        
+
         gt_volume = sum(m.volume for m in gt_mesh.split())
         pred_volume = sum(m.volume for m in pred_mesh.split())
         union_volume = gt_volume + pred_volume - intersection_volume
         assert union_volume > 0
         return intersection_volume / union_volume
-    except:
+    except Exception:
         pass
 
 
@@ -83,7 +64,7 @@ def py_file_to_mesh_and_brep_files(py_path, mesh_path, brep_path, export_brep):
         mesh.export(mesh_path)
         if export_brep:
             cq.exporters.export(compound, brep_path)
-    except:
+    except Exception:
         pass
 
 
@@ -97,11 +78,56 @@ def py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path, export_br
     if process.is_alive():
         print('process alive:', py_path)
         process.terminate()
-        process.join()
+        process.join(1.0)
+        if process.is_alive():
+            print('process still alive after terminate, killing:', py_path)
+            try:
+                process.kill()
+            except AttributeError:
+                pass
+            process.join(1.0)
+        if process.is_alive():
+            print('process still alive after kill:', py_path)
 
 
-def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt_path,
-                  n_points, gt_format, point_cloud_exts, mesh_ext, export_brep, brep_ext, convert_timeout_sec):
+def resolve_gt_mesh_path(gt_root, file_name, mesh_ext):
+    path = os.path.join(gt_root, f'{file_name}.{mesh_ext}')
+    if not os.path.exists(path):
+        raise FileNotFoundError(f'Ground truth mesh {path} not found')
+    return path
+
+
+def resolve_gt_point_cloud_path(gt_root, file_name, point_cloud_exts):
+    for ext in point_cloud_exts:
+        candidate = os.path.join(gt_root, f'{file_name}.{ext}')
+        if os.path.exists(candidate):
+            return candidate
+    raise FileNotFoundError(
+        f'No ground truth point cloud found for {file_name} with extensions {point_cloud_exts}')
+
+
+def load_point_cloud(path):
+    if path.lower().endswith('.npz'):
+        data = np.load(path)
+        if isinstance(data, np.lib.npyio.NpzFile):
+            for key in ('points', 'point_cloud', 'pc'):
+                if key in data:
+                    return np.asarray(data[key])
+            return np.asarray(list(data.values())[0])
+        return np.asarray(data)
+    if path.lower().endswith('.npy'):
+        return np.load(path)
+    if path.lower().endswith(('.txt', '.xyz')):
+        return np.loadtxt(path, dtype=np.float32)
+
+    point_cloud = open3d.io.read_point_cloud(path)
+    if point_cloud is None:
+        raise ValueError(f'Unable to read point cloud from {path}')
+    return np.asarray(point_cloud.points)
+
+
+def run_cd_single_impl(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt_path,
+                       n_points, gt_format, point_cloud_exts, mesh_ext, export_brep, brep_ext, convert_timeout_sec):
     eval_file_name = py_file_name[:py_file_name.rfind('+')]
     py_path = os.path.join(pred_py_path, py_file_name)
     mesh_path = os.path.join(pred_mesh_path, py_file_name[:-3] + '.stl')
@@ -111,7 +137,7 @@ def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt
         py_file_to_mesh_and_brep_files_safe(py_path, mesh_path, brep_path, export_brep, convert_timeout_sec)
 
     cd, iou = None, None
-    try:  # apply_transform fails for some reason; or mesh path can not exist
+    try:
         pred_mesh = trimesh.load_mesh(mesh_path)
         center = (pred_mesh.bounds[0] + pred_mesh.bounds[1]) / 2.0
         pred_mesh.apply_translation(-center)
@@ -127,14 +153,61 @@ def run_cd_single(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt
             gt_points = load_point_cloud(resolve_gt_point_cloud_path(gt_path, eval_file_name, point_cloud_exts))
             pred_points = sample_mesh_points(pred_mesh, n_points)
             cd = compute_chamfer_distance_points(gt_points, pred_points)
-    except:
+    except Exception:
         pass
-    
+
     index = py_file_name[len(eval_file_name) + 1: -3]
     return dict(file_name=eval_file_name, id=index, cd=cd, iou=iou)
 
 
-def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext, export_brep, brep_ext, convert_timeout_sec):
+def run_cd_single_worker(result_path, *args):
+    result = run_cd_single_impl(*args)
+    with open(result_path, 'w') as f:
+        json.dump(result, f)
+
+
+def run_cd_single_safe(py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt_path,
+                       n_points, gt_format, point_cloud_exts, mesh_ext, export_brep, brep_ext,
+                       convert_timeout_sec, eval_timeout_sec):
+    eval_file_name = py_file_name[:py_file_name.rfind('+')]
+    index = py_file_name[len(eval_file_name) + 1: -3]
+    fd, result_path = tempfile.mkstemp(prefix='cadrille_eval_', suffix='.json')
+    os.close(fd)
+    try:
+        process = Process(
+            target=run_cd_single_worker,
+            args=(result_path, py_file_name, pred_py_path, pred_mesh_path, pred_brep_path, gt_path,
+                  n_points, gt_format, point_cloud_exts, mesh_ext, export_brep, brep_ext, convert_timeout_sec))
+        process.start()
+        process.join(eval_timeout_sec)
+        if process.is_alive():
+            print('eval timeout alive:', py_file_name)
+            process.terminate()
+            process.join(1.0)
+            if process.is_alive():
+                print('eval still alive after terminate, killing:', py_file_name)
+                try:
+                    process.kill()
+                except AttributeError:
+                    pass
+                process.join(1.0)
+            return dict(file_name=eval_file_name, id=index, cd=None, iou=None)
+        if process.exitcode not in (0, None):
+            return dict(file_name=eval_file_name, id=index, cd=None, iou=None)
+        try:
+            with open(result_path, 'r') as f:
+                return json.load(f)
+        except Exception:
+            return dict(file_name=eval_file_name, id=index, cd=None, iou=None)
+    finally:
+        try:
+            os.remove(result_path)
+        except OSError:
+            pass
+
+
+def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext, export_brep, brep_ext,
+        convert_timeout_sec, eval_timeout_sec):
     pred_mesh_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_mesh')
     pred_brep_path = os.path.join(os.path.dirname(pred_py_path), 'tmp_brep')
     best_names_path = os.path.join(os.path.dirname(pred_py_path), 'tmp.txt')
@@ -144,26 +217,27 @@ def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext, 
     if export_brep:
         os.makedirs(pred_brep_path, exist_ok=True)
 
-    # compute chamfer distance and iou for each sample
-    py_file_names = os.listdir(pred_py_path)
-    with NonDaemonPool(16) as pool:
-        py_metrics = list(tqdm(pool.imap(
-            partial(
-                run_cd_single,
-                pred_py_path=pred_py_path,
-                pred_mesh_path=pred_mesh_path,
-                pred_brep_path=pred_brep_path,
-                gt_path=gt_path,
-                n_points=n_points,
-                gt_format=gt_format,
-                point_cloud_exts=point_cloud_exts,
-                mesh_ext=mesh_ext,
-                export_brep=export_brep,
-                brep_ext=brep_ext,
-                convert_timeout_sec=convert_timeout_sec),
-            py_file_names), total=len(py_file_names)))
+    py_file_names = sorted(os.listdir(pred_py_path))
+    py_metrics = []
+    for py_file_name in tqdm(py_file_names, total=len(py_file_names)):
+        py_metrics.append(
+            run_cd_single_safe(
+                py_file_name,
+                pred_py_path,
+                pred_mesh_path,
+                pred_brep_path,
+                gt_path,
+                n_points,
+                gt_format,
+                point_cloud_exts,
+                mesh_ext,
+                export_brep,
+                brep_ext,
+                convert_timeout_sec,
+                eval_timeout_sec,
+            )
+        )
 
-    # aggregate metrics per eval_file_name
     metrics = defaultdict(lambda: defaultdict(list))
     for m in py_metrics:
         if m['cd'] is not None:
@@ -171,12 +245,8 @@ def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext, 
             metrics[m['file_name']]['id'].append(m['id'])
         if m['iou'] is not None:
             metrics[m['file_name']]['iou'].append(m['iou'])
-
-        # empty value for invalid predictions
         metrics[m['file_name']]
 
-    
-    # select best metrics per eval_file_name
     ir_cd, ir_iou, cd, iou, best_names = 0, 0, list(), list(), list()
     for key, value in metrics.items():
         if len(value['cd']):
@@ -255,45 +325,6 @@ def run(gt_path, pred_py_path, n_points, gt_format, point_cloud_exts, mesh_ext, 
         json.dump(results, f, indent=2)
 
 
-# To overcome CadQuery memory leaks, we call each exec() in a separate Process with
-# timeout of 3 seconds. The Pool is tweaked to support non-daemon processes that can
-# call one more nested process.
-def resolve_gt_mesh_path(gt_root, file_name, mesh_ext):
-    path = os.path.join(gt_root, f'{file_name}.{mesh_ext}')
-    if not os.path.exists(path):
-        raise FileNotFoundError(f'Ground truth mesh {path} not found')
-    return path
-
-
-def resolve_gt_point_cloud_path(gt_root, file_name, point_cloud_exts):
-    for ext in point_cloud_exts:
-        candidate = os.path.join(gt_root, f'{file_name}.{ext}')
-        if os.path.exists(candidate):
-            return candidate
-    raise FileNotFoundError(
-        f'No ground truth point cloud found for {file_name} with extensions {point_cloud_exts}')
-
-
-def load_point_cloud(path):
-    if path.lower().endswith('.npz'):
-        data = np.load(path)
-        if isinstance(data, np.lib.npyio.NpzFile):
-            for key in ('points', 'point_cloud', 'pc'):
-                if key in data:
-                    return np.asarray(data[key])
-            return np.asarray(list(data.values())[0])
-        return np.asarray(data)
-    if path.lower().endswith('.npy'):
-        return np.load(path)
-    if path.lower().endswith(('.txt', '.xyz')):
-        return np.loadtxt(path, dtype=np.float32)
-
-    point_cloud = open3d.io.read_point_cloud(path)
-    if point_cloud is None:
-        raise ValueError(f'Unable to read point cloud from {path}')
-    return np.asarray(point_cloud.points)
-
-
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--gt-path', type=str, default='./data/deepcad_test_mesh')
@@ -306,6 +337,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-export-brep', dest='export_brep', action='store_false')
     parser.add_argument('--brep-ext', type=str, default='step')
     parser.add_argument('--convert-timeout-sec', type=float, default=3.0)
+    parser.add_argument('--eval-timeout-sec', type=float, default=20.0)
     args = parser.parse_args()
     run(
         args.gt_path,
@@ -316,4 +348,6 @@ if __name__ == '__main__':
         args.gt_mesh_ext.lower(),
         args.export_brep,
         args.brep_ext.lower(),
-        args.convert_timeout_sec)
+        args.convert_timeout_sec,
+        args.eval_timeout_sec,
+    )

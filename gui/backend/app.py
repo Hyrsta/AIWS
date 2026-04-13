@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 import numpy as np
 from pydantic import BaseModel, Field
 import trimesh
@@ -29,8 +29,21 @@ DEFAULT_CADRILLE_CHECKPOINT = "ckpt/cadrille_sft"
 DEFAULT_CADRILLE_PROCESSOR_PATH = "ckpt/Qwen2-VL-2B-Instruct"
 DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS = "--ipc=host --shm-size=16g"
 
+DEFAULT_SIMPLE_REMOTE_ROOT = f"{DEFAULT_REMOTE_WORKDIR}/outputs/gui-simple"
+DEFAULT_SIMPLE_CADRILLE_MODE = "pc"
+DEFAULT_SIMPLE_CADRILLE_N_SAMPLES = 5
+DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE = 64
+DEFAULT_SIMPLE_CADRILLE_RUNTIME: Literal["auto", "docker", "host"] = "docker"
+DEFAULT_SIMPLE_CADRILLE_DOCKER_GPUS = "device=0"
+DEFAULT_SIMPLE_CADRILLE_CHECKPOINT = "ckpt/cadrille_rl"
+DEFAULT_SIMPLE_EXPORT_BREP = True
+DEFAULT_SIMPLE_SELECTION_MODE: Literal["evaluate", "index"] = "evaluate"
+DEFAULT_SIMPLE_SELECTED_CANDIDATE_INDEX = 0
 
-app = FastAPI(title="AIWS E2E GUI Backend", version="0.1.0")
+ALLOWED_UPLOAD_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+
+
+app = FastAPI(title="AIWS GUI Backend", version="0.2.0")
 
 
 class FullRunRequest(BaseModel):
@@ -97,6 +110,11 @@ class JobSummary(BaseModel):
     exit_code: Optional[int] = None
     command: list[str]
     log_path: str
+    stage: Optional[str] = None
+    stage_label: Optional[str] = None
+    ended_at: Optional[float] = None
+    result_paths: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
 
 
 @app.on_event("startup")
@@ -121,6 +139,15 @@ def health() -> dict[str, Any]:
             "cadrille_docker_extra_args": DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS,
             "cadrille_checkpoint": DEFAULT_CADRILLE_CHECKPOINT,
             "cadrille_processor_path": DEFAULT_CADRILLE_PROCESSOR_PATH,
+        },
+        "simple_defaults": {
+            "ssh_host": DEFAULT_REMOTE_HOST,
+            "remote_workdir": DEFAULT_REMOTE_WORKDIR,
+            "remote_root": DEFAULT_SIMPLE_REMOTE_ROOT,
+            "cadrille_mode": DEFAULT_SIMPLE_CADRILLE_MODE,
+            "cadrille_checkpoint": DEFAULT_SIMPLE_CADRILLE_CHECKPOINT,
+            "cadrille_n_samples": DEFAULT_SIMPLE_CADRILLE_N_SAMPLES,
+            "cadrille_batch_size": DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE,
         },
     }
 
@@ -165,6 +192,119 @@ def create_e2e_run(request: E2ERunRequest) -> JobSummary:
     return JobSummary(**job)
 
 
+@app.post("/jobs/simple-reconstruct", response_model=JobSummary)
+async def create_simple_reconstruct(
+    image: UploadFile = File(...),
+    mask: UploadFile = File(...),
+) -> JobSummary:
+    image_name = sanitize_upload_name(image.filename or "input.png")
+    mask_name = sanitize_upload_name(mask.filename or "mask.png")
+    image_ext = Path(image_name).suffix.lower()
+    mask_ext = Path(mask_name).suffix.lower()
+    if image_ext not in ALLOWED_UPLOAD_EXTS:
+        raise HTTPException(status_code=400, detail=f"Unsupported image type: {image_ext}")
+    if mask_ext not in ALLOWED_UPLOAD_EXTS:
+        raise HTTPException(status_code=400, detail=f"Unsupported mask type: {mask_ext}")
+
+    job_id = f"simple_reconstruct-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    local_job_root = JOBS_ROOT / job_id
+    local_input_root = local_job_root / "input"
+    local_input_root.mkdir(parents=True, exist_ok=True)
+
+    local_image_path = local_input_root / f"input{image_ext}"
+    local_mask_path = local_input_root / f"mask{mask_ext}"
+    local_image_path.write_bytes(await image.read())
+    local_mask_path.write_bytes(await mask.read())
+
+    ssh_host = DEFAULT_REMOTE_HOST
+    remote_workdir = DEFAULT_REMOTE_WORKDIR
+    remote_job_root = f"{DEFAULT_SIMPLE_REMOTE_ROOT}/{job_id}"
+    remote_input_root = f"{remote_job_root}/input"
+    remote_image_path = f"{remote_input_root}/input{image_ext}"
+    remote_mask_path = f"{remote_input_root}/mask{mask_ext}"
+    status_path = f"{remote_job_root}/status.json"
+    log_path = f"{remote_job_root}/job.log"
+
+    run_ssh_script(
+        ssh_host,
+        f"mkdir -p {shlex.quote(remote_job_root)} {shlex.quote(remote_input_root)}",
+    )
+    upload_file_to_remote(ssh_host, local_image_path, remote_image_path)
+    upload_file_to_remote(ssh_host, local_mask_path, remote_mask_path)
+
+    command = [
+        DEFAULT_REMOTE_PYTHON,
+        f"{DEFAULT_REMOTE_WORKDIR}/gui/backend/simple_reconstruct_job.py",
+        "--repo-root",
+        DEFAULT_REMOTE_WORKDIR,
+        "--input-image",
+        remote_image_path,
+        "--input-mask",
+        remote_mask_path,
+        "--job-root",
+        remote_job_root,
+        "--status-path",
+        status_path,
+        "--cadrille-runtime",
+        DEFAULT_SIMPLE_CADRILLE_RUNTIME,
+        "--cadrille-docker-image",
+        DEFAULT_REMOTE_CADRILLE_IMAGE,
+        "--cadrille-docker-extra-args",
+        DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS,
+        "--cadrille-docker-gpus",
+        DEFAULT_SIMPLE_CADRILLE_DOCKER_GPUS,
+        "--cadrille-checkpoint",
+        DEFAULT_SIMPLE_CADRILLE_CHECKPOINT,
+        "--cadrille-processor-path",
+        DEFAULT_CADRILLE_PROCESSOR_PATH,
+        "--cadrille-mode",
+        DEFAULT_SIMPLE_CADRILLE_MODE,
+        "--cadrille-n-samples",
+        str(DEFAULT_SIMPLE_CADRILLE_N_SAMPLES),
+        "--cadrille-batch-size",
+        str(DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE),
+        "--selection-mode",
+        DEFAULT_SIMPLE_SELECTION_MODE,
+        "--selected-candidate-index",
+        str(DEFAULT_SIMPLE_SELECTED_CANDIDATE_INDEX),
+    ]
+    command.append("--export-brep" if DEFAULT_SIMPLE_EXPORT_BREP else "--no-export-brep")
+
+    remote_pid = launch_remote_job(
+        ssh_host=ssh_host,
+        remote_workdir=remote_workdir,
+        output_root=remote_job_root,
+        command=command,
+        status_path=status_path,
+        log_path=log_path,
+    )
+
+    job = {
+        "job_id": job_id,
+        "kind": "simple_reconstruct",
+        "status": "running",
+        "stage": "queued",
+        "stage_label": "Queued",
+        "ssh_host": ssh_host,
+        "remote_workdir": remote_workdir,
+        "output_root": remote_job_root,
+        "command": command,
+        "command_text": shell_join(command),
+        "log_path": log_path,
+        "status_path": status_path,
+        "remote_pid": remote_pid,
+        "created_at": now_ts(),
+        "updated_at": now_ts(),
+        "exit_code": None,
+        "request": {
+            "image_filename": image_name,
+            "mask_filename": mask_name,
+        },
+    }
+    save_job(job)
+    return JobSummary(**job)
+
+
 @app.get("/jobs/{job_id}/logs")
 def get_job_logs(job_id: str, tail_lines: int = Query(200, ge=1, le=2000)) -> dict[str, Any]:
     job = refresh_job(load_job(job_path(job_id)))
@@ -172,6 +312,7 @@ def get_job_logs(job_id: str, tail_lines: int = Query(200, ge=1, le=2000)) -> di
     return {
         "job_id": job_id,
         "status": job["status"],
+        "stage": job.get("stage"),
         "tail_lines": tail_lines,
         "log": log_text,
     }
@@ -237,6 +378,11 @@ def now_ts() -> float:
 
 def shell_join(parts: list[str]) -> str:
     return shlex.join([str(part) for part in parts])
+
+
+def sanitize_upload_name(name: str) -> str:
+    clean = Path(name).name.strip().replace(" ", "_")
+    return clean or "upload.bin"
 
 
 def job_path(job_id: str) -> Path:
@@ -413,7 +559,7 @@ import json
 import pathlib
 import sys
 import time
-pathlib.Path(sys.argv[1]).write_text(json.dumps({{"status": "running", "started_at": time.time()}}, indent=2))
+pathlib.Path(sys.argv[1]).write_text(json.dumps({{"status": "running", "stage": "queued", "stage_label": "Queued", "started_at": time.time()}}, indent=2))
 PY
 cat > "$RUNNER_PATH" <<'BASH'
 #!/usr/bin/env bash
@@ -426,13 +572,20 @@ import json
 import pathlib
 import sys
 import time
+path = pathlib.Path(sys.argv[1])
 rc = int(sys.argv[2])
-payload = {{
+payload = {{}}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text())
+    except Exception:
+        payload = {{}}
+payload.update({{
     'status': 'completed' if rc == 0 else 'failed',
     'exit_code': rc,
     'ended_at': time.time(),
-}}
-pathlib.Path(sys.argv[1]).write_text(json.dumps(payload, indent=2))
+}})
+path.write_text(json.dumps(payload, indent=2))
 PY
 exit "$rc"
 BASH
@@ -489,6 +642,26 @@ def run_ssh_command(ssh_host: str, command: str, check: bool = True) -> subproce
             },
         )
     return result
+
+
+def upload_file_to_remote(ssh_host: str, local_path: Path, remote_path: str) -> None:
+    result = subprocess.run(
+        ["scp", str(local_path), f"{ssh_host}:{remote_path}"],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Failed to upload file",
+                "ssh_host": ssh_host,
+                "local_path": str(local_path),
+                "remote_path": remote_path,
+                "stderr": result.stderr,
+                "stdout": result.stdout,
+            },
+        )
 
 
 def read_remote_file_bytes(ssh_host: str, path: str) -> bytes:
@@ -599,7 +772,7 @@ if [ -f {shlex.quote(status_path)} ]; then
   exit 0
 fi
 if kill -0 {remote_pid} 2>/dev/null; then
-  printf '{{"status":"running"}}'
+  printf '{{"status":"running","stage":"queued","stage_label":"Queued"}}'
 else
   printf '{{"status":"unknown"}}'
 fi
@@ -611,10 +784,9 @@ fi
         except json.JSONDecodeError:
             remote_state = {"status": "unknown"}
         job["status"] = remote_state.get("status", job["status"])
-        if "exit_code" in remote_state:
-            job["exit_code"] = remote_state["exit_code"]
-        if "ended_at" in remote_state:
-            job["ended_at"] = remote_state["ended_at"]
+        for key in ("exit_code", "ended_at", "stage", "stage_label", "result_paths", "error"):
+            if key in remote_state:
+                job[key] = remote_state[key]
         save_job(job)
     return job
 
