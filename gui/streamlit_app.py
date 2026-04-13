@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import plotly.graph_objects as go
@@ -30,21 +31,73 @@ def api_post_multipart(
     return response.json()
 
 
+def _set_query_job_id(job_id: str) -> None:
+    try:
+        st.query_params["job_id"] = job_id
+    except Exception:
+        pass
+    try:
+        st.experimental_set_query_params(job_id=job_id)
+    except Exception:
+        pass
+
+
+def _get_query_job_id() -> str | None:
+    try:
+        query_job_id = st.query_params.get("job_id")
+        if query_job_id:
+            if isinstance(query_job_id, list):
+                return str(query_job_id[0])
+            return str(query_job_id)
+    except Exception:
+        pass
+    try:
+        params = st.experimental_get_query_params()
+        query_job_id = params.get("job_id")
+        if query_job_id:
+            if isinstance(query_job_id, list):
+                return str(query_job_id[0])
+            return str(query_job_id)
+    except Exception:
+        pass
+    return None
+
+
 def set_active_job_id(job_id: str) -> None:
     st.session_state["active_job_id"] = job_id
-    st.query_params["job_id"] = job_id
+    st.session_state.pop("suppress_auto_resume", None)
+    _set_query_job_id(job_id)
 
 
 def get_active_job_id() -> str | None:
-    query_job_id = st.query_params.get("job_id")
+    query_job_id = _get_query_job_id()
     if query_job_id:
-        return str(query_job_id)
+        return query_job_id
     return st.session_state.get("active_job_id")
 
 
 def clear_active_job() -> None:
     st.session_state.pop("active_job_id", None)
-    st.query_params.clear()
+    st.session_state["suppress_auto_resume"] = True
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
+    try:
+        st.experimental_set_query_params()
+    except Exception:
+        pass
+
+
+def get_latest_simple_job() -> dict[str, Any] | None:
+    try:
+        jobs = api_get("/jobs")
+    except Exception:
+        return None
+    for job in jobs:
+        if job.get("kind") == "simple_reconstruct":
+            return job
+    return None
 
 
 def stage_message(job: dict[str, Any]) -> tuple[str, str]:
@@ -179,6 +232,11 @@ except Exception as exc:  # pragma: no cover - UI only
     st.stop()
 
 active_job_id = get_active_job_id()
+if not active_job_id and not st.session_state.get("suppress_auto_resume"):
+    latest_job = get_latest_simple_job()
+    if latest_job and (time.time() - float(latest_job.get("updated_at") or latest_job.get("created_at") or 0) < 12 * 3600):
+        set_active_job_id(latest_job["job_id"])
+        st.rerun()
 
 if not active_job_id:
     image_file = st.file_uploader(
