@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -87,6 +88,86 @@ def enable_auto_refresh(interval_ms: int = AUTO_REFRESH_MS) -> None:
     )
 
 
+def build_mesh_figure(payload: dict[str, Any]) -> go.Figure:
+    vertices = payload.get("vertices") or []
+    faces = payload.get("faces") or []
+    x = [vertex[0] for vertex in vertices]
+    y = [vertex[1] for vertex in vertices]
+    z = [vertex[2] for vertex in vertices]
+    i = [face[0] for face in faces]
+    j = [face[1] for face in faces]
+    k = [face[2] for face in faces]
+
+    fig = go.Figure(
+        data=[
+            go.Mesh3d(
+                x=x,
+                y=y,
+                z=z,
+                i=i,
+                j=j,
+                k=k,
+                color="#4f8bf9",
+                opacity=1.0,
+                flatshading=True,
+                lighting={"ambient": 0.6, "diffuse": 0.8, "roughness": 0.9, "specular": 0.1},
+            )
+        ]
+    )
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        scene={
+            "aspectmode": "data",
+            "xaxis": {"visible": False},
+            "yaxis": {"visible": False},
+            "zaxis": {"visible": False},
+        },
+        height=420,
+    )
+    return fig
+
+
+def show_completed_result(job: dict[str, Any]) -> None:
+    result_paths = job.get("result_paths") or {}
+    output_root = result_paths.get("job_root") or job.get("output_root")
+    selected_mesh = result_paths.get("selected_mesh")
+
+    st.subheader("Results")
+    st.caption("Processing is finished. The generated files have been saved to the paths below.")
+
+    if output_root:
+        st.markdown("**Saved output folder**")
+        st.code(output_root)
+
+    if selected_mesh:
+        try:
+            mesh_payload = api_get("/preview/mesh", ssh_host=job.get("ssh_host", "local"), path=selected_mesh, max_faces=12000)
+            st.markdown("**Selected mesh preview**")
+            st.plotly_chart(build_mesh_figure(mesh_payload), config={"displaylogo": False}, use_container_width=True)
+            st.caption(
+                f"Preview mesh: {mesh_payload.get('vertex_count')} vertices, "
+                f"{mesh_payload.get('face_count')} faces "
+                f"(from {mesh_payload.get('original_face_count')} original faces)."
+            )
+        except Exception as exc:
+            st.info(f"Mesh preview unavailable: {exc}")
+
+    display_rows = [
+        ("Selected STEP", result_paths.get("selected_brep")),
+        ("Selected STL", result_paths.get("selected_mesh")),
+        ("Selected Python", result_paths.get("selected_py")),
+        ("SAM3D GLB", result_paths.get("sam3d_mesh_glb")),
+        ("SAM3D STL", result_paths.get("sam3d_mesh_stl")),
+        ("Cadrille output folder", result_paths.get("cadrille_output_root")),
+    ]
+
+    st.markdown("**Saved files**")
+    for label, path in display_rows:
+        if path:
+            st.markdown(f"**{label}**")
+            st.code(path)
+
+
 st.set_page_config(page_title="AIWS Reconstruction GUI", page_icon="🧩", layout="centered")
 st.title("AIWS Reconstruction GUI")
 st.caption("Choose one photo and its mask, then start reconstruction.")
@@ -166,16 +247,7 @@ else:
             st.caption("Refreshing automatically...")
 
         if job.get("status") == "completed":
-            result_paths = job.get("result_paths") or {}
-            selected_mesh = result_paths.get("selected_mesh")
-            selected_brep = result_paths.get("selected_brep")
-            selected_py = result_paths.get("selected_py")
-            if selected_mesh:
-                st.code(selected_mesh)
-            elif selected_brep:
-                st.code(selected_brep)
-            elif selected_py:
-                st.code(selected_py)
+            show_completed_result(job)
 
         if job.get("status") == "failed" and job.get("error"):
             st.error(job["error"])
