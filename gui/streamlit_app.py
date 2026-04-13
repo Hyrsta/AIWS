@@ -119,10 +119,10 @@ if not active_job_id:
         preview_col1, preview_col2 = st.columns(2)
         with preview_col1:
             st.markdown("**Photo**")
-            st.image(image_file.getvalue(), use_container_width=True)
+            st.image(image_file.getvalue(), use_column_width=True)
         with preview_col2:
             st.markdown("**Mask**")
-            st.image(mask_file.getvalue(), use_container_width=True)
+            st.image(mask_file.getvalue(), use_column_width=True)
 
     if st.button("Start reconstruction", type="primary", disabled=not (image_file and mask_file)):
         try:
