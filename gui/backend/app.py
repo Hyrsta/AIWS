@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 import numpy as np
 from pydantic import BaseModel, Field
 import trimesh
@@ -39,6 +39,11 @@ DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE = 64
 DEFAULT_SIMPLE_CADRILLE_RUNTIME: Literal["auto", "docker", "host"] = "docker"
 DEFAULT_SIMPLE_CADRILLE_DOCKER_GPUS = "device=0"
 DEFAULT_SIMPLE_CADRILLE_CHECKPOINT = "ckpt/cadrille_rl"
+DEFAULT_SIMPLE_CADRILLE_CHECKPOINT_PRESET: Literal["SFT", "RL"] = "RL"
+SIMPLE_CADRILLE_CHECKPOINT_PRESETS = {
+    "SFT": "ckpt/cadrille_sft",
+    "RL": "ckpt/cadrille_rl",
+}
 DEFAULT_SIMPLE_EXPORT_BREP = True
 DEFAULT_SIMPLE_SELECTION_MODE: Literal["evaluate", "index"] = "evaluate"
 DEFAULT_SIMPLE_SELECTED_CANDIDATE_INDEX = 0
@@ -149,6 +154,7 @@ def health() -> dict[str, Any]:
             "remote_workdir": DEFAULT_REMOTE_WORKDIR,
             "remote_root": DEFAULT_SIMPLE_REMOTE_ROOT,
             "cadrille_mode": DEFAULT_SIMPLE_CADRILLE_MODE,
+            "cadrille_checkpoint_preset": DEFAULT_SIMPLE_CADRILLE_CHECKPOINT_PRESET,
             "cadrille_checkpoint": DEFAULT_SIMPLE_CADRILLE_CHECKPOINT,
             "cadrille_n_samples": DEFAULT_SIMPLE_CADRILLE_N_SAMPLES,
             "cadrille_batch_size": DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE,
@@ -200,6 +206,7 @@ def create_e2e_run(request: E2ERunRequest) -> JobSummary:
 async def create_simple_reconstruct(
     image: UploadFile = File(...),
     mask: UploadFile = File(...),
+    cadrille_checkpoint_preset: Literal["SFT", "RL"] = Form(DEFAULT_SIMPLE_CADRILLE_CHECKPOINT_PRESET),
 ) -> JobSummary:
     image_name = sanitize_upload_name(image.filename or "input.png")
     mask_name = sanitize_upload_name(mask.filename or "mask.png")
@@ -236,6 +243,8 @@ async def create_simple_reconstruct(
     upload_file_to_remote(ssh_host, local_image_path, remote_image_path)
     upload_file_to_remote(ssh_host, local_mask_path, remote_mask_path)
 
+    selected_checkpoint = SIMPLE_CADRILLE_CHECKPOINT_PRESETS[cadrille_checkpoint_preset]
+
     command = [
         DEFAULT_REMOTE_PYTHON,
         f"{DEFAULT_REMOTE_WORKDIR}/gui/backend/simple_reconstruct_job.py",
@@ -258,7 +267,7 @@ async def create_simple_reconstruct(
         "--cadrille-docker-gpus",
         DEFAULT_SIMPLE_CADRILLE_DOCKER_GPUS,
         "--cadrille-checkpoint",
-        DEFAULT_SIMPLE_CADRILLE_CHECKPOINT,
+        selected_checkpoint,
         "--cadrille-processor-path",
         DEFAULT_CADRILLE_PROCESSOR_PATH,
         "--cadrille-mode",
@@ -303,6 +312,8 @@ async def create_simple_reconstruct(
         "request": {
             "image_filename": image_name,
             "mask_filename": mask_name,
+            "cadrille_checkpoint_preset": cadrille_checkpoint_preset,
+            "cadrille_checkpoint": selected_checkpoint,
         },
     }
     save_job(job)

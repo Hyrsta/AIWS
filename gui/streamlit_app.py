@@ -18,8 +18,13 @@ def api_get(endpoint: str, **params: Any) -> Any:
     return response.json()
 
 
-def api_post_multipart(endpoint: str, *, files: dict[str, tuple[str, bytes, str]]) -> Any:
-    response = requests.post(f"{BACKEND_URL}{endpoint}", files=files, timeout=120)
+def api_post_multipart(
+    endpoint: str,
+    *,
+    files: dict[str, tuple[str, bytes, str]],
+    data: dict[str, str] | None = None,
+) -> Any:
+    response = requests.post(f"{BACKEND_URL}{endpoint}", files=files, data=data, timeout=120)
     response.raise_for_status()
     return response.json()
 
@@ -103,6 +108,12 @@ if not active_job_id:
         "Choose the corresponding mask",
         type=["png", "jpg", "jpeg", "webp", "bmp"],
     )
+    checkpoint_preset = st.radio(
+        "Cadrille checkpoint",
+        options=["RL", "SFT"],
+        horizontal=True,
+        help="Choose which Cadrille checkpoint to use for reconstruction.",
+    )
 
     if image_file and mask_file:
         preview_col1, preview_col2 = st.columns(2)
@@ -117,6 +128,7 @@ if not active_job_id:
         try:
             result = api_post_multipart(
                 "/jobs/simple-reconstruct",
+                data={"cadrille_checkpoint_preset": checkpoint_preset},
                 files={
                     "image": (
                         image_file.name,
