@@ -136,6 +136,7 @@ def main() -> None:
         write_status(status_path, status="running", stage="sam3d", stage_label="Processing SAM3D")
         job_root.mkdir(parents=True, exist_ok=True)
 
+        os.environ.setdefault("CONDA_PREFIX", str(Path(sys.executable).resolve().parents[1]))
         os.environ.setdefault("ATTN_BACKEND", "flash_attn")
         os.environ.setdefault("SPARSE_ATTN_BACKEND", "flash_attn")
 

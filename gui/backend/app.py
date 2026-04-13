@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shlex
+import shutil
+import socket
 import subprocess
 import time
 import uuid
@@ -41,6 +44,7 @@ DEFAULT_SIMPLE_SELECTION_MODE: Literal["evaluate", "index"] = "evaluate"
 DEFAULT_SIMPLE_SELECTED_CANDIDATE_INDEX = 0
 
 ALLOWED_UPLOAD_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+LOCAL_HOST_ALIASES = {"local", "localhost", "127.0.0.1", "::1", socket.gethostname(), os.uname().nodename}
 
 
 app = FastAPI(title="AIWS GUI Backend", version="0.2.0")
@@ -216,7 +220,7 @@ async def create_simple_reconstruct(
     local_image_path.write_bytes(await image.read())
     local_mask_path.write_bytes(await mask.read())
 
-    ssh_host = DEFAULT_REMOTE_HOST
+    ssh_host = "local"
     remote_workdir = DEFAULT_REMOTE_WORKDIR
     remote_job_root = f"{DEFAULT_SIMPLE_REMOTE_ROOT}/{job_id}"
     remote_input_root = f"{remote_job_root}/input"
@@ -603,7 +607,28 @@ echo $!
         raise HTTPException(status_code=500, detail=f"Invalid remote pid output: {lines[-1]}") from exc
 
 
+def is_local_host(host: str) -> bool:
+    return (host or "").strip() in LOCAL_HOST_ALIASES
+
+
+def run_local_script(script: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(["bash", "-s"], input=script, text=True, capture_output=True)
+    if check and result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Local script failed",
+                "returncode": result.returncode,
+                "stderr": result.stderr,
+                "stdout": result.stdout,
+            },
+        )
+    return result
+
+
 def run_ssh_script(ssh_host: str, script: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    if is_local_host(ssh_host):
+        return run_local_script(script, check=check)
     result = subprocess.run(
         ["ssh", ssh_host, "bash", "-s"],
         input=script,
@@ -625,11 +650,14 @@ def run_ssh_script(ssh_host: str, script: str, check: bool = True) -> subprocess
 
 
 def run_ssh_command(ssh_host: str, command: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        ["ssh", ssh_host, command],
-        text=True,
-        capture_output=True,
-    )
+    if is_local_host(ssh_host):
+        result = subprocess.run(command, shell=True, text=True, capture_output=True)
+    else:
+        result = subprocess.run(
+            ["ssh", ssh_host, command],
+            text=True,
+            capture_output=True,
+        )
     if check and result.returncode != 0:
         raise HTTPException(
             status_code=500,
@@ -645,6 +673,11 @@ def run_ssh_command(ssh_host: str, command: str, check: bool = True) -> subproce
 
 
 def upload_file_to_remote(ssh_host: str, local_path: Path, remote_path: str) -> None:
+    if is_local_host(ssh_host):
+        remote = Path(remote_path)
+        remote.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(local_path, remote)
+        return
     result = subprocess.run(
         ["scp", str(local_path), f"{ssh_host}:{remote_path}"],
         text=True,
@@ -665,6 +698,14 @@ def upload_file_to_remote(ssh_host: str, local_path: Path, remote_path: str) -> 
 
 
 def read_remote_file_bytes(ssh_host: str, path: str) -> bytes:
+    if is_local_host(ssh_host):
+        try:
+            return Path(path).read_bytes()
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail={"message": "Failed to read local file", "path": path, "error": str(exc)},
+            ) from exc
     result = subprocess.run(
         ["ssh", ssh_host, f"cat {shlex.quote(path)}"],
         capture_output=True,
@@ -697,7 +738,10 @@ else:
     files = [name for name in sorted(os.listdir(directory)) if fnmatch.fnmatch(name, pattern)]
     print(json.dumps(files))
 """
-    result = subprocess.run(["ssh", ssh_host, "python3", "-"], input=source, text=True, capture_output=True)
+    if is_local_host(ssh_host):
+        result = subprocess.run(["python3", "-"], input=source, text=True, capture_output=True)
+    else:
+        result = subprocess.run(["ssh", ssh_host, "python3", "-"], input=source, text=True, capture_output=True)
     if result.returncode != 0:
         raise HTTPException(
             status_code=500,
@@ -834,7 +878,10 @@ for mode in ("pc", "img"):
     }}
 print(json.dumps(result))
 """
-    result = subprocess.run(["ssh", ssh_host, "python3", "-"], input=source, text=True, capture_output=True)
+    if is_local_host(ssh_host):
+        result = subprocess.run(["python3", "-"], input=source, text=True, capture_output=True)
+    else:
+        result = subprocess.run(["ssh", ssh_host, "python3", "-"], input=source, text=True, capture_output=True)
     if result.returncode != 0:
         raise HTTPException(
             status_code=500,
