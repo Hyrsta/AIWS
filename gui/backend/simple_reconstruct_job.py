@@ -54,6 +54,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+PIPELINE_STAGE_LABELS = [
+    "SAM3D: Loading checkpoints",
+    "SAM3D: Generating mesh",
+    "Cadrille: Preparing input",
+    "Cadrille: Generating CAD result",
+]
+TERMINAL_STATUSES = {"completed", "failed", "terminated"}
+
+
 def write_status(
     path: Path,
     *,
@@ -63,12 +72,52 @@ def write_status(
     error: str | None = None,
     result_paths: dict[str, Any] | None = None,
 ) -> None:
+    now = time.time()
+    existing: dict[str, Any] = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            existing = {}
+
+    started_at = existing.get("started_at") or now
+    stage_timings = dict(existing.get("stage_timings") or {})
+    previous_label = existing.get("stage_label")
+
+    if previous_label in PIPELINE_STAGE_LABELS and previous_label != stage_label:
+        previous_entry = dict(stage_timings.get(previous_label) or {})
+        previous_entry.setdefault("started_at", existing.get("updated_at") or started_at)
+        previous_entry.setdefault("ended_at", now)
+        stage_timings[previous_label] = previous_entry
+
+    if stage_label in PIPELINE_STAGE_LABELS:
+        current_entry = dict(stage_timings.get(stage_label) or {})
+        default_started_at = started_at if stage_label == PIPELINE_STAGE_LABELS[0] else now
+        current_entry.setdefault("started_at", default_started_at)
+        if status in TERMINAL_STATUSES:
+            current_entry.setdefault("ended_at", now)
+        else:
+            current_entry["ended_at"] = None
+        stage_timings[stage_label] = current_entry
+
+    if status in TERMINAL_STATUSES:
+        active_label = previous_label if previous_label in PIPELINE_STAGE_LABELS else stage_label
+        if active_label in PIPELINE_STAGE_LABELS:
+            active_entry = dict(stage_timings.get(active_label) or {})
+            active_entry.setdefault("started_at", started_at)
+            active_entry.setdefault("ended_at", now)
+            stage_timings[active_label] = active_entry
+
     payload = {
         "status": status,
         "stage": stage,
         "stage_label": stage_label,
-        "updated_at": time.time(),
+        "started_at": started_at,
+        "updated_at": now,
+        "stage_timings": stage_timings,
     }
+    if status in TERMINAL_STATUSES:
+        payload["ended_at"] = now
     if error:
         payload["error"] = error
     if result_paths:

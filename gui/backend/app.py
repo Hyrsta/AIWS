@@ -880,7 +880,7 @@ fi
         except json.JSONDecodeError:
             remote_state = {"status": "unknown"}
         job["status"] = remote_state.get("status", job["status"])
-        for key in ("exit_code", "ended_at", "started_at", "stage", "stage_label", "result_paths", "error"):
+        for key in ("exit_code", "ended_at", "started_at", "updated_at", "stage", "stage_label", "stage_timings", "result_paths", "error"):
             if key in remote_state:
                 job[key] = remote_state[key]
         save_job(job)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 import plotly.graph_objects as go
@@ -11,6 +12,13 @@ import streamlit as st
 
 BACKEND_URL = os.environ.get("AIWS_GUI_BACKEND", "http://127.0.0.1:8000")
 POLL_INTERVAL_SEC = 1.0
+PIPELINE_STAGES = [
+    "SAM3D: Loading checkpoints",
+    "SAM3D: Generating mesh",
+    "Cadrille: Preparing input",
+    "Cadrille: Generating CAD result",
+]
+TERMINAL_STATUSES = {"completed", "failed", "terminated"}
 
 
 def api_get(endpoint: str, **params: Any) -> Any:
@@ -115,16 +123,12 @@ def stage_message(job: dict[str, Any]) -> tuple[str, str]:
 
 def stage_progress(job: dict[str, Any]) -> float:
     status = job.get("status")
-    stage = job.get("stage") or "queued"
-    if status == "completed":
+    if status in TERMINAL_STATUSES:
         return 1.0
-    if status == "failed":
-        return 1.0
-    if stage == "sam3d":
-        return 0.45
-    if stage == "cadrille":
-        return 0.8
-    return 0.1
+    stage_label = job.get("stage_label") or ""
+    if stage_label in PIPELINE_STAGES:
+        return (PIPELINE_STAGES.index(stage_label) + 0.5) / len(PIPELINE_STAGES)
+    return 0.05
 
 
 def format_duration(seconds: float | None) -> str:
@@ -169,11 +173,100 @@ def elapsed_seconds(job: dict[str, Any]) -> float | None:
     started_at = job.get("started_at") or job.get("created_at")
     if started_at is None:
         return None
-    if job.get("status") in {"completed", "failed", "terminated"}:
+    if job.get("status") in TERMINAL_STATUSES:
         end_time = job.get("ended_at") or job.get("updated_at") or started_at
     else:
         end_time = time.time()
     return max(float(end_time) - float(started_at), 0.0)
+
+
+def sync_pipeline_timings(job: dict[str, Any]) -> dict[str, dict[str, float | None]]:
+    job_id = str(job.get("job_id") or "active-job")
+    tracker_store = st.session_state.setdefault("_pipeline_stage_timings", {})
+    tracker = tracker_store.setdefault(job_id, {"stage_timings": {}, "current_stage_label": None})
+
+    merged: dict[str, dict[str, float | None]] = {}
+    remote_timings = job.get("stage_timings") or {}
+    for label, timing in remote_timings.items():
+        if isinstance(timing, dict):
+            merged[label] = dict(timing)
+
+    for label, timing in tracker.get("stage_timings", {}).items():
+        entry = merged.setdefault(label, {})
+        for key in ("started_at", "ended_at"):
+            if entry.get(key) is None and timing.get(key) is not None:
+                entry[key] = timing[key]
+
+    now = time.time()
+    current_label = job.get("stage_label")
+    previous_label = tracker.get("current_stage_label")
+
+    if current_label in PIPELINE_STAGES:
+        current_entry = merged.setdefault(current_label, {})
+        default_started_at = job.get("started_at") if current_label == PIPELINE_STAGES[0] else now
+        current_entry.setdefault("started_at", default_started_at or now)
+
+    if previous_label in PIPELINE_STAGES and previous_label != current_label:
+        previous_entry = merged.setdefault(previous_label, {})
+        previous_entry.setdefault("started_at", now)
+        previous_entry.setdefault("ended_at", now)
+
+    if job.get("status") in TERMINAL_STATUSES:
+        active_label = previous_label if previous_label in PIPELINE_STAGES else current_label
+        if active_label in PIPELINE_STAGES:
+            active_entry = merged.setdefault(active_label, {})
+            active_entry.setdefault("started_at", job.get("started_at") or now)
+            active_entry.setdefault("ended_at", job.get("ended_at") or job.get("updated_at") or now)
+        tracker["current_stage_label"] = None
+    else:
+        tracker["current_stage_label"] = current_label
+
+    tracker["stage_timings"] = merged
+    tracker_store[job_id] = tracker
+    return merged
+
+
+def stage_duration_seconds(job: dict[str, Any], stage_label: str, stage_timings: dict[str, dict[str, float | None]]) -> float | None:
+    entry = stage_timings.get(stage_label) or {}
+    started_at = entry.get("started_at")
+    ended_at = entry.get("ended_at")
+    if started_at is None:
+        return None
+    if ended_at is None:
+        if job.get("status") in TERMINAL_STATUSES or stage_label != job.get("stage_label"):
+            return None
+        ended_at = time.time()
+    return max(float(ended_at) - float(started_at), 0.0)
+
+
+def render_pipeline(job: dict[str, Any]) -> None:
+    stage_timings = sync_pipeline_timings(job)
+    current_label = job.get("stage_label")
+    status = job.get("status")
+
+    st.markdown("**Pipeline**")
+    for stage_label in PIPELINE_STAGES:
+        entry = stage_timings.get(stage_label) or {}
+        duration_seconds = stage_duration_seconds(job, stage_label, stage_timings)
+        if status == "failed" and stage_label == current_label:
+            icon = "❌"
+        elif entry.get("ended_at") is not None:
+            icon = "✅"
+        elif stage_label == current_label and status not in TERMINAL_STATUSES:
+            icon = "🔄"
+        else:
+            icon = "⏳"
+        st.markdown(f"{icon} {stage_label}")
+        if duration_seconds is not None:
+            if stage_label == current_label and status not in TERMINAL_STATUSES:
+                st.caption(f"Elapsed time: {format_duration_words(duration_seconds)}")
+            else:
+                st.caption(format_duration_words(duration_seconds))
+
+    total_elapsed = elapsed_seconds(job)
+    if total_elapsed is not None:
+        total_label = "Total processing time" if status in TERMINAL_STATUSES else "Total elapsed time"
+        st.markdown(f"**{total_label}:** {format_duration_words(total_elapsed)}")
 
 
 def show_mesh_preview(job: dict[str, Any], *, title: str, path: str | None, color: str) -> None:
@@ -351,7 +444,7 @@ else:
     try:
         message_placeholder = st.empty()
         progress_placeholder = st.empty()
-        timing_placeholder = st.empty()
+        pipeline_placeholder = st.empty()
         refresh_placeholder = st.empty()
 
         while True:
@@ -365,14 +458,10 @@ else:
                 message_placeholder.info(message)
 
             progress_placeholder.progress(stage_progress(job))
-            stage_label = job.get("stage_label") or job.get("stage") or "Queued"
-            elapsed = elapsed_seconds(job)
-            if job.get("status") == "completed":
-                timing_placeholder.caption(f"Current stage: {stage_label} | Processing time: {format_duration_words(elapsed)}")
-            else:
-                timing_placeholder.caption(f"Current stage: {stage_label} | Elapsed time: {format_duration(elapsed)}")
+            with pipeline_placeholder.container():
+                render_pipeline(job)
 
-            if job.get("status") in {"completed", "failed", "terminated"}:
+            if job.get("status") in TERMINAL_STATUSES:
                 refresh_placeholder.empty()
                 break
 
