@@ -194,13 +194,23 @@ def render_cadrille_settings(job: dict[str, Any]) -> None:
     model, modality = get_cadrille_settings(job)
     if not model and not modality:
         return
-    parts = []
+
+    badges = []
     if model:
-        parts.append(f"Model: {model}")
+        badges.append(
+            f'<span style="display:inline-block; padding:0.35rem 0.8rem; border-radius:999px; background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:0.98rem;">Model: {model}</span>'
+        )
     if modality:
-        parts.append(f"Input modality: {modality}")
+        badges.append(
+            f'<span style="display:inline-block; padding:0.35rem 0.8rem; border-radius:999px; background:#dcfce7; color:#166534; font-weight:700; font-size:0.98rem;">Input modality: {modality}</span>'
+        )
+
+    badge_html = "".join(badges)
     st.markdown("**Cadrille settings**")
-    st.caption(" | ".join(parts))
+    st.markdown(
+        f'<div style="display:flex; flex-wrap:wrap; gap:0.55rem; align-items:center; margin:0.2rem 0 0.45rem 0;">{badge_html}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def elapsed_seconds(job: dict[str, Any]) -> float | None:
