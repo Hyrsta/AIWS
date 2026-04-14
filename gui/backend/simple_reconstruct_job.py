@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -106,6 +107,47 @@ def append_jsonl(path: Path, row: dict[str, Any]) -> None:
 def first_match(path: Path, pattern: str) -> str | None:
     matches = sorted(path.glob(pattern))
     return str(matches[0]) if matches else None
+
+
+def copy_result_file(src: str | None, dst: Path) -> str | None:
+    if not src:
+        return None
+    src_path = Path(src)
+    if not src_path.exists():
+        return None
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src_path, dst)
+    return str(dst)
+
+
+def build_simple_result_paths(
+    *,
+    job_root: Path,
+    sam3d_mesh_glb: Path,
+    sam3d_mesh_stl: Path,
+    cadrille_output_root: Path,
+    selected_mesh: str | None,
+    selected_py: str | None,
+    selected_brep: str | None,
+) -> dict[str, Any]:
+    results_root = job_root / "results"
+    results_root.mkdir(parents=True, exist_ok=True)
+    result_paths = {
+        "job_root": str(job_root),
+        "results_root": str(results_root),
+        "sam3d_mesh_glb": str(results_root / "sam3d_mesh.glb"),
+        "sam3d_mesh_stl": str(results_root / "sam3d_mesh.stl"),
+        "cadrille_output_root": str(cadrille_output_root),
+        "selected_mesh": None,
+        "selected_py": None,
+        "selected_brep": None,
+    }
+    shutil.copy2(sam3d_mesh_glb, results_root / "sam3d_mesh.glb")
+    shutil.copy2(sam3d_mesh_stl, results_root / "sam3d_mesh.stl")
+    result_paths["selected_mesh"] = copy_result_file(selected_mesh, results_root / "cadrille_selected_mesh.stl")
+    result_paths["selected_py"] = copy_result_file(selected_py, results_root / "cadrille_selected.py")
+    result_paths["selected_brep"] = copy_result_file(selected_brep, results_root / f"cadrille_selected.{Path(selected_brep).suffix.lstrip('.')}" if selected_brep else results_root / "cadrille_selected.step")
+    return result_paths
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None) -> None:
@@ -321,15 +363,18 @@ def main() -> None:
         cmd.append("--export-brep" if args.export_brep else "--no-export-brep")
         run_cmd(cmd)
 
-        result_paths = {
-            "job_root": str(job_root),
-            "sam3d_mesh_glb": str(mesh_path),
-            "sam3d_mesh_stl": str(stl_path),
-            "cadrille_output_root": str(cadrille_output_root),
-            "selected_mesh": first_match(cadrille_output_root, "selected_mesh/*.stl"),
-            "selected_py": first_match(cadrille_output_root, "selected_py/*.py"),
-            "selected_brep": first_match(cadrille_output_root, f"selected_brep/*.{args.brep_ext}"),
-        }
+        selected_mesh = first_match(cadrille_output_root, "selected_mesh/*.stl")
+        selected_py = first_match(cadrille_output_root, "selected_py/*.py")
+        selected_brep = first_match(cadrille_output_root, f"selected_brep/*.{args.brep_ext}")
+        result_paths = build_simple_result_paths(
+            job_root=job_root,
+            sam3d_mesh_glb=mesh_path,
+            sam3d_mesh_stl=stl_path,
+            cadrille_output_root=cadrille_output_root,
+            selected_mesh=selected_mesh,
+            selected_py=selected_py,
+            selected_brep=selected_brep,
+        )
         write_status(status_path, status="completed", stage="completed", stage_label="Done", result_paths=result_paths)
     except Exception as exc:  # noqa: BLE001
         traceback.print_exc()

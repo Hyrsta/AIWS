@@ -226,7 +226,7 @@ def build_mesh_figure(payload: dict[str, Any], *, color: str = "#4f8bf9") -> go.
 
 def show_completed_result(job: dict[str, Any]) -> None:
     result_paths = job.get("result_paths") or {}
-    output_root = result_paths.get("job_root") or job.get("output_root")
+    output_root = result_paths.get("results_root") or result_paths.get("job_root") or job.get("output_root")
     sam3d_mesh = result_paths.get("sam3d_mesh_stl") or result_paths.get("sam3d_mesh_glb")
     cadrille_mesh = result_paths.get("selected_mesh")
 
@@ -259,7 +259,6 @@ def show_completed_result(job: dict[str, Any]) -> None:
         ("Selected STEP", result_paths.get("selected_brep")),
         ("Selected STL", result_paths.get("selected_mesh")),
         ("Selected Python", result_paths.get("selected_py")),
-        ("Cadrille output folder", result_paths.get("cadrille_output_root")),
     ]:
         if path:
             st.markdown(f"**{label}**")
