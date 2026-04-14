@@ -785,17 +785,61 @@ def load_mesh_from_bytes(data: bytes, path: str) -> trimesh.Trimesh:
     return mesh
 
 
-def mesh_to_payload(mesh: trimesh.Trimesh, *, path: str, max_faces: int) -> dict[str, Any]:
+def simplify_mesh_for_preview(mesh: trimesh.Trimesh, *, max_faces: int) -> tuple[np.ndarray, np.ndarray]:
     vertices = np.asarray(mesh.vertices)
     faces = np.asarray(mesh.faces)
-    original_face_count = int(len(faces))
+    if len(faces) <= max_faces:
+        return vertices, faces
 
-    if len(faces) > max_faces:
-        sampled_ids = np.linspace(0, len(faces) - 1, num=max_faces, dtype=int)
-        faces = faces[sampled_ids]
-        used_vertices, remapped = np.unique(faces.reshape(-1), return_inverse=True)
-        vertices = vertices[used_vertices]
-        faces = remapped.reshape(-1, faces.shape[1])
+    try:
+        simplified = mesh.simplify_quadric_decimation(max_faces)
+        simple_vertices = np.asarray(simplified.vertices)
+        simple_faces = np.asarray(simplified.faces)
+        if len(simple_faces) > 0:
+            return simple_vertices, simple_faces
+    except Exception:
+        pass
+
+    bounds = mesh.bounds
+    if bounds is None:
+        return vertices, faces[:max_faces]
+
+    extents = np.maximum(bounds[1] - bounds[0], 1e-6)
+    target_vertices = max(int(max_faces * 0.6), 1000)
+    bins_per_axis = max(int(round(target_vertices ** (1.0 / 3.0))), 8)
+    pitch = extents / float(bins_per_axis)
+    quantized = np.floor((vertices - bounds[0]) / pitch).astype(np.int64)
+    _, inverse = np.unique(quantized, axis=0, return_inverse=True)
+
+    compact_vertices = np.zeros((inverse.max() + 1, 3), dtype=np.float64)
+    counts = np.bincount(inverse)
+    for axis in range(3):
+        compact_vertices[:, axis] = np.bincount(inverse, weights=vertices[:, axis]) / counts
+
+    compact_faces = inverse[faces]
+    nondegenerate = (
+        (compact_faces[:, 0] != compact_faces[:, 1])
+        & (compact_faces[:, 0] != compact_faces[:, 2])
+        & (compact_faces[:, 1] != compact_faces[:, 2])
+    )
+    compact_faces = compact_faces[nondegenerate]
+    if len(compact_faces) == 0:
+        return vertices, faces[:max_faces]
+
+    compact_faces = np.unique(np.sort(compact_faces, axis=1), axis=0)
+    if len(compact_faces) > max_faces:
+        step = max(int(np.ceil(len(compact_faces) / max_faces)), 1)
+        compact_faces = compact_faces[::step][:max_faces]
+
+    used_vertices, remapped = np.unique(compact_faces.reshape(-1), return_inverse=True)
+    compact_vertices = compact_vertices[used_vertices]
+    compact_faces = remapped.reshape(-1, 3)
+    return compact_vertices, compact_faces
+
+
+def mesh_to_payload(mesh: trimesh.Trimesh, *, path: str, max_faces: int) -> dict[str, Any]:
+    original_face_count = int(len(mesh.faces))
+    vertices, faces = simplify_mesh_for_preview(mesh, max_faces=max_faces)
 
     return {
         "path": path,

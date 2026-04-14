@@ -176,7 +176,7 @@ def show_mesh_preview(job: dict[str, Any], *, title: str, path: str | None, colo
             use_container_width=True,
         )
         st.caption(
-            f"{mesh_payload.get('vertex_count')} vertices, "
+            f"Preview uses a simplified display mesh: {mesh_payload.get('vertex_count')} vertices, "
             f"{mesh_payload.get('face_count')} faces "
             f"(from {mesh_payload.get('original_face_count')} original faces)."
         )
@@ -241,9 +241,9 @@ def show_completed_result(job: dict[str, Any]) -> None:
         st.markdown("**Mesh previews**")
         preview_col1, preview_col2 = st.columns(2)
         with preview_col1:
-            show_mesh_preview(job, title="SAM3D reconstructed mesh", path=sam3d_mesh, color="#35b779")
+            show_mesh_preview(job, title="SAM3D reconstructed STL mesh", path=sam3d_mesh, color="#35b779")
         with preview_col2:
-            show_mesh_preview(job, title="Cadrille selected mesh", path=cadrille_mesh, color="#4f8bf9")
+            show_mesh_preview(job, title="Cadrille selected STL mesh", path=cadrille_mesh, color="#4f8bf9")
 
     st.markdown("**SAM3D outputs**")
     for label, path in [
