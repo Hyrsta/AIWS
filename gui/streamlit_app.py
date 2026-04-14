@@ -132,8 +132,19 @@ def enable_auto_refresh(interval_ms: int = AUTO_REFRESH_MS) -> None:
     components.html(
         f"""
         <script>
+        const sendMessage = (type, data = {{}}) => {{
+            window.parent.postMessage({{
+                isStreamlitMessage: true,
+                type,
+                ...data,
+            }}, "*");
+        }};
+
+        sendMessage("streamlit:componentReady", {{ apiVersion: 1 }});
+        sendMessage("streamlit:setFrameHeight", {{ height: 0 }});
+
         window.setTimeout(function () {{
-            window.parent.location.reload();
+            sendMessage("streamlit:setComponentValue", {{ value: Date.now() }});
         }}, {interval_ms});
         </script>
         """,
