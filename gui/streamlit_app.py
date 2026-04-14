@@ -169,6 +169,40 @@ def format_output_path(path: str | None, output_root: str | None) -> str | None:
         return path
 
 
+def get_cadrille_settings(job: dict[str, Any]) -> tuple[str | None, str | None]:
+    request = job.get("request") or {}
+    model = request.get("cadrille_checkpoint_preset")
+    modality = request.get("cadrille_mode_label")
+    if not modality and request.get("cadrille_mode"):
+        modality = str(request.get("cadrille_mode")).upper()
+
+    command = job.get("command") or []
+    if not model and "--cadrille-checkpoint" in command:
+        checkpoint_value = command[command.index("--cadrille-checkpoint") + 1]
+        checkpoint_text = str(checkpoint_value).lower()
+        if "sft" in checkpoint_text:
+            model = "SFT"
+        elif "rl" in checkpoint_text:
+            model = "RL"
+    if not modality and "--cadrille-mode" in command:
+        modality = str(command[command.index("--cadrille-mode") + 1]).upper()
+
+    return model, modality
+
+
+def render_cadrille_settings(job: dict[str, Any]) -> None:
+    model, modality = get_cadrille_settings(job)
+    if not model and not modality:
+        return
+    parts = []
+    if model:
+        parts.append(f"Model: {model}")
+    if modality:
+        parts.append(f"Input modality: {modality}")
+    st.markdown("**Cadrille settings**")
+    st.caption(" | ".join(parts))
+
+
 def elapsed_seconds(job: dict[str, Any]) -> float | None:
     started_at = job.get("started_at") or job.get("created_at")
     if started_at is None:
@@ -339,6 +373,8 @@ def show_completed_result(job: dict[str, Any]) -> None:
     st.subheader("Results")
     st.caption("Processing is finished. The generated files have been saved to the paths below.")
 
+    render_cadrille_settings(job)
+
     if output_root:
         st.markdown("**Saved output folder**")
         st.code(output_root)
@@ -405,6 +441,12 @@ if not active_job_id:
         horizontal=True,
         help="Choose which Cadrille checkpoint to use for reconstruction.",
     )
+    cadrille_mode = st.radio(
+        "Cadrille input modality",
+        options=["PC", "IMG"],
+        horizontal=True,
+        help="Choose which Cadrille modality to run on the SAM3D mesh input.",
+    )
 
     if image_file and mask_file:
         preview_col1, preview_col2 = st.columns(2)
@@ -422,7 +464,7 @@ if not active_job_id:
             try:
                 result = api_post_multipart(
                     "/jobs/simple-reconstruct",
-                    data={"cadrille_checkpoint_preset": checkpoint_preset},
+                    data={"cadrille_checkpoint_preset": checkpoint_preset, "cadrille_mode": cadrille_mode},
                     files={
                         "image": (
                             image_file.name or "image.png",
@@ -459,6 +501,7 @@ else:
 
             progress_placeholder.progress(stage_progress(job))
             with pipeline_placeholder.container():
+                render_cadrille_settings(job)
                 render_pipeline(job)
 
             if job.get("status") in TERMINAL_STATUSES:

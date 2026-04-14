@@ -121,8 +121,11 @@ class JobSummary(BaseModel):
     log_path: str
     stage: Optional[str] = None
     stage_label: Optional[str] = None
+    started_at: Optional[float] = None
     ended_at: Optional[float] = None
+    stage_timings: Optional[dict[str, Any]] = None
     result_paths: Optional[dict[str, Any]] = None
+    request: Optional[dict[str, Any]] = None
     error: Optional[str] = None
 
 
@@ -207,6 +210,7 @@ async def create_simple_reconstruct(
     image: UploadFile = File(...),
     mask: UploadFile = File(...),
     cadrille_checkpoint_preset: Literal["SFT", "RL"] = Form(DEFAULT_SIMPLE_CADRILLE_CHECKPOINT_PRESET),
+    cadrille_mode: Literal["PC", "IMG"] = Form(DEFAULT_SIMPLE_CADRILLE_MODE.upper()),
 ) -> JobSummary:
     image_name = sanitize_upload_name(image.filename or "input.png")
     mask_name = sanitize_upload_name(mask.filename or "mask.png")
@@ -244,6 +248,7 @@ async def create_simple_reconstruct(
     upload_file_to_remote(ssh_host, local_mask_path, remote_mask_path)
 
     selected_checkpoint = SIMPLE_CADRILLE_CHECKPOINT_PRESETS[cadrille_checkpoint_preset]
+    selected_mode = cadrille_mode.lower()
 
     command = [
         DEFAULT_REMOTE_PYTHON,
@@ -271,7 +276,7 @@ async def create_simple_reconstruct(
         "--cadrille-processor-path",
         DEFAULT_CADRILLE_PROCESSOR_PATH,
         "--cadrille-mode",
-        DEFAULT_SIMPLE_CADRILLE_MODE,
+        selected_mode,
         "--cadrille-n-samples",
         str(DEFAULT_SIMPLE_CADRILLE_N_SAMPLES),
         "--cadrille-batch-size",
@@ -314,6 +319,8 @@ async def create_simple_reconstruct(
             "mask_filename": mask_name,
             "cadrille_checkpoint_preset": cadrille_checkpoint_preset,
             "cadrille_checkpoint": selected_checkpoint,
+            "cadrille_mode": selected_mode,
+            "cadrille_mode_label": selected_mode.upper(),
         },
     }
     save_job(job)
