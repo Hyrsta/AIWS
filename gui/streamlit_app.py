@@ -163,6 +163,22 @@ def format_duration(seconds: float | None) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+def format_duration_words(seconds: float | None) -> str:
+    if seconds is None:
+        return "--"
+    total_seconds = max(int(round(seconds)), 0)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours} hour" + ("s" if hours != 1 else ""))
+    if minutes:
+        parts.append(f"{minutes} minute" + ("s" if minutes != 1 else ""))
+    if secs or not parts:
+        parts.append(f"{secs} second" + ("s" if secs != 1 else ""))
+    return " ".join(parts)
+
+
 def format_output_path(path: str | None, output_root: str | None) -> str | None:
     if not path:
         return None
@@ -371,7 +387,7 @@ else:
         stage_label = job.get("stage_label") or job.get("stage") or "Queued"
         elapsed = elapsed_seconds(job)
         if job.get("status") == "completed":
-            st.caption(f"Current stage: {stage_label} | Processing time: {format_duration(elapsed)}")
+            st.caption(f"Current stage: {stage_label} | Processing time: {format_duration_words(elapsed)}")
         else:
             st.caption(f"Current stage: {stage_label} | Elapsed time: {format_duration(elapsed)}")
 
