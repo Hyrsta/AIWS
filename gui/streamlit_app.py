@@ -445,10 +445,6 @@ def show_completed_result(job: dict[str, Any]) -> None:
 
     render_cadrille_settings(job)
 
-    if output_root:
-        st.markdown("**Saved output folder**")
-        st.code(output_root)
-
     if sam3d_mesh or cadrille_mesh:
         st.markdown("**Mesh previews**")
         preview_col1, preview_col2 = st.columns(2)
@@ -456,6 +452,10 @@ def show_completed_result(job: dict[str, Any]) -> None:
             show_mesh_preview(job, title="SAM3D reconstructed STL mesh", path=sam3d_mesh, color="#35b779")
         with preview_col2:
             show_mesh_preview(job, title="Cadrille selected STL mesh", path=cadrille_mesh, color="#4f8bf9")
+
+    if output_root:
+        st.markdown("**Saved output folder**")
+        st.code(output_root)
 
     st.markdown("**SAM3D outputs**")
     for label, path in [
