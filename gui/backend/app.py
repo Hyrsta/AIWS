@@ -859,9 +859,6 @@ def read_remote_tail(ssh_host: str, log_path: str, tail_lines: int) -> str:
 
 
 def refresh_job(job: dict[str, Any]) -> dict[str, Any]:
-    if job.get("status") in {"completed", "failed", "terminated"}:
-        return job
-
     status_path = job.get("status_path")
     remote_pid = int(job.get("remote_pid") or 0)
     script = f"""#!/usr/bin/env bash
@@ -883,7 +880,7 @@ fi
         except json.JSONDecodeError:
             remote_state = {"status": "unknown"}
         job["status"] = remote_state.get("status", job["status"])
-        for key in ("exit_code", "ended_at", "stage", "stage_label", "result_paths", "error"):
+        for key in ("exit_code", "ended_at", "started_at", "stage", "stage_label", "result_paths", "error"):
             if key in remote_state:
                 job[key] = remote_state[key]
         save_job(job)

@@ -153,14 +153,14 @@ def format_duration(seconds: float | None) -> str:
 
 
 def elapsed_seconds(job: dict[str, Any]) -> float | None:
-    created_at = job.get("created_at")
-    if created_at is None:
+    started_at = job.get("started_at") or job.get("created_at")
+    if started_at is None:
         return None
-    if job.get("status") in {"completed", "failed", "terminated"} and job.get("ended_at") is not None:
-        end_time = job.get("ended_at")
+    if job.get("status") in {"completed", "failed", "terminated"}:
+        end_time = job.get("ended_at") or job.get("updated_at") or started_at
     else:
         end_time = time.time()
-    return max(float(end_time) - float(created_at), 0.0)
+    return max(float(end_time) - float(started_at), 0.0)
 
 
 def show_mesh_preview(job: dict[str, Any], *, title: str, path: str | None, color: str) -> None:
@@ -348,7 +348,7 @@ else:
         stage_label = job.get("stage_label") or job.get("stage") or "Queued"
         elapsed = elapsed_seconds(job)
         if job.get("status") == "completed":
-            st.caption(f"Current stage: {stage_label} | Generation ready in {format_duration(elapsed)}")
+            st.caption(f"Current stage: {stage_label} | Processing time: {format_duration(elapsed)}")
         else:
             st.caption(f"Current stage: {stage_label} | Elapsed time: {format_duration(elapsed)}")
 
