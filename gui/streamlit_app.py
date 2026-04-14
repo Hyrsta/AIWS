@@ -273,34 +273,79 @@ def stage_duration_seconds(job: dict[str, Any], stage_label: str, stage_timings:
     return max(float(ended_at) - float(started_at), 0.0)
 
 
+def _pipeline_stage_style(job: dict[str, Any], stage_label: str, stage_timings: dict[str, dict[str, float | None]]) -> tuple[str, str, str, str]:
+    current_label = job.get("stage_label")
+    status = job.get("status")
+    entry = stage_timings.get(stage_label) or {}
+    if status == "failed" and stage_label == current_label:
+        return "❌", "#fff1f2", "#ef4444", "Failed"
+    if entry.get("ended_at") is not None:
+        return "✅", "#f0fdf4", "#22c55e", "Done"
+    if stage_label == current_label and status not in TERMINAL_STATUSES:
+        return "🔄", "#eff6ff", "#3b82f6", "Running"
+    return "⏳", "#f8fafc", "#cbd5e1", "Waiting"
+
+
+def _pipeline_stage_title(stage_label: str) -> str:
+    return stage_label.replace(": ", "<br>")
+
+
 def render_pipeline(job: dict[str, Any]) -> None:
     stage_timings = sync_pipeline_timings(job)
     current_label = job.get("stage_label")
     status = job.get("status")
 
     st.markdown("**Pipeline**")
-    for stage_label in PIPELINE_STAGES:
-        entry = stage_timings.get(stage_label) or {}
+    column_spec = []
+    for index in range(len(PIPELINE_STAGES)):
+        column_spec.append(4)
+        if index < len(PIPELINE_STAGES) - 1:
+            column_spec.append(1)
+    columns = st.columns(column_spec)
+
+    for index, stage_label in enumerate(PIPELINE_STAGES):
+        stage_col = columns[index * 2]
+        icon, bg_color, border_color, state_text = _pipeline_stage_style(job, stage_label, stage_timings)
         duration_seconds = stage_duration_seconds(job, stage_label, stage_timings)
-        if status == "failed" and stage_label == current_label:
-            icon = "❌"
-        elif entry.get("ended_at") is not None:
-            icon = "✅"
-        elif stage_label == current_label and status not in TERMINAL_STATUSES:
-            icon = "🔄"
-        else:
-            icon = "⏳"
-        st.markdown(f"{icon} {stage_label}")
         if duration_seconds is not None:
             if stage_label == current_label and status not in TERMINAL_STATUSES:
-                st.caption(f"Elapsed time: {format_duration_words(duration_seconds)}")
+                time_text = f"Elapsed: {format_duration_words(duration_seconds)}"
             else:
-                st.caption(format_duration_words(duration_seconds))
+                time_text = format_duration_words(duration_seconds)
+        else:
+            time_text = state_text
+
+        stage_col.markdown(
+            f"""
+            <div style="
+                text-align:center;
+                padding:0.75rem 0.5rem;
+                min-height:130px;
+                border:1.5px solid {border_color};
+                border-radius:12px;
+                background:{bg_color};
+            ">
+                <div style="font-size:1.15rem; margin-bottom:0.25rem;">{icon}</div>
+                <div style="font-weight:600; line-height:1.35; margin-bottom:0.45rem;">{_pipeline_stage_title(stage_label)}</div>
+                <div style="font-size:0.82rem; color:#475569;">{time_text}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if index < len(PIPELINE_STAGES) - 1:
+            arrow_col = columns[index * 2 + 1]
+            connector = "→"
+            connector_color = "#3b82f6" if stage_label == current_label and status not in TERMINAL_STATUSES else "#94a3b8"
+            arrow_col.markdown(
+                f"<div style='text-align:center; padding-top:3rem; font-size:1.4rem; color:{connector_color};'>{connector}</div>",
+                unsafe_allow_html=True,
+            )
 
     total_elapsed = elapsed_seconds(job)
     if total_elapsed is not None:
         total_label = "Total processing time" if status in TERMINAL_STATUSES else "Total elapsed time"
-        st.markdown(f"**{total_label}:** {format_duration_words(total_elapsed)}")
+        st.caption(f"{total_label}: {format_duration_words(total_elapsed)}")
 
 
 def show_mesh_preview(job: dict[str, Any], *, title: str, path: str | None, color: str) -> None:
