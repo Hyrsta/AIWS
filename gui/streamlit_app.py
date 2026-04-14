@@ -326,7 +326,7 @@ def render_pipeline(job: dict[str, Any]) -> None:
                 background:{bg_color};
             ">
                 <div style="font-size:1.15rem; margin-bottom:0.25rem;">{icon}</div>
-                <div style="font-weight:600; line-height:1.35; margin-bottom:0.45rem;">{_pipeline_stage_title(stage_label)}</div>
+                <div style="font-weight:600; line-height:1.35; margin-bottom:0.45rem; color:#0f172a;">{_pipeline_stage_title(stage_label)}</div>
                 <div style="font-size:0.82rem; color:#475569;">{time_text}</div>
             </div>
             """,
