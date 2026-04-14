@@ -277,12 +277,15 @@ def _pipeline_stage_style(job: dict[str, Any], stage_label: str, stage_timings: 
     current_label = job.get("stage_label")
     status = job.get("status")
     entry = stage_timings.get(stage_label) or {}
+    has_any_timing = any((stage_timings.get(label) or {}).get("started_at") is not None for label in PIPELINE_STAGES)
     if status == "failed" and stage_label == current_label:
         return "❌", "#fff1f2", "#ef4444", "Failed"
     if entry.get("ended_at") is not None:
         return "✅", "#f0fdf4", "#22c55e", "Done"
     if stage_label == current_label and status not in TERMINAL_STATUSES:
         return "🔄", "#eff6ff", "#3b82f6", "Running"
+    if status == "completed" and not has_any_timing:
+        return "✅", "#f0fdf4", "#22c55e", "Done"
     return "⏳", "#f8fafc", "#cbd5e1", "Waiting"
 
 
@@ -312,22 +315,30 @@ def render_pipeline(job: dict[str, Any]) -> None:
                 time_text = f"Elapsed: {format_duration_words(duration_seconds)}"
             else:
                 time_text = format_duration_words(duration_seconds)
+        elif status == "completed":
+            time_text = "Completed"
         else:
             time_text = state_text
 
         stage_col.markdown(
             f"""
             <div style="
+                width:100%;
+                display:flex;
+                flex-direction:column;
+                justify-content:space-between;
+                align-items:center;
                 text-align:center;
+                box-sizing:border-box;
                 padding:0.75rem 0.5rem;
-                min-height:130px;
+                height:150px;
                 border:1.5px solid {border_color};
                 border-radius:12px;
                 background:{bg_color};
             ">
-                <div style="font-size:1.15rem; margin-bottom:0.25rem;">{icon}</div>
-                <div style="font-weight:600; line-height:1.35; margin-bottom:0.45rem; color:#0f172a;">{_pipeline_stage_title(stage_label)}</div>
-                <div style="font-size:0.82rem; color:#475569;">{time_text}</div>
+                <div style="font-size:1.15rem; margin-bottom:0.25rem; flex:0 0 auto;">{icon}</div>
+                <div style="font-weight:600; line-height:1.35; margin-bottom:0.45rem; color:#0f172a; min-height:58px; display:flex; align-items:center; justify-content:center;">{_pipeline_stage_title(stage_label)}</div>
+                <div style="font-size:0.82rem; color:#475569; min-height:36px; display:flex; align-items:center; justify-content:center;">{time_text}</div>
             </div>
             """,
             unsafe_allow_html=True,
