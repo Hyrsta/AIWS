@@ -163,6 +163,17 @@ def format_duration(seconds: float | None) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+def format_output_path(path: str | None, output_root: str | None) -> str | None:
+    if not path:
+        return None
+    if not output_root:
+        return path
+    try:
+        return str(Path(path).resolve().relative_to(Path(output_root).resolve()))
+    except Exception:
+        return path
+
+
 def elapsed_seconds(job: dict[str, Any]) -> float | None:
     started_at = job.get("started_at") or job.get("created_at")
     if started_at is None:
@@ -261,9 +272,10 @@ def show_completed_result(job: dict[str, Any]) -> None:
         ("SAM3D GLB", result_paths.get("sam3d_mesh_glb")),
         ("SAM3D STL", result_paths.get("sam3d_mesh_stl")),
     ]:
-        if path:
+        display_path = format_output_path(path, output_root)
+        if display_path:
             st.markdown(f"**{label}**")
-            st.code(path)
+            st.code(display_path)
 
     st.markdown("**Cadrille outputs**")
     for label, path in [
@@ -271,9 +283,10 @@ def show_completed_result(job: dict[str, Any]) -> None:
         ("Selected STL", result_paths.get("selected_mesh")),
         ("Selected Python", result_paths.get("selected_py")),
     ]:
-        if path:
+        display_path = format_output_path(path, output_root)
+        if display_path:
             st.markdown(f"**{label}**")
-            st.code(path)
+            st.code(display_path)
 
 
 st.set_page_config(page_title="AIWS Reconstruction GUI", page_icon="🧩", layout="centered")
