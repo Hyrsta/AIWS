@@ -21,6 +21,190 @@ PIPELINE_STAGES = [
 TERMINAL_STATUSES = {"completed", "failed", "terminated"}
 
 
+def inject_custom_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        [data-testid="stAppViewContainer"],
+        [data-testid="stHeader"],
+        .stApp {
+            background:
+                radial-gradient(circle at top, rgba(37, 99, 235, 0.18), transparent 28%),
+                linear-gradient(180deg, #0f172a 0%, #020617 58%, #020617 100%);
+            color: #e2e8f0;
+        }
+
+        .block-container {
+            max-width: 1320px;
+            padding-top: 2rem;
+            padding-bottom: 2.75rem;
+        }
+
+        h1 {
+            color: #f8fafc;
+            font-size: 2.35rem;
+            line-height: 1.08;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+
+        h2, h3 {
+            color: #f8fafc;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        p, label, [data-testid="stMarkdownContainer"] p {
+            color: #cbd5e1;
+        }
+
+        .stCaption,
+        [data-testid="stCaptionContainer"] {
+            color: #94a3b8;
+        }
+
+        [data-testid="stFileUploader"] section {
+            border: 1px dashed #334155;
+            background: rgba(15, 23, 42, 0.78);
+            border-radius: 18px;
+        }
+
+        [data-testid="stFileUploader"] small {
+            color: #94a3b8;
+        }
+
+        [data-testid="stRadio"] {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid #1e293b;
+            border-radius: 16px;
+            padding: 0.75rem 0.9rem;
+        }
+
+        .stButton > button {
+            width: 100%;
+            min-height: 3rem;
+            border-radius: 14px;
+            border: none;
+            background: linear-gradient(135deg, #f97316, #ea580c);
+            color: #ffffff;
+            font-weight: 700;
+            box-shadow: 0 14px 30px rgba(249, 115, 22, 0.24);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            cursor: pointer;
+        }
+
+        .stButton > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 18px 34px rgba(249, 115, 22, 0.28);
+        }
+
+        .stButton > button:focus {
+            outline: 2px solid #93c5fd;
+            outline-offset: 2px;
+        }
+
+        .stButton > button:disabled {
+            background: #334155;
+            color: #94a3b8;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        [data-testid="stProgressBar"] > div > div > div > div {
+            background: linear-gradient(90deg, #2563eb, #38bdf8);
+        }
+
+        [data-testid="stCodeBlock"],
+        pre {
+            border-radius: 16px !important;
+            border: 1px solid #1e293b;
+            background: rgba(15, 23, 42, 0.92) !important;
+        }
+
+        [data-testid="stImage"] img {
+            border-radius: 18px;
+            border: 1px solid #1e293b;
+        }
+
+        [data-testid="stPlotlyChart"] > div {
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid #1e293b;
+            background: rgba(2, 6, 23, 0.66);
+        }
+
+        hr {
+            border-color: #1e293b;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_intro_banner() -> None:
+    st.markdown(
+        """
+        <div style="
+            padding:1.4rem 1.5rem;
+            border:1px solid #1e293b;
+            border-radius:22px;
+            background:linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.76));
+            box-shadow:0 20px 45px rgba(2, 6, 23, 0.35);
+            margin-bottom:1.25rem;
+        ">
+            <div style="font-size:0.78rem; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#60a5fa; margin-bottom:0.7rem;">
+                AIWS offline pipeline
+            </div>
+            <div style="font-size:2rem; line-height:1.12; font-weight:800; color:#f8fafc; margin-bottom:0.45rem;">
+                CAD reconstruction from a photo and mask
+            </div>
+            <div style="font-size:1rem; line-height:1.65; color:#cbd5e1; max-width:780px;">
+                Run SAM3D mesh generation and Cadrille CAD selection in one cleaner workspace, with live pipeline tracking and immediate mesh preview once the job finishes.
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:0.55rem; margin-top:0.95rem;">
+                <span style="padding:0.36rem 0.78rem; border-radius:999px; border:1px solid rgba(59, 130, 246, 0.28); background:rgba(37, 99, 235, 0.12); color:#bfdbfe; font-size:0.84rem; font-weight:600;">Single reconstruction flow</span>
+                <span style="padding:0.36rem 0.78rem; border-radius:999px; border:1px solid rgba(34, 197, 94, 0.28); background:rgba(22, 163, 74, 0.12); color:#bbf7d0; font-size:0.84rem; font-weight:600;">Live stage tracking</span>
+                <span style="padding:0.36rem 0.78rem; border-radius:999px; border:1px solid rgba(249, 115, 22, 0.28); background:rgba(249, 115, 22, 0.12); color:#fdba74; font-size:0.84rem; font-weight:600;">Immediate result preview</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_section_heading(title: str, subtitle: str | None = None) -> None:
+    subtitle_html = ""
+    if subtitle:
+        subtitle_html = f'<div style="font-size:0.96rem; color:#94a3b8; line-height:1.55; margin-top:0.18rem;">{subtitle}</div>'
+    st.markdown(
+        f"""
+        <div style="margin:0 0 0.85rem 0;">
+            <div style="font-size:1.12rem; font-weight:700; color:#f8fafc; line-height:1.3;">{title}</div>
+            {subtitle_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_output_group(title: str, entries: list[tuple[str, str | None]], output_root: str | None) -> None:
+    render_section_heading(title)
+    found_any = False
+    for label, path in entries:
+        display_path = format_output_path(path, output_root)
+        if display_path:
+            found_any = True
+            st.caption(label)
+            st.code(display_path)
+    if not found_any:
+        st.caption("No files available.")
+
+
 def api_get(endpoint: str, **params: Any) -> Any:
     response = requests.get(f"{BACKEND_URL}{endpoint}", params=params, timeout=30)
     response.raise_for_status()
@@ -198,17 +382,17 @@ def render_cadrille_settings(job: dict[str, Any]) -> None:
     badges = []
     if model:
         badges.append(
-            f'<span style="display:inline-block; padding:0.35rem 0.8rem; border-radius:999px; background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:0.98rem;">Model: {model}</span>'
+            f'<span style="display:inline-block; padding:0.42rem 0.88rem; border-radius:999px; border:1px solid rgba(59, 130, 246, 0.28); background:rgba(37, 99, 235, 0.14); color:#bfdbfe; font-weight:700; font-size:0.98rem;">Model: {model}</span>'
         )
     if modality:
         badges.append(
-            f'<span style="display:inline-block; padding:0.35rem 0.8rem; border-radius:999px; background:#dcfce7; color:#166534; font-weight:700; font-size:0.98rem;">Input modality: {modality}</span>'
+            f'<span style="display:inline-block; padding:0.42rem 0.88rem; border-radius:999px; border:1px solid rgba(34, 197, 94, 0.28); background:rgba(22, 163, 74, 0.14); color:#bbf7d0; font-weight:700; font-size:0.98rem;">Input modality: {modality}</span>'
         )
 
     badge_html = "".join(badges)
-    st.markdown("**Cadrille settings**")
+    render_section_heading("Cadrille settings")
     st.markdown(
-        f'<div style="display:flex; flex-wrap:wrap; gap:0.55rem; align-items:center; margin:0.2rem 0 0.45rem 0;">{badge_html}</div>',
+        f'<div style="display:flex; flex-wrap:wrap; gap:0.6rem; align-items:center; margin:0.1rem 0 0.8rem 0;">{badge_html}</div>',
         unsafe_allow_html=True,
     )
 
@@ -283,20 +467,20 @@ def stage_duration_seconds(job: dict[str, Any], stage_label: str, stage_timings:
     return max(float(ended_at) - float(started_at), 0.0)
 
 
-def _pipeline_stage_style(job: dict[str, Any], stage_label: str, stage_timings: dict[str, dict[str, float | None]]) -> tuple[str, str, str, str]:
+def _pipeline_stage_style(job: dict[str, Any], stage_label: str, stage_timings: dict[str, dict[str, float | None]]) -> tuple[str, str, str, str, str]:
     current_label = job.get("stage_label")
     status = job.get("status")
     entry = stage_timings.get(stage_label) or {}
     has_any_timing = any((stage_timings.get(label) or {}).get("started_at") is not None for label in PIPELINE_STAGES)
     if status == "failed" and stage_label == current_label:
-        return "❌", "#fff1f2", "#ef4444", "Failed"
+        return "Failed", "rgba(127, 29, 29, 0.35)", "#ef4444", "Failed", "#fecaca"
     if entry.get("ended_at") is not None:
-        return "✅", "#f0fdf4", "#22c55e", "Done"
+        return "Done", "rgba(20, 83, 45, 0.35)", "#22c55e", "Done", "#bbf7d0"
     if stage_label == current_label and status not in TERMINAL_STATUSES:
-        return "🔄", "#eff6ff", "#3b82f6", "Running"
+        return "Live", "rgba(30, 64, 175, 0.32)", "#3b82f6", "Running", "#bfdbfe"
     if status == "completed" and not has_any_timing:
-        return "✅", "#f0fdf4", "#22c55e", "Done"
-    return "⏳", "#f8fafc", "#cbd5e1", "Waiting"
+        return "Done", "rgba(20, 83, 45, 0.35)", "#22c55e", "Done", "#bbf7d0"
+    return "Waiting", "rgba(15, 23, 42, 0.78)", "#334155", "Waiting", "#cbd5e1"
 
 
 def _pipeline_stage_title(stage_label: str) -> str:
@@ -308,7 +492,7 @@ def render_pipeline(job: dict[str, Any]) -> None:
     current_label = job.get("stage_label")
     status = job.get("status")
 
-    st.markdown("**Pipeline**")
+    render_section_heading("Pipeline status", "Track each stage while the current job moves from SAM3D reconstruction to Cadrille CAD selection.")
     column_spec = []
     for index in range(len(PIPELINE_STAGES)):
         column_spec.append(4)
@@ -318,7 +502,7 @@ def render_pipeline(job: dict[str, Any]) -> None:
 
     for index, stage_label in enumerate(PIPELINE_STAGES):
         stage_col = columns[index * 2]
-        icon, bg_color, border_color, state_text = _pipeline_stage_style(job, stage_label, stage_timings)
+        badge_text, bg_color, border_color, state_text, badge_color = _pipeline_stage_style(job, stage_label, stage_timings)
         duration_seconds = stage_duration_seconds(job, stage_label, stage_timings)
         if duration_seconds is not None:
             if stage_label == current_label and status not in TERMINAL_STATUSES:
@@ -337,18 +521,22 @@ def render_pipeline(job: dict[str, Any]) -> None:
                 display:flex;
                 flex-direction:column;
                 justify-content:space-between;
-                align-items:center;
-                text-align:center;
+                align-items:flex-start;
+                text-align:left;
                 box-sizing:border-box;
-                padding:0.75rem 0.5rem;
-                height:150px;
+                padding:0.95rem 0.9rem;
+                height:168px;
                 border:1.5px solid {border_color};
-                border-radius:12px;
+                border-radius:18px;
                 background:{bg_color};
+                box-shadow:0 10px 24px rgba(2, 6, 23, 0.18);
             ">
-                <div style="font-size:1.15rem; margin-bottom:0.25rem; flex:0 0 auto;">{icon}</div>
-                <div style="font-weight:600; line-height:1.35; margin-bottom:0.45rem; color:#0f172a; min-height:58px; display:flex; align-items:center; justify-content:center;">{_pipeline_stage_title(stage_label)}</div>
-                <div style="font-size:0.82rem; color:#475569; min-height:36px; display:flex; align-items:center; justify-content:center;">{time_text}</div>
+                <div style="display:inline-flex; align-items:center; gap:0.45rem; padding:0.24rem 0.64rem; border-radius:999px; border:1px solid {border_color}; background:rgba(2, 6, 23, 0.18); color:{badge_color}; font-size:0.76rem; font-weight:700; margin-bottom:0.85rem;">
+                    <span style="width:0.48rem; height:0.48rem; border-radius:50%; background:{border_color}; display:inline-block;"></span>
+                    {badge_text}
+                </div>
+                <div style="font-weight:700; line-height:1.35; margin-bottom:0.5rem; color:#f8fafc; min-height:58px; display:flex; align-items:center;">{_pipeline_stage_title(stage_label)}</div>
+                <div style="font-size:0.84rem; color:#cbd5e1; min-height:36px; display:flex; align-items:center;">{time_text}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -357,9 +545,9 @@ def render_pipeline(job: dict[str, Any]) -> None:
         if index < len(PIPELINE_STAGES) - 1:
             arrow_col = columns[index * 2 + 1]
             connector = "→"
-            connector_color = "#3b82f6" if stage_label == current_label and status not in TERMINAL_STATUSES else "#94a3b8"
+            connector_color = "#60a5fa" if stage_label == current_label and status not in TERMINAL_STATUSES else "#475569"
             arrow_col.markdown(
-                f"<div style='text-align:center; padding-top:3rem; font-size:1.4rem; color:{connector_color};'>{connector}</div>",
+                f"<div style='text-align:center; padding-top:3.5rem; font-size:1.4rem; color:{connector_color};'>{connector}</div>",
                 unsafe_allow_html=True,
             )
 
@@ -423,13 +611,16 @@ def build_mesh_figure(payload: dict[str, Any], *, color: str = "#4f8bf9") -> go.
     )
     fig.update_layout(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        paper_bgcolor="rgba(2, 6, 23, 0)",
+        plot_bgcolor="rgba(2, 6, 23, 0)",
         scene={
             "aspectmode": "data",
+            "bgcolor": "#020617",
             "xaxis": {"visible": False},
             "yaxis": {"visible": False},
             "zaxis": {"visible": False},
         },
-        height=420,
+        height=440,
     )
     return fig
 
@@ -440,13 +631,12 @@ def show_completed_result(job: dict[str, Any]) -> None:
     sam3d_mesh = result_paths.get("sam3d_mesh_stl") or result_paths.get("sam3d_mesh_glb")
     cadrille_mesh = result_paths.get("selected_mesh")
 
-    st.subheader("Results")
-    st.caption("Processing is finished. The generated files have been saved to the paths below.")
+    render_section_heading("Results", "Processing finished. Review the preview meshes and exported files below.")
 
     render_cadrille_settings(job)
 
     if sam3d_mesh or cadrille_mesh:
-        st.markdown("**Mesh previews**")
+        render_section_heading("Mesh previews")
         preview_col1, preview_col2 = st.columns(2)
         with preview_col1:
             show_mesh_preview(job, title="SAM3D reconstructed STL mesh", path=sam3d_mesh, color="#35b779")
@@ -454,34 +644,34 @@ def show_completed_result(job: dict[str, Any]) -> None:
             show_mesh_preview(job, title="Cadrille selected STL mesh", path=cadrille_mesh, color="#4f8bf9")
 
     if output_root:
-        st.markdown("**Saved output folder**")
+        render_section_heading("Saved output folder")
         st.code(output_root)
 
-    st.markdown("**SAM3D outputs**")
-    for label, path in [
-        ("SAM3D GLB", result_paths.get("sam3d_mesh_glb")),
-        ("SAM3D STL", result_paths.get("sam3d_mesh_stl")),
-    ]:
-        display_path = format_output_path(path, output_root)
-        if display_path:
-            st.markdown(f"**{label}**")
-            st.code(display_path)
+    output_col1, output_col2 = st.columns(2)
+    with output_col1:
+        render_output_group(
+            "SAM3D outputs",
+            [
+                ("SAM3D GLB", result_paths.get("sam3d_mesh_glb")),
+                ("SAM3D STL", result_paths.get("sam3d_mesh_stl")),
+            ],
+            output_root,
+        )
+    with output_col2:
+        render_output_group(
+            "Cadrille outputs",
+            [
+                ("Selected STEP", result_paths.get("selected_brep")),
+                ("Selected STL", result_paths.get("selected_mesh")),
+                ("Selected Python", result_paths.get("selected_py")),
+            ],
+            output_root,
+        )
 
-    st.markdown("**Cadrille outputs**")
-    for label, path in [
-        ("Selected STEP", result_paths.get("selected_brep")),
-        ("Selected STL", result_paths.get("selected_mesh")),
-        ("Selected Python", result_paths.get("selected_py")),
-    ]:
-        display_path = format_output_path(path, output_root)
-        if display_path:
-            st.markdown(f"**{label}**")
-            st.code(display_path)
 
-
-st.set_page_config(page_title="AIWS offline pipeline CAD Reconstruction", page_icon="🧩", layout="centered")
-st.title("AIWS offline pipeline CAD Reconstruction")
-st.caption("Choose one photo and its mask, then start reconstruction.")
+st.set_page_config(page_title="AIWS offline pipeline CAD Reconstruction", page_icon="🧩", layout="wide")
+inject_custom_styles()
+render_intro_banner()
 
 try:
     api_get("/health")
@@ -497,69 +687,111 @@ if not active_job_id and not st.session_state.get("suppress_auto_resume"):
         st.session_state["active_job_id"] = active_job_id
 
 if not active_job_id:
-    image_file = st.file_uploader(
-        "Choose the photo to reconstruct",
-        type=["png", "jpg", "jpeg", "webp", "bmp"],
-    )
-    mask_file = st.file_uploader(
-        "Choose the corresponding mask",
-        type=["png", "jpg", "jpeg", "webp", "bmp"],
-    )
-    checkpoint_preset = st.radio(
-        "Cadrille checkpoint",
-        options=["RL", "SFT"],
-        horizontal=True,
-        help="Choose which Cadrille checkpoint to use for reconstruction.",
-    )
-    cadrille_mode = st.radio(
-        "Cadrille input modality",
-        options=["PC", "IMG"],
-        horizontal=True,
-        help="Choose which Cadrille modality to run on the SAM3D mesh input.",
-    )
+    input_col, preview_col = st.columns([0.95, 1.05], gap="large")
 
-    if image_file and mask_file:
-        preview_col1, preview_col2 = st.columns(2)
-        with preview_col1:
-            st.markdown("**Photo**")
-            st.image(image_file.getvalue(), use_column_width=True)
-        with preview_col2:
-            st.markdown("**Mask**")
-            st.image(mask_file.getvalue(), use_column_width=True)
+    with input_col:
+        render_section_heading("Start a new reconstruction", "Upload the required inputs, then choose the Cadrille settings for this run.")
+        image_file = st.file_uploader(
+            "Choose the photo to reconstruct",
+            type=["png", "jpg", "jpeg", "webp", "bmp"],
+        )
+        mask_file = st.file_uploader(
+            "Choose the corresponding mask",
+            type=["png", "jpg", "jpeg", "webp", "bmp"],
+        )
 
-    if st.button("Start reconstruction", type="primary", disabled=not (image_file and mask_file)):
-        if image_file is None or mask_file is None:
-            st.error("Please select both the photo and the mask again, then retry.")
+        settings_col1, settings_col2 = st.columns(2)
+        with settings_col1:
+            checkpoint_preset = st.radio(
+                "Cadrille checkpoint",
+                options=["RL", "SFT"],
+                horizontal=True,
+                help="Choose which Cadrille checkpoint to use for reconstruction.",
+            )
+        with settings_col2:
+            cadrille_mode = st.radio(
+                "Cadrille input modality",
+                options=["PC", "IMG"],
+                horizontal=True,
+                help="Choose which Cadrille modality to run on the SAM3D mesh input.",
+            )
+
+        if st.button("Start reconstruction", type="primary", disabled=not (image_file and mask_file)):
+            if image_file is None or mask_file is None:
+                st.error("Please select both the photo and the mask again, then retry.")
+            else:
+                try:
+                    result = api_post_multipart(
+                        "/jobs/simple-reconstruct",
+                        data={"cadrille_checkpoint_preset": checkpoint_preset, "cadrille_mode": cadrille_mode},
+                        files={
+                            "image": (
+                                image_file.name or "image.png",
+                                image_file.getvalue(),
+                                image_file.type or "application/octet-stream",
+                            ),
+                            "mask": (
+                                mask_file.name or "mask.png",
+                                mask_file.getvalue(),
+                                mask_file.type or "application/octet-stream",
+                            ),
+                        },
+                    )
+                    set_active_job_id(result["job_id"])
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover - UI only
+                    st.error(exc)
+
+    with preview_col:
+        render_section_heading("Input preview", "Double-check the uploaded image pair before sending the job to the pipeline.")
+        if image_file and mask_file:
+            preview_col1, preview_col2 = st.columns(2)
+            with preview_col1:
+                st.caption("Photo")
+                st.image(image_file.getvalue(), use_column_width=True)
+            with preview_col2:
+                st.caption("Mask")
+                st.image(mask_file.getvalue(), use_column_width=True)
         else:
-            try:
-                result = api_post_multipart(
-                    "/jobs/simple-reconstruct",
-                    data={"cadrille_checkpoint_preset": checkpoint_preset, "cadrille_mode": cadrille_mode},
-                    files={
-                        "image": (
-                            image_file.name or "image.png",
-                            image_file.getvalue(),
-                            image_file.type or "application/octet-stream",
-                        ),
-                        "mask": (
-                            mask_file.name or "mask.png",
-                            mask_file.getvalue(),
-                            mask_file.type or "application/octet-stream",
-                        ),
-                    },
-                )
-                set_active_job_id(result["job_id"])
-                st.rerun()
-            except Exception as exc:  # pragma: no cover - UI only
-                st.error(exc)
+            st.markdown(
+                """
+                <div style="
+                    min-height:320px;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    text-align:center;
+                    padding:1.5rem;
+                    border:1px solid #1e293b;
+                    border-radius:20px;
+                    background:rgba(15, 23, 42, 0.6);
+                    color:#94a3b8;
+                    line-height:1.65;
+                ">
+                    Upload both files to see a side-by-side preview here before starting the reconstruction.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 else:
     try:
+        status_placeholder = st.empty()
         progress_placeholder = st.empty()
         pipeline_placeholder = st.empty()
         refresh_placeholder = st.empty()
 
         while True:
             job = api_get(f"/jobs/{active_job_id}")
+            message_level, message_text = stage_message(job)
+
+            with status_placeholder.container():
+                render_section_heading("Live job status", "The page refreshes automatically while this reconstruction is in progress.")
+                if message_level == "success":
+                    st.success(message_text)
+                elif message_level == "error":
+                    st.error(message_text)
+                else:
+                    st.info(message_text)
 
             progress_placeholder.progress(stage_progress(job))
             with pipeline_placeholder.container():
