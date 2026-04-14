@@ -108,9 +108,9 @@ def stage_message(job: dict[str, Any]) -> tuple[str, str]:
     if status == "failed":
         return "error", "Reconstruction failed"
     if stage == "sam3d":
-        return "info", "Processing SAM3D..."
+        return "info", "Generating SAM3D mesh..."
     if stage == "cadrille":
-        return "info", "Processing Cadrille..."
+        return "info", "Generating Cadrille result..."
     return "info", "Queued..."
 
 
@@ -141,7 +141,51 @@ def enable_auto_refresh(interval_ms: int = AUTO_REFRESH_MS) -> None:
     )
 
 
-def build_mesh_figure(payload: dict[str, Any]) -> go.Figure:
+def format_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "--"
+    total_seconds = max(int(round(seconds)), 0)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def elapsed_seconds(job: dict[str, Any]) -> float | None:
+    created_at = job.get("created_at")
+    if created_at is None:
+        return None
+    if job.get("status") in {"completed", "failed", "terminated"} and job.get("ended_at") is not None:
+        end_time = job.get("ended_at")
+    else:
+        end_time = time.time()
+    return max(float(end_time) - float(created_at), 0.0)
+
+
+def show_mesh_preview(job: dict[str, Any], *, title: str, path: str | None, color: str) -> None:
+    st.markdown(f"**{title}**")
+    if not path:
+        st.info("Preview unavailable: mesh file not found.")
+        return
+    try:
+        mesh_payload = api_get("/preview/mesh", ssh_host=job.get("ssh_host", "local"), path=path, max_faces=12000)
+        st.plotly_chart(
+            build_mesh_figure(mesh_payload, color=color),
+            config={"displaylogo": False},
+            use_container_width=True,
+        )
+        st.caption(
+            f"{mesh_payload.get('vertex_count')} vertices, "
+            f"{mesh_payload.get('face_count')} faces "
+            f"(from {mesh_payload.get('original_face_count')} original faces)."
+        )
+        st.code(path)
+    except Exception as exc:
+        st.info(f"Preview unavailable: {exc}")
+
+
+def build_mesh_figure(payload: dict[str, Any], *, color: str = "#4f8bf9") -> go.Figure:
     vertices = payload.get("vertices") or []
     faces = payload.get("faces") or []
     x = [vertex[0] for vertex in vertices]
@@ -160,7 +204,7 @@ def build_mesh_figure(payload: dict[str, Any]) -> go.Figure:
                 i=i,
                 j=j,
                 k=k,
-                color="#4f8bf9",
+                color=color,
                 opacity=1.0,
                 flatshading=True,
                 lighting={"ambient": 0.6, "diffuse": 0.8, "roughness": 0.9, "specular": 0.1},
@@ -183,7 +227,8 @@ def build_mesh_figure(payload: dict[str, Any]) -> go.Figure:
 def show_completed_result(job: dict[str, Any]) -> None:
     result_paths = job.get("result_paths") or {}
     output_root = result_paths.get("job_root") or job.get("output_root")
-    selected_mesh = result_paths.get("selected_mesh")
+    sam3d_mesh = result_paths.get("sam3d_mesh_stl") or result_paths.get("sam3d_mesh_glb")
+    cadrille_mesh = result_paths.get("selected_mesh")
 
     st.subheader("Results")
     st.caption("Processing is finished. The generated files have been saved to the paths below.")
@@ -192,30 +237,30 @@ def show_completed_result(job: dict[str, Any]) -> None:
         st.markdown("**Saved output folder**")
         st.code(output_root)
 
-    if selected_mesh:
-        try:
-            mesh_payload = api_get("/preview/mesh", ssh_host=job.get("ssh_host", "local"), path=selected_mesh, max_faces=12000)
-            st.markdown("**Selected mesh preview**")
-            st.plotly_chart(build_mesh_figure(mesh_payload), config={"displaylogo": False}, use_container_width=True)
-            st.caption(
-                f"Preview mesh: {mesh_payload.get('vertex_count')} vertices, "
-                f"{mesh_payload.get('face_count')} faces "
-                f"(from {mesh_payload.get('original_face_count')} original faces)."
-            )
-        except Exception as exc:
-            st.info(f"Mesh preview unavailable: {exc}")
+    if sam3d_mesh or cadrille_mesh:
+        st.markdown("**Mesh previews**")
+        preview_col1, preview_col2 = st.columns(2)
+        with preview_col1:
+            show_mesh_preview(job, title="SAM3D reconstructed mesh", path=sam3d_mesh, color="#35b779")
+        with preview_col2:
+            show_mesh_preview(job, title="Cadrille selected mesh", path=cadrille_mesh, color="#4f8bf9")
 
-    display_rows = [
+    st.markdown("**SAM3D outputs**")
+    for label, path in [
+        ("SAM3D GLB", result_paths.get("sam3d_mesh_glb")),
+        ("SAM3D STL", result_paths.get("sam3d_mesh_stl")),
+    ]:
+        if path:
+            st.markdown(f"**{label}**")
+            st.code(path)
+
+    st.markdown("**Cadrille outputs**")
+    for label, path in [
         ("Selected STEP", result_paths.get("selected_brep")),
         ("Selected STL", result_paths.get("selected_mesh")),
         ("Selected Python", result_paths.get("selected_py")),
-        ("SAM3D GLB", result_paths.get("sam3d_mesh_glb")),
-        ("SAM3D STL", result_paths.get("sam3d_mesh_stl")),
         ("Cadrille output folder", result_paths.get("cadrille_output_root")),
-    ]
-
-    st.markdown("**Saved files**")
-    for label, path in display_rows:
+    ]:
         if path:
             st.markdown(f"**{label}**")
             st.code(path)
@@ -301,7 +346,11 @@ else:
 
         st.progress(stage_progress(job))
         stage_label = job.get("stage_label") or job.get("stage") or "Queued"
-        st.caption(f"Current stage: {stage_label}")
+        elapsed = elapsed_seconds(job)
+        if job.get("status") == "completed":
+            st.caption(f"Current stage: {stage_label} | Generation ready in {format_duration(elapsed)}")
+        else:
+            st.caption(f"Current stage: {stage_label} | Elapsed time: {format_duration(elapsed)}")
 
         if job.get("status") not in {"completed", "failed", "terminated"}:
             enable_auto_refresh()

@@ -133,7 +133,7 @@ def main() -> None:
 
     current_stage = "sam3d"
     try:
-        write_status(status_path, status="running", stage="sam3d", stage_label="Processing SAM3D")
+        write_status(status_path, status="running", stage="sam3d", stage_label="SAM3D: Loading checkpoints")
         job_root.mkdir(parents=True, exist_ok=True)
 
         os.environ.setdefault("CONDA_PREFIX", str(Path(sys.executable).resolve().parents[1]))
@@ -174,6 +174,8 @@ def main() -> None:
         stl_path = sample_out_dir / "mesh.stl"
         meta_path = sample_out_dir / "meta.json"
         results_path = sam3d_output_root / "results.jsonl"
+
+        write_status(status_path, status="running", stage="sam3d", stage_label="SAM3D: Generating mesh")
 
         started_at = time.time()
         if torch.cuda.is_available():
@@ -247,7 +249,7 @@ def main() -> None:
         append_jsonl(results_path, record)
 
         current_stage = "cadrille"
-        write_status(status_path, status="running", stage="cadrille", stage_label="Processing Cadrille")
+        write_status(status_path, status="running", stage="cadrille", stage_label="Cadrille: Preparing input")
 
         ensure_clean_dir(cadrille_output_root, force=True, dry_run=False, label="cadrille-output-root")
         bridge_root.mkdir(parents=True, exist_ok=True)
@@ -261,6 +263,8 @@ def main() -> None:
         write_manifest_jsonl(manifest_jsonl, prepared_rows, dry_run=False)
 
         runner_script = repo_root / "scripts" / "run_cadrille_on_split.py"
+        write_status(status_path, status="running", stage="cadrille", stage_label="Cadrille: Generating CAD result")
+
         cmd = [
             sys.executable,
             str(runner_script),
