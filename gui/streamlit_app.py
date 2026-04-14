@@ -381,12 +381,16 @@ def show_mesh_preview(job: dict[str, Any], *, title: str, path: str | None, colo
             config={"displaylogo": False},
             use_container_width=True,
         )
-        st.caption(
-            f"Preview uses a simplified display mesh: {mesh_payload.get('vertex_count')} vertices, "
-            f"{mesh_payload.get('face_count')} faces "
-            f"(from {mesh_payload.get('original_face_count')} original faces)."
-        )
-        st.code(path)
+        vertex_count = mesh_payload.get("vertex_count")
+        face_count = mesh_payload.get("face_count")
+        original_face_count = mesh_payload.get("original_face_count")
+        if original_face_count and face_count and int(face_count) < int(original_face_count):
+            st.caption(
+                f"Preview uses a simplified display mesh: {vertex_count} vertices, {face_count} faces "
+                f"(from {original_face_count} original faces)."
+            )
+        else:
+            st.caption(f"Preview mesh: {vertex_count} vertices, {face_count} faces.")
     except Exception as exc:
         st.info(f"Preview unavailable: {exc}")
 
