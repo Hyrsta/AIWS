@@ -114,10 +114,6 @@ def inject_custom_styles() -> None:
             cursor: not-allowed;
         }
 
-        [data-testid="stProgressBar"] > div > div > div > div {
-            background: linear-gradient(90deg, #2563eb, #38bdf8);
-        }
-
         [data-testid="stCodeBlock"],
         pre {
             border-radius: 16px !important;
@@ -162,9 +158,6 @@ def render_intro_banner() -> None:
             </div>
             <div style="font-size:2rem; line-height:1.12; font-weight:800; color:#f8fafc; margin-bottom:0.45rem;">
                 CAD reconstruction from a photo and mask
-            </div>
-            <div style="font-size:1rem; line-height:1.65; color:#cbd5e1; max-width:780px;">
-                Run SAM3D mesh generation and Cadrille CAD selection in one cleaner workspace, with live pipeline tracking and immediate mesh preview once the job finishes.
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:0.55rem; margin-top:0.95rem;">
                 <span style="padding:0.36rem 0.78rem; border-radius:999px; border:1px solid rgba(59, 130, 246, 0.28); background:rgba(37, 99, 235, 0.12); color:#bfdbfe; font-size:0.84rem; font-weight:600;">Single reconstruction flow</span>
@@ -776,7 +769,6 @@ if not active_job_id:
 else:
     try:
         status_placeholder = st.empty()
-        progress_placeholder = st.empty()
         pipeline_placeholder = st.empty()
         refresh_placeholder = st.empty()
 
@@ -793,7 +785,6 @@ else:
                 else:
                     st.info(message_text)
 
-            progress_placeholder.progress(stage_progress(job))
             with pipeline_placeholder.container():
                 render_cadrille_settings(job)
                 render_pipeline(job)
