@@ -475,8 +475,8 @@ def show_completed_result(job: dict[str, Any]) -> None:
             st.code(display_path)
 
 
-st.set_page_config(page_title="AIWS Reconstruction GUI", page_icon="🧩", layout="centered")
-st.title("AIWS Reconstruction GUI")
+st.set_page_config(page_title="AIWS offline pipeline CAD Reconstruction", page_icon="🧩", layout="centered")
+st.title("AIWS offline pipeline CAD Reconstruction")
 st.caption("Choose one photo and its mask, then start reconstruction.")
 
 try:
