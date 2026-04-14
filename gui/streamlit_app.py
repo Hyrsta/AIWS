@@ -540,20 +540,12 @@ if not active_job_id:
                 st.error(exc)
 else:
     try:
-        message_placeholder = st.empty()
         progress_placeholder = st.empty()
         pipeline_placeholder = st.empty()
         refresh_placeholder = st.empty()
 
         while True:
             job = api_get(f"/jobs/{active_job_id}")
-            level, message = stage_message(job)
-            if level == "success":
-                message_placeholder.success(message)
-            elif level == "error":
-                message_placeholder.error(message)
-            else:
-                message_placeholder.info(message)
 
             progress_placeholder.progress(stage_progress(job))
             with pipeline_placeholder.container():
