@@ -7,11 +7,10 @@ from typing import Any
 import plotly.graph_objects as go
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 BACKEND_URL = os.environ.get("AIWS_GUI_BACKEND", "http://127.0.0.1:8000")
-AUTO_REFRESH_MS = 3000
+POLL_INTERVAL_SEC = 1.0
 
 
 def api_get(endpoint: str, **params: Any) -> Any:
@@ -126,30 +125,6 @@ def stage_progress(job: dict[str, Any]) -> float:
     if stage == "cadrille":
         return 0.8
     return 0.1
-
-
-def enable_auto_refresh(interval_ms: int = AUTO_REFRESH_MS) -> None:
-    components.html(
-        f"""
-        <script>
-        const sendMessage = (type, data = {{}}) => {{
-            window.parent.postMessage({{
-                isStreamlitMessage: true,
-                type,
-                ...data,
-            }}, "*");
-        }};
-
-        sendMessage("streamlit:componentReady", {{ apiVersion: 1 }});
-        sendMessage("streamlit:setFrameHeight", {{ height: 0 }});
-
-        window.setTimeout(function () {{
-            sendMessage("streamlit:setComponentValue", {{ value: Date.now() }});
-        }}, {interval_ms});
-        </script>
-        """,
-        height=0,
-    )
 
 
 def format_duration(seconds: float | None) -> str:
@@ -374,26 +349,35 @@ if not active_job_id:
                 st.error(exc)
 else:
     try:
-        job = api_get(f"/jobs/{active_job_id}")
-        level, message = stage_message(job)
-        if level == "success":
-            st.success(message)
-        elif level == "error":
-            st.error(message)
-        else:
-            st.info(message)
+        message_placeholder = st.empty()
+        progress_placeholder = st.empty()
+        timing_placeholder = st.empty()
+        refresh_placeholder = st.empty()
 
-        st.progress(stage_progress(job))
-        stage_label = job.get("stage_label") or job.get("stage") or "Queued"
-        elapsed = elapsed_seconds(job)
-        if job.get("status") == "completed":
-            st.caption(f"Current stage: {stage_label} | Processing time: {format_duration_words(elapsed)}")
-        else:
-            st.caption(f"Current stage: {stage_label} | Elapsed time: {format_duration(elapsed)}")
+        while True:
+            job = api_get(f"/jobs/{active_job_id}")
+            level, message = stage_message(job)
+            if level == "success":
+                message_placeholder.success(message)
+            elif level == "error":
+                message_placeholder.error(message)
+            else:
+                message_placeholder.info(message)
 
-        if job.get("status") not in {"completed", "failed", "terminated"}:
-            enable_auto_refresh()
-            st.caption("Refreshing automatically...")
+            progress_placeholder.progress(stage_progress(job))
+            stage_label = job.get("stage_label") or job.get("stage") or "Queued"
+            elapsed = elapsed_seconds(job)
+            if job.get("status") == "completed":
+                timing_placeholder.caption(f"Current stage: {stage_label} | Processing time: {format_duration_words(elapsed)}")
+            else:
+                timing_placeholder.caption(f"Current stage: {stage_label} | Elapsed time: {format_duration(elapsed)}")
+
+            if job.get("status") in {"completed", "failed", "terminated"}:
+                refresh_placeholder.empty()
+                break
+
+            refresh_placeholder.caption("Updating live...")
+            time.sleep(POLL_INTERVAL_SEC)
 
         if job.get("status") == "completed":
             show_completed_result(job)
