@@ -211,6 +211,8 @@ async def create_simple_reconstruct(
     mask: UploadFile = File(...),
     cadrille_checkpoint_preset: Literal["SFT", "RL"] = Form(DEFAULT_SIMPLE_CADRILLE_CHECKPOINT_PRESET),
     cadrille_mode: Literal["PC", "IMG"] = Form(DEFAULT_SIMPLE_CADRILLE_MODE.upper()),
+    workpiece_class: Optional[str] = Form(None),
+    model_code: Optional[str] = Form(None),
 ) -> JobSummary:
     image_name = sanitize_upload_name(image.filename or "input.png")
     mask_name = sanitize_upload_name(mask.filename or "mask.png")
@@ -287,6 +289,12 @@ async def create_simple_reconstruct(
         str(DEFAULT_SIMPLE_SELECTED_CANDIDATE_INDEX),
     ]
     command.append("--export-brep" if DEFAULT_SIMPLE_EXPORT_BREP else "--no-export-brep")
+    # Optional post-scaling args. The job runner only runs the stage when a
+    # workpiece_class is provided; model_code is required for non-h_beam.
+    if workpiece_class:
+        command.extend(["--workpiece-class", workpiece_class])
+        if model_code:
+            command.extend(["--model-code", model_code])
 
     remote_pid = launch_remote_job(
         ssh_host=ssh_host,
@@ -321,6 +329,9 @@ async def create_simple_reconstruct(
             "cadrille_checkpoint": selected_checkpoint,
             "cadrille_mode": selected_mode,
             "cadrille_mode_label": selected_mode.upper(),
+            "workpiece_class": workpiece_class,
+            "model_code": model_code,
+            "postscale_enabled": bool(workpiece_class),
         },
     }
     save_job(job)

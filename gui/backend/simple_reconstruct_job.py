@@ -51,14 +51,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-export-brep", dest="export_brep", action="store_false")
     parser.add_argument("--brep-ext", default="step")
     parser.add_argument("--convert-timeout-sec", type=float, default=5.0)
+
+    # Post-scaling stage (optional). When --workpiece-class is set, the
+    # Cadrille selected_py is fed through scripts/cadrille_metric_postscale.py
+    # against the catalog target dims in docs/workpiece-dimensions.md to
+    # produce metric-scaled .step/.stl in <job_root>/postscale/.
+    parser.add_argument("--workpiece-class", type=str, default=None,
+                        choices=["cover_plate", "square_tube", "bellmouth", "h_beam"],
+                        help="Catalog workpiece class. If omitted, post-scaling is skipped.")
+    parser.add_argument("--model-code", type=str, default=None,
+                        help="Catalog model code (e.g. G140). Ignored for h_beam (uses 'default').")
+    parser.add_argument("--postscale-script", type=Path, default=None,
+                        help="Override path to cadrille_metric_postscale.py (defaults to repo_root/scripts/).")
+    parser.add_argument("--postscale-catalog", type=Path, default=None,
+                        help="Override path to workpiece-dimensions.md (defaults to repo_root/docs/).")
     return parser.parse_args()
 
 
+POSTSCALE_STAGE_LABEL = "Post-scaling: Aligning CAD to catalog (mm)"
 PIPELINE_STAGE_LABELS = [
     "SAM3D: Loading checkpoints",
     "SAM3D: Generating mesh",
     "Cadrille: Preparing input",
     "Cadrille: Generating CAD result",
+    POSTSCALE_STAGE_LABEL,
 ]
 TERMINAL_STATUSES = {"completed", "failed", "terminated"}
 
@@ -190,6 +206,14 @@ def build_simple_result_paths(
         "selected_mesh": None,
         "selected_py": None,
         "selected_brep": None,
+        # Post-scaling slots — populated by run_postscale_stage when applicable.
+        "postscale_dir": None,
+        "scaled_mesh_stl": None,
+        "scaled_brep_step": None,
+        "scaled_py": None,
+        "scaled_metadata": None,
+        "workpiece_class": None,
+        "model_code": None,
     }
     shutil.copy2(sam3d_mesh_glb, results_root / "sam3d_mesh.glb")
     shutil.copy2(sam3d_mesh_stl, results_root / "sam3d_mesh.stl")
@@ -197,6 +221,73 @@ def build_simple_result_paths(
     result_paths["selected_py"] = copy_result_file(selected_py, results_root / "cadrille_selected.py")
     result_paths["selected_brep"] = copy_result_file(selected_brep, results_root / f"cadrille_selected.{Path(selected_brep).suffix.lstrip('.')}" if selected_brep else results_root / "cadrille_selected.step")
     return result_paths
+
+
+def run_postscale_stage(
+    *,
+    repo_root: Path,
+    job_root: Path,
+    selected_py_host: Path,
+    docker_image: str,
+    workpiece_class: str,
+    model_code: str | None,
+    postscale_script_override: Path | None,
+    postscale_catalog_override: Path | None,
+) -> dict[str, str]:
+    """Run cadrille_metric_postscale.py in docker on the selected_py and copy
+    outputs into <job_root>/results/postscale_*. Returns a dict of populated
+    result_paths keys (caller merges into the main result_paths)."""
+    script_path = (postscale_script_override
+                   or (repo_root / "scripts" / "cadrille_metric_postscale.py")).resolve()
+    catalog_path = (postscale_catalog_override
+                    or (repo_root / "docs" / "workpiece-dimensions.md")).resolve()
+    if not script_path.exists():
+        raise RuntimeError(f"post-scaling script not found: {script_path}")
+    if not catalog_path.exists():
+        raise RuntimeError(f"post-scaling catalog not found: {catalog_path}")
+
+    postscale_work = (job_root / "postscale").resolve()
+    postscale_work.mkdir(parents=True, exist_ok=True)
+    selected_py_in_ctr = "/job/" + str(selected_py_host.resolve().relative_to(job_root))
+
+    docker_cmd = [
+        "docker", "run", "--rm",
+        "--user", f"{os.getuid()}:{os.getgid()}",
+        "-v", f"{repo_root}:/repo:ro",
+        "-v", f"{job_root}:/job",
+        docker_image,
+        "python",
+        "/repo/scripts/cadrille_metric_postscale.py",
+        "--py", selected_py_in_ctr,
+        "--out-dir", "/job/postscale",
+        "--dimensions", "/repo/docs/workpiece-dimensions.md",
+        "--workpiece-class", workpiece_class,
+        "--rewrite-mode", "axiswise",
+        "--export-stl",
+    ]
+    if model_code and model_code not in ("(default)", "default", ""):
+        docker_cmd.extend(["--model-code", model_code])
+    run_cmd(docker_cmd)
+
+    py_stem = selected_py_host.stem
+    src_scaled_py = postscale_work / f"{py_stem}__scaled.py"
+    src_scaled_step = postscale_work / f"{py_stem}__scaled.step"
+    src_scaled_stl = postscale_work / f"{py_stem}__scaled.stl"
+    src_metadata = postscale_work / f"{py_stem}__metadata.json"
+
+    # Copy into results/ so the GUI's results_root has stable filenames
+    results_root = job_root / "results"
+    results_root.mkdir(parents=True, exist_ok=True)
+    populated: dict[str, str | None] = {
+        "postscale_dir": str(postscale_work),
+        "scaled_py": copy_result_file(str(src_scaled_py), results_root / "cadrille_scaled.py"),
+        "scaled_brep_step": copy_result_file(str(src_scaled_step), results_root / "cadrille_scaled.step"),
+        "scaled_mesh_stl": copy_result_file(str(src_scaled_stl), results_root / "cadrille_scaled.stl"),
+        "scaled_metadata": copy_result_file(str(src_metadata), results_root / "cadrille_scaled_metadata.json"),
+        "workpiece_class": workpiece_class,
+        "model_code": (model_code if model_code and model_code not in ("(default)", "") else None),
+    }
+    return {k: v for k, v in populated.items() if v is not None}
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None) -> None:
@@ -424,6 +515,29 @@ def main() -> None:
             selected_py=selected_py,
             selected_brep=selected_brep,
         )
+
+        # ─── Post-scaling stage (optional) ───
+        if args.workpiece_class and selected_py:
+            current_stage = "postscale"
+            write_status(
+                status_path,
+                status="running",
+                stage="postscale",
+                stage_label=POSTSCALE_STAGE_LABEL,
+                result_paths=result_paths,
+            )
+            postscale_results = run_postscale_stage(
+                repo_root=repo_root,
+                job_root=job_root,
+                selected_py_host=Path(selected_py),
+                docker_image=args.cadrille_docker_image,
+                workpiece_class=args.workpiece_class,
+                model_code=args.model_code,
+                postscale_script_override=args.postscale_script,
+                postscale_catalog_override=args.postscale_catalog,
+            )
+            result_paths.update(postscale_results)
+
         write_status(status_path, status="completed", stage="completed", stage_label="Done", result_paths=result_paths)
     except Exception as exc:  # noqa: BLE001
         traceback.print_exc()

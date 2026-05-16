@@ -12,13 +12,25 @@ import streamlit as st
 
 BACKEND_URL = os.environ.get("AIWS_GUI_BACKEND", "http://127.0.0.1:8000")
 POLL_INTERVAL_SEC = 1.0
+POSTSCALE_STAGE_LABEL = "Post-scaling: Aligning CAD to catalog (mm)"
 PIPELINE_STAGES = [
     "SAM3D: Loading checkpoints",
     "SAM3D: Generating mesh",
     "Cadrille: Preparing input",
     "Cadrille: Generating CAD result",
+    POSTSCALE_STAGE_LABEL,
 ]
 TERMINAL_STATUSES = {"completed", "failed", "terminated"}
+
+# Catalog mirror of docs/workpiece-dimensions.md. Keep in sync when the
+# catalog grows. Used by the input form to populate the model_code dropdown.
+WORKPIECE_CATALOG: dict[str, list[str]] = {
+    "cover_plate": ["G90", "G93", "G113", "G140"],
+    "square_tube": ["F101", "F120", "F150"],
+    "bellmouth": ["L75", "L148"],
+    "h_beam": ["(default)"],  # h_beam has a single 'default' entry
+}
+POSTSCALE_SKIP_OPTION = "(skip post-scaling)"
 
 
 def inject_custom_styles() -> None:
@@ -465,6 +477,15 @@ def _pipeline_stage_style(job: dict[str, Any], stage_label: str, stage_timings: 
     status = job.get("status")
     entry = stage_timings.get(stage_label) or {}
     has_any_timing = any((stage_timings.get(label) or {}).get("started_at") is not None for label in PIPELINE_STAGES)
+    request = job.get("request") or {}
+    postscale_enabled = bool(request.get("postscale_enabled") or request.get("workpiece_class"))
+
+    # Special: when the user skipped post-scaling, mark the postscale card
+    # as "Skipped" once the job terminates (so it doesn't look like a stuck
+    # "Waiting" card forever).
+    if stage_label == POSTSCALE_STAGE_LABEL and not postscale_enabled and status in TERMINAL_STATUSES:
+        return "Skipped", "rgba(15, 23, 42, 0.55)", "#475569", "Skipped (no workpiece chosen)", "#94a3b8"
+
     if status == "failed" and stage_label == current_label:
         return "Failed", "rgba(127, 29, 29, 0.35)", "#ef4444", "Failed", "#fecaca"
     if entry.get("ended_at") is not None:
@@ -623,24 +644,46 @@ def show_completed_result(job: dict[str, Any]) -> None:
     output_root = result_paths.get("results_root") or result_paths.get("job_root") or job.get("output_root")
     sam3d_mesh = result_paths.get("sam3d_mesh_stl") or result_paths.get("sam3d_mesh_glb")
     cadrille_mesh = result_paths.get("selected_mesh")
+    scaled_mesh = result_paths.get("scaled_mesh_stl")
+    wclass = result_paths.get("workpiece_class")
+    mcode = result_paths.get("model_code")
 
     render_section_heading("Results", "Processing finished. Review the preview meshes and exported files below.")
 
     render_cadrille_settings(job)
 
-    if sam3d_mesh or cadrille_mesh:
+    if sam3d_mesh or cadrille_mesh or scaled_mesh:
         render_section_heading("Mesh previews")
-        preview_col1, preview_col2 = st.columns(2)
-        with preview_col1:
-            show_mesh_preview(job, title="SAM3D reconstructed STL mesh", path=sam3d_mesh, color="#35b779")
-        with preview_col2:
-            show_mesh_preview(job, title="Cadrille selected STL mesh", path=cadrille_mesh, color="#4f8bf9")
+        # If post-scaling ran, show three columns (SAM3D, Cadrille canonical, Cadrille scaled mm).
+        # Otherwise keep the original 2-column layout.
+        if scaled_mesh:
+            preview_col1, preview_col2, preview_col3 = st.columns(3)
+            with preview_col1:
+                show_mesh_preview(job, title="SAM3D reconstructed STL mesh", path=sam3d_mesh, color="#35b779")
+            with preview_col2:
+                show_mesh_preview(job, title="Cadrille canonical STL (before scaling)", path=cadrille_mesh, color="#4f8bf9")
+            with preview_col3:
+                scale_title = (
+                    f"Cadrille metric STL ({wclass}/{mcode or 'default'}, mm)"
+                    if wclass else "Cadrille metric STL (mm)"
+                )
+                show_mesh_preview(job, title=scale_title, path=scaled_mesh, color="#f97316")
+        else:
+            preview_col1, preview_col2 = st.columns(2)
+            with preview_col1:
+                show_mesh_preview(job, title="SAM3D reconstructed STL mesh", path=sam3d_mesh, color="#35b779")
+            with preview_col2:
+                show_mesh_preview(job, title="Cadrille selected STL mesh", path=cadrille_mesh, color="#4f8bf9")
 
     if output_root:
         render_section_heading("Saved output folder")
         st.code(output_root)
 
-    output_col1, output_col2 = st.columns(2)
+    if scaled_mesh:
+        output_col1, output_col2, output_col3 = st.columns(3)
+    else:
+        output_col1, output_col2 = st.columns(2)
+        output_col3 = None
     with output_col1:
         render_output_group(
             "SAM3D outputs",
@@ -652,7 +695,7 @@ def show_completed_result(job: dict[str, Any]) -> None:
         )
     with output_col2:
         render_output_group(
-            "Cadrille outputs",
+            "Cadrille outputs (canonical)",
             [
                 ("Selected STEP", result_paths.get("selected_brep")),
                 ("Selected STL", result_paths.get("selected_mesh")),
@@ -660,6 +703,18 @@ def show_completed_result(job: dict[str, Any]) -> None:
             ],
             output_root,
         )
+    if output_col3 is not None:
+        with output_col3:
+            render_output_group(
+                f"Post-scaling outputs (mm — {wclass}/{mcode or 'default'})",
+                [
+                    ("Scaled STEP (mm)", result_paths.get("scaled_brep_step")),
+                    ("Scaled STL (mm)", result_paths.get("scaled_mesh_stl")),
+                    ("Scaled Python (mm)", result_paths.get("scaled_py")),
+                    ("Scaled metadata.json", result_paths.get("scaled_metadata")),
+                ],
+                output_root,
+            )
 
 
 st.set_page_config(page_title="AIWS offline pipeline CAD Reconstruction", page_icon="🧩", layout="wide")
@@ -709,14 +764,50 @@ if not active_job_id:
                 help="Choose which Cadrille modality to run on the SAM3D mesh input.",
             )
 
-        if st.button("Start reconstruction", type="primary", disabled=not (image_file and mask_file)):
+        # Workpiece selection drives the optional post-scaling stage.
+        render_section_heading(
+            "Workpiece for metric post-scaling",
+            "Pick the catalog workpiece so the reconstructed CAD can be rewritten in millimeters. "
+            f"Leave class as '{POSTSCALE_SKIP_OPTION}' to skip post-scaling.",
+        )
+        class_col, model_col = st.columns(2)
+        with class_col:
+            workpiece_class_choice = st.selectbox(
+                "Workpiece class",
+                options=[POSTSCALE_SKIP_OPTION] + list(WORKPIECE_CATALOG.keys()),
+                index=0,
+            )
+        with model_col:
+            if workpiece_class_choice in WORKPIECE_CATALOG:
+                model_choices = WORKPIECE_CATALOG[workpiece_class_choice]
+                model_code_choice = st.selectbox("Model code", options=model_choices, index=0)
+            else:
+                model_code_choice = None
+                st.selectbox("Model code", options=["—"], index=0, disabled=True)
+
+        postscale_active = workpiece_class_choice in WORKPIECE_CATALOG
+        button_label = (
+            "Start reconstruction + metric scaling"
+            if postscale_active
+            else "Start reconstruction (no scaling)"
+        )
+
+        if st.button(button_label, type="primary", disabled=not (image_file and mask_file)):
             if image_file is None or mask_file is None:
                 st.error("Please select both the photo and the mask again, then retry.")
             else:
+                form_data: dict[str, str] = {
+                    "cadrille_checkpoint_preset": checkpoint_preset,
+                    "cadrille_mode": cadrille_mode,
+                }
+                if postscale_active:
+                    form_data["workpiece_class"] = workpiece_class_choice
+                    if model_code_choice and model_code_choice not in ("(default)", "—"):
+                        form_data["model_code"] = model_code_choice
                 try:
                     result = api_post_multipart(
                         "/jobs/simple-reconstruct",
-                        data={"cadrille_checkpoint_preset": checkpoint_preset, "cadrille_mode": cadrille_mode},
+                        data=form_data,
                         files={
                             "image": (
                                 image_file.name or "image.png",
