@@ -13,9 +13,12 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 import numpy as np
 from pydantic import BaseModel, Field
+import re
 import trimesh
+import yaml
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +35,7 @@ DEFAULT_CADRILLE_CHECKPOINT = "ckpt/cadrille_sft"
 DEFAULT_CADRILLE_PROCESSOR_PATH = "ckpt/Qwen2-VL-2B-Instruct"
 DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS = "--ipc=host --shm-size=16g"
 
+DEFAULT_CATALOG_PATH = f"{DEFAULT_REMOTE_WORKDIR}/docs/workpiece-dimensions.md"
 DEFAULT_SIMPLE_REMOTE_ROOT = f"{DEFAULT_REMOTE_WORKDIR}/outputs/gui-simple"
 DEFAULT_SIMPLE_CADRILLE_MODE = "pc"
 DEFAULT_SIMPLE_CADRILLE_N_SAMPLES = 5
@@ -134,6 +138,24 @@ def _startup() -> None:
     JOBS_ROOT.mkdir(parents=True, exist_ok=True)
 
 
+def _probe_docker() -> dict[str, Any]:
+    """Best-effort docker availability + cadrille image presence check."""
+    out: dict[str, Any] = {"docker_ok": False, "docker_version": None,
+                            "cadrille_image_present": False, "cadrille_image": DEFAULT_REMOTE_CADRILLE_IMAGE}
+    try:
+        v = subprocess.run(["docker", "version", "--format", "{{.Server.Version}}"],
+                           capture_output=True, text=True, timeout=3)
+        if v.returncode == 0:
+            out["docker_ok"] = True
+            out["docker_version"] = v.stdout.strip()
+            i = subprocess.run(["docker", "image", "inspect", DEFAULT_REMOTE_CADRILLE_IMAGE],
+                               capture_output=True, text=True, timeout=3)
+            out["cadrille_image_present"] = (i.returncode == 0)
+    except Exception:
+        pass
+    return out
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
@@ -162,7 +184,62 @@ def health() -> dict[str, Any]:
             "cadrille_n_samples": DEFAULT_SIMPLE_CADRILLE_N_SAMPLES,
             "cadrille_batch_size": DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE,
         },
+        "runtime": _probe_docker(),
+        "catalog_path": DEFAULT_CATALOG_PATH,
     }
+
+
+@app.get("/catalog")
+def get_catalog() -> dict[str, Any]:
+    """Return the workpiece-dimensions catalog parsed from docs/workpiece-dimensions.md.
+
+    Frontend uses this so its workpiece/model dropdowns always reflect what the
+    post-scaling pipeline actually accepts."""
+    catalog_path = Path(DEFAULT_CATALOG_PATH)
+    if not catalog_path.exists():
+        raise HTTPException(status_code=500, detail=f"Catalog file not found: {catalog_path}")
+    text = catalog_path.read_text(encoding="utf-8")
+    m = re.search(r"```yaml\s*(.*?)```", text, re.DOTALL)
+    if not m:
+        raise HTTPException(status_code=500, detail="No ```yaml ... ``` block in catalog")
+    try:
+        data = yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to parse catalog yaml: {exc}")
+
+    classes: dict[str, dict[str, Any]] = {}
+    for cls_name, models in data.items():
+        if not isinstance(models, dict):
+            continue
+        entries: dict[str, dict[str, Any]] = {}
+        for model_code, bbox_m in models.items():
+            if isinstance(bbox_m, list) and len(bbox_m) == 3:
+                bbox_m_floats = [float(v) for v in bbox_m]
+                entries[str(model_code)] = {
+                    "bbox_m": bbox_m_floats,
+                    "bbox_mm": [round(v * 1000.0, 4) for v in bbox_m_floats],
+                }
+        classes[str(cls_name)] = {
+            "models": list(entries.keys()),
+            "entries": entries,
+        }
+    return {"source": str(catalog_path), "classes": classes}
+
+
+@app.get("/jobs/{job_id}/file")
+def download_job_file(job_id: str, path: str = Query(..., min_length=1)) -> FileResponse:
+    """Serve a single file from inside a job's output root. Path must be under
+    that root (defense against arbitrary path traversal)."""
+    job = load_job(job_path(job_id))
+    output_root = Path(job["output_root"]).resolve()
+    target = Path(path).resolve()
+    try:
+        target.relative_to(output_root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path is not under the job output root")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail=f"File not found: {target}")
+    return FileResponse(target, filename=target.name)
 
 
 @app.get("/jobs", response_model=list[JobSummary])

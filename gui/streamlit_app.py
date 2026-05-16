@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 import os
 import time
 from pathlib import Path
@@ -8,6 +10,7 @@ from typing import Any
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+from PIL import Image
 
 
 BACKEND_URL = os.environ.get("AIWS_GUI_BACKEND", "http://127.0.0.1:8000")
@@ -22,15 +25,34 @@ PIPELINE_STAGES = [
 ]
 TERMINAL_STATUSES = {"completed", "failed", "terminated"}
 
-# Catalog mirror of docs/workpiece-dimensions.md. Keep in sync when the
-# catalog grows. Used by the input form to populate the model_code dropdown.
-WORKPIECE_CATALOG: dict[str, list[str]] = {
+# Fallback catalog used only if the /catalog backend endpoint is unreachable.
+# Normally the workpiece + model dropdowns are populated by `load_catalog()`
+# which fetches docs/workpiece-dimensions.md via the backend.
+WORKPIECE_CATALOG_FALLBACK: dict[str, list[str]] = {
     "cover_plate": ["G90", "G93", "G113", "G140"],
     "square_tube": ["F101", "F120", "F150"],
     "bellmouth": ["L75", "L148"],
-    "h_beam": ["(default)"],  # h_beam has a single 'default' entry
+    "h_beam": ["(default)"],
 }
 POSTSCALE_SKIP_OPTION = "(skip post-scaling)"
+
+
+@st.cache_data(ttl=60)
+def load_catalog() -> dict[str, dict[str, Any]]:
+    """Fetch the catalog from the backend; fall back to the static mirror.
+    Returns {class_name: {model_code: {bbox_m, bbox_mm}}} or empty entries."""
+    try:
+        payload = api_get("/catalog")
+        out: dict[str, dict[str, Any]] = {}
+        for cls_name, cls_info in (payload.get("classes") or {}).items():
+            entries = cls_info.get("entries") or {}
+            if cls_name == "h_beam" and "default" in entries:
+                out[cls_name] = {"(default)": entries["default"]}
+            else:
+                out[cls_name] = {k: v for k, v in entries.items()}
+        return out
+    except Exception:
+        return {cls: {m: {} for m in models} for cls, models in WORKPIECE_CATALOG_FALLBACK.items()}
 
 
 def inject_custom_styles() -> None:
@@ -197,15 +219,34 @@ def render_section_heading(title: str, subtitle: str | None = None) -> None:
     )
 
 
-def render_output_group(title: str, entries: list[tuple[str, str | None]], output_root: str | None) -> None:
+def render_output_group(
+    title: str,
+    entries: list[tuple[str, str | None]],
+    output_root: str | None,
+    *,
+    job_id: str | None = None,
+) -> None:
+    """Render a group of output paths. If job_id is supplied, also expose a
+    download button per entry (file is fetched via /jobs/{id}/file)."""
     render_section_heading(title)
     found_any = False
     for label, path in entries:
         display_path = format_output_path(path, output_root)
-        if display_path:
-            found_any = True
-            st.caption(label)
-            st.code(display_path)
+        if not display_path or path is None:
+            continue
+        found_any = True
+        st.caption(label)
+        st.code(display_path)
+        if job_id:
+            file_bytes = fetch_file_bytes(job_id, path)
+            if file_bytes is not None:
+                st.download_button(
+                    label=f"Download {Path(path).name}",
+                    data=file_bytes,
+                    file_name=Path(path).name,
+                    key=f"dl_{job_id}_{label}_{Path(path).name}",
+                    use_container_width=True,
+                )
     if not found_any:
         st.caption("No files available.")
 
@@ -356,6 +397,64 @@ def format_output_path(path: str | None, output_root: str | None) -> str | None:
         return str(Path(path).resolve().relative_to(Path(output_root).resolve()))
     except Exception:
         return path
+
+
+def image_dimensions(uploaded_bytes: bytes) -> tuple[int, int] | None:
+    try:
+        with Image.open(io.BytesIO(uploaded_bytes)) as img:
+            return img.size  # (w, h)
+    except Exception:
+        return None
+
+
+def fetch_log_tail(job_id: str, n_lines: int = 40) -> str:
+    try:
+        payload = api_get(f"/jobs/{job_id}/logs", tail_lines=n_lines)
+        return payload.get("log") or ""
+    except Exception as exc:
+        return f"(log fetch failed: {exc})"
+
+
+def fetch_postscale_metadata(job: dict[str, Any]) -> dict[str, Any] | None:
+    """Load the postscale metadata.json via /jobs/{id}/file so the details
+    expander can show the matrix M, axis pairing, and after-scale bbox."""
+    result_paths = job.get("result_paths") or {}
+    meta_path = result_paths.get("scaled_metadata")
+    if not meta_path:
+        return None
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/jobs/{job['job_id']}/file",
+            params={"path": meta_path},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return None
+
+
+def fetch_file_bytes(job_id: str, file_path: str) -> bytes | None:
+    """Download a file from the job's output root via the backend."""
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/jobs/{job_id}/file",
+            params={"path": file_path},
+            timeout=60,
+        )
+        response.raise_for_status()
+        return response.content
+    except Exception:
+        return None
+
+
+def cancel_job(job_id: str) -> bool:
+    try:
+        response = requests.post(f"{BACKEND_URL}/jobs/{job_id}/terminate", timeout=10)
+        response.raise_for_status()
+        return True
+    except Exception:
+        return False
 
 
 def get_cadrille_settings(job: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -571,7 +670,16 @@ def render_pipeline(job: dict[str, Any]) -> None:
         st.caption(f"{total_label}: {format_duration_words(total_elapsed)}")
 
 
-def show_mesh_preview(job: dict[str, Any], *, title: str, path: str | None, color: str) -> None:
+def show_mesh_preview(
+    job: dict[str, Any],
+    *,
+    title: str,
+    path: str | None,
+    color: str,
+    units: str | None = None,
+) -> None:
+    """Render a mesh preview. `units` controls how the extents caption is shown
+    (e.g. 'mm' or '(canonical units)')."""
     st.markdown(f"**{title}**")
     if not path:
         st.info("Preview unavailable: mesh file not found.")
@@ -586,9 +694,16 @@ def show_mesh_preview(job: dict[str, Any], *, title: str, path: str | None, colo
         vertex_count = mesh_payload.get("vertex_count")
         face_count = mesh_payload.get("face_count")
         original_face_count = mesh_payload.get("original_face_count")
+        extents = mesh_payload.get("extents")  # [xlen, ylen, zlen]
+        # Build a two-line caption: extents on top, geometry counts below.
+        if extents and len(extents) == 3:
+            xlen, ylen, zlen = extents
+            unit_str = f" {units}" if units else ""
+            ext_line = f"Extents: {xlen:.3g} × {ylen:.3g} × {zlen:.3g}{unit_str}"
+            st.caption(ext_line)
         if original_face_count and face_count and int(face_count) < int(original_face_count):
             st.caption(
-                f"Preview uses a simplified display mesh: {vertex_count} vertices, {face_count} faces "
+                f"Preview uses simplified display mesh: {vertex_count} vertices, {face_count} faces "
                 f"(from {original_face_count} original faces)."
             )
         else:
@@ -659,26 +774,99 @@ def show_completed_result(job: dict[str, Any]) -> None:
         if scaled_mesh:
             preview_col1, preview_col2, preview_col3 = st.columns(3)
             with preview_col1:
-                show_mesh_preview(job, title="SAM3D reconstructed STL mesh", path=sam3d_mesh, color="#35b779")
+                show_mesh_preview(job, title="SAM3D reconstructed STL mesh",
+                                  path=sam3d_mesh, color="#35b779",
+                                  units="(mesh units)")
             with preview_col2:
-                show_mesh_preview(job, title="Cadrille canonical STL (before scaling)", path=cadrille_mesh, color="#4f8bf9")
+                show_mesh_preview(job, title="Cadrille canonical STL (before scaling)",
+                                  path=cadrille_mesh, color="#4f8bf9",
+                                  units="(canonical units)")
             with preview_col3:
                 scale_title = (
                     f"Cadrille metric STL ({wclass}/{mcode or 'default'}, mm)"
                     if wclass else "Cadrille metric STL (mm)"
                 )
-                show_mesh_preview(job, title=scale_title, path=scaled_mesh, color="#f97316")
+                show_mesh_preview(job, title=scale_title,
+                                  path=scaled_mesh, color="#f97316",
+                                  units="mm")
         else:
             preview_col1, preview_col2 = st.columns(2)
             with preview_col1:
-                show_mesh_preview(job, title="SAM3D reconstructed STL mesh", path=sam3d_mesh, color="#35b779")
+                show_mesh_preview(job, title="SAM3D reconstructed STL mesh",
+                                  path=sam3d_mesh, color="#35b779",
+                                  units="(mesh units)")
             with preview_col2:
-                show_mesh_preview(job, title="Cadrille selected STL mesh", path=cadrille_mesh, color="#4f8bf9")
+                show_mesh_preview(job, title="Cadrille selected STL mesh",
+                                  path=cadrille_mesh, color="#4f8bf9",
+                                  units="(canonical units)")
+
+    # Post-scaling transparency: show the affine M, axis pairing, det note,
+    # and a catalog-target vs after-scale bbox match table.
+    if scaled_mesh:
+        meta = fetch_postscale_metadata(job)
+        if meta:
+            with st.expander("Post-scaling details (matrix, axis pairing, bbox match)", expanded=False):
+                cat = meta.get("catalog") or {}
+                target = cat.get("bbox_mm") or [None, None, None]
+                after = meta.get("after_scale_bbox_mm") or {}
+                actual = [after.get("xlen"), after.get("ylen"), after.get("zlen")]
+                canonical = meta.get("canonical_bbox") or {}
+                scale = meta.get("scale") or {}
+                matrix = scale.get("matrix_3x3") or []
+                axis_map = scale.get("axis_map") or []
+                det_note = scale.get("det_note") or ""
+
+                # Per-axis match table
+                st.markdown("**Per-axis bbox: catalog target vs actual after scaling**")
+                rows = ["| Axis | Target (mm) | Actual (mm) | Δ (rel.) | Match |",
+                        "|---|---:|---:|---:|:---:|"]
+                axes = "XYZ"
+                for i in range(3):
+                    t = target[i]
+                    a = actual[i]
+                    if t is not None and a is not None and t != 0:
+                        rel = abs(a - t) / t
+                        ok = "✅" if rel < 1e-3 else "❌"
+                        rows.append(f"| {axes[i]} | {t:.4f} | {a:.4f} | {rel:.2e} | {ok} |")
+                    else:
+                        rows.append(f"| {axes[i]} | {t} | {a} | — | — |")
+                st.markdown("\n".join(rows))
+
+                # Axis pairing
+                if axis_map:
+                    st.markdown("**Sorted-extent axis pairing (canonical → catalog)**")
+                    pair_lines = ["| Rank | Canonical axis | Catalog axis |",
+                                  "|---:|:---:|:---:|"]
+                    for entry in axis_map:
+                        pair_lines.append(f"| {entry.get('rank')} | {entry.get('canonical_axis')} | {entry.get('catalog_axis')} |")
+                    st.markdown("\n".join(pair_lines))
+
+                # Affine M
+                if matrix and len(matrix) == 3:
+                    st.markdown("**3×3 affine M (rotation + per-axis scale, applied to centered canonical solid)**")
+                    m_rows = ["| | X col | Y col | Z col |", "|---|---:|---:|---:|"]
+                    for ridx, row in enumerate(matrix):
+                        cells = "".join(f" {v:+.6f} |" for v in row)
+                        m_rows.append(f"| {axes[ridx]} row |{cells}")
+                    st.markdown("\n".join(m_rows))
+
+                if det_note:
+                    st.caption(f"Determinant note: {det_note}")
+                if canonical:
+                    cb = canonical
+                    st.caption(
+                        f"Canonical bbox (Cadrille code units): "
+                        f"{cb.get('xlen', '?'):.3g} × {cb.get('ylen', '?'):.3g} × {cb.get('zlen', '?'):.3g}; "
+                        f"center ({(cb.get('xmin', 0)+cb.get('xmax', 0))/2:.3g}, "
+                        f"{(cb.get('ymin', 0)+cb.get('ymax', 0))/2:.3g}, "
+                        f"{(cb.get('zmin', 0)+cb.get('zmax', 0))/2:.3g})"
+                    )
 
     if output_root:
         render_section_heading("Saved output folder")
         st.code(output_root)
 
+    job_id_str = str(job.get("job_id") or "")
     if scaled_mesh:
         output_col1, output_col2, output_col3 = st.columns(3)
     else:
@@ -692,6 +880,7 @@ def show_completed_result(job: dict[str, Any]) -> None:
                 ("SAM3D STL", result_paths.get("sam3d_mesh_stl")),
             ],
             output_root,
+            job_id=job_id_str,
         )
     with output_col2:
         render_output_group(
@@ -702,6 +891,7 @@ def show_completed_result(job: dict[str, Any]) -> None:
                 ("Selected Python", result_paths.get("selected_py")),
             ],
             output_root,
+            job_id=job_id_str,
         )
     if output_col3 is not None:
         with output_col3:
@@ -714,6 +904,7 @@ def show_completed_result(job: dict[str, Any]) -> None:
                     ("Scaled metadata.json", result_paths.get("scaled_metadata")),
                 ],
                 output_root,
+                job_id=job_id_str,
             )
 
 
@@ -765,6 +956,8 @@ if not active_job_id:
             )
 
         # Workpiece selection drives the optional post-scaling stage.
+        catalog = load_catalog()
+        catalog_classes = list(catalog.keys())
         render_section_heading(
             "Workpiece for metric post-scaling",
             "Pick the catalog workpiece so the reconstructed CAD can be rewritten in millimeters. "
@@ -774,25 +967,46 @@ if not active_job_id:
         with class_col:
             workpiece_class_choice = st.selectbox(
                 "Workpiece class",
-                options=[POSTSCALE_SKIP_OPTION] + list(WORKPIECE_CATALOG.keys()),
+                options=[POSTSCALE_SKIP_OPTION] + catalog_classes,
                 index=0,
             )
         with model_col:
-            if workpiece_class_choice in WORKPIECE_CATALOG:
-                model_choices = WORKPIECE_CATALOG[workpiece_class_choice]
-                model_code_choice = st.selectbox("Model code", options=model_choices, index=0)
+            if workpiece_class_choice in catalog:
+                model_entries = catalog[workpiece_class_choice]
+                model_options = list(model_entries.keys())
+                model_code_choice = st.selectbox("Model code", options=model_options, index=0)
+                # Show the catalog target bbox so user can verify before submitting.
+                meta = model_entries.get(model_code_choice) or {}
+                if meta and "bbox_mm" in meta:
+                    bx, by, bz = meta["bbox_mm"]
+                    st.caption(f"Target bbox (mm): {bx:.2f} × {by:.2f} × {bz:.2f}")
             else:
                 model_code_choice = None
                 st.selectbox("Model code", options=["—"], index=0, disabled=True)
 
-        postscale_active = workpiece_class_choice in WORKPIECE_CATALOG
+        postscale_active = workpiece_class_choice in catalog
+
+        # Client-side validation: image and mask must have the same dimensions.
+        validation_error: str | None = None
+        if image_file and mask_file:
+            img_dims = image_dimensions(image_file.getvalue())
+            mask_dims = image_dimensions(mask_file.getvalue())
+            if img_dims and mask_dims and img_dims != mask_dims:
+                validation_error = (
+                    f"Photo size {img_dims[0]}×{img_dims[1]} does not match mask "
+                    f"size {mask_dims[0]}×{mask_dims[1]}. SAM3D requires matching dimensions."
+                )
+            if validation_error:
+                st.warning(validation_error)
+
         button_label = (
             "Start reconstruction + metric scaling"
             if postscale_active
             else "Start reconstruction (no scaling)"
         )
+        button_disabled = not (image_file and mask_file) or validation_error is not None
 
-        if st.button(button_label, type="primary", disabled=not (image_file and mask_file)):
+        if st.button(button_label, type="primary", disabled=button_disabled):
             if image_file is None or mask_file is None:
                 st.error("Please select both the photo and the mask again, then retry.")
             else:
@@ -829,12 +1043,16 @@ if not active_job_id:
     with preview_col:
         render_section_heading("Input preview", "Double-check the uploaded image pair before sending the job to the pipeline.")
         if image_file and mask_file:
+            img_dims = image_dimensions(image_file.getvalue())
+            mask_dims = image_dimensions(mask_file.getvalue())
             preview_col1, preview_col2 = st.columns(2)
             with preview_col1:
-                st.caption("Photo")
+                lbl = f"Photo · {img_dims[0]}×{img_dims[1]}" if img_dims else "Photo"
+                st.caption(lbl)
                 st.image(image_file.getvalue(), use_column_width=True)
             with preview_col2:
-                st.caption("Mask")
+                lbl = f"Mask · {mask_dims[0]}×{mask_dims[1]}" if mask_dims else "Mask"
+                st.caption(lbl)
                 st.image(mask_file.getvalue(), use_column_width=True)
         else:
             st.markdown(
@@ -861,6 +1079,8 @@ else:
     try:
         status_placeholder = st.empty()
         pipeline_placeholder = st.empty()
+        action_placeholder = st.empty()
+        log_placeholder = st.empty()
         refresh_placeholder = st.empty()
 
         while True:
@@ -879,6 +1099,34 @@ else:
             with pipeline_placeholder.container():
                 render_cadrille_settings(job)
                 render_pipeline(job)
+
+            # Cancel button (only while running)
+            if job.get("status") not in TERMINAL_STATUSES:
+                with action_placeholder.container():
+                    cancel_col, _ = st.columns([1, 4])
+                    with cancel_col:
+                        cancel_clicked = st.button(
+                            "Cancel job",
+                            key=f"cancel_{active_job_id}",
+                            type="secondary",
+                            use_container_width=True,
+                        )
+                    if cancel_clicked:
+                        if cancel_job(active_job_id):
+                            st.warning("Cancel request sent. The job will stop shortly.")
+                        else:
+                            st.error("Failed to send cancel request.")
+            else:
+                action_placeholder.empty()
+
+            # Live log tail (last 40 lines, in an expander)
+            with log_placeholder.container():
+                with st.expander("Live log (tail of job.log)", expanded=False):
+                    log_text = fetch_log_tail(active_job_id, n_lines=40)
+                    if log_text.strip():
+                        st.code(log_text[-4000:], language=None)
+                    else:
+                        st.caption("Log file empty so far.")
 
             if job.get("status") in TERMINAL_STATUSES:
                 refresh_placeholder.empty()
