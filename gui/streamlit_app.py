@@ -318,6 +318,13 @@ def set_active_job_id(job_id: str) -> None:
 
 
 def get_active_job_id() -> str | None:
+    # If the user explicitly cleared the active job (clicked "Start another
+    # reconstruction"), ignore both the URL leftover and any stale session
+    # value until they actually start a new job (which clears the flag in
+    # set_active_job_id). Otherwise a rerun triggered by file uploads would
+    # re-read the old ?job_id=… from the URL and jump back to the old job.
+    if st.session_state.get("suppress_auto_resume"):
+        return None
     query_job_id = _get_query_job_id()
     if query_job_id:
         return query_job_id
