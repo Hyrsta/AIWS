@@ -884,6 +884,22 @@ def render_metrics_panel(metrics: dict[str, Any] | None, job: dict[str, Any] | N
         c_alloc = cadrille.get("peak_memory_allocated_mb")
         c_n = cadrille.get("n_samples")
         device = cadrille.get("device_name")
+        # Same reconciliation idea as the SAM3D row: the "Cadrille:
+        # Generating CAD result" stage covers `docker run` startup,
+        # in-container checkpoint loading, IO, *and* the generate loop.
+        # The gpu_memory.json `duration_sec` we expose here is recorded
+        # inside the container around the generate loop only, so it
+        # omits everything around it. Surface the residual so the cards
+        # add back up to the stage duration shown in the pipeline strip.
+        cadrille_stage_dur: float | None = None
+        if job is not None:
+            try:
+                _stage_timings_local = sync_pipeline_timings(job)
+                cadrille_stage_dur = stage_duration_seconds(
+                    job, "Cadrille: Generating CAD result", _stage_timings_local
+                )
+            except Exception:
+                cadrille_stage_dur = None
         cards = [
             _metric_card_html(
                 "平均 IoU",
@@ -895,7 +911,11 @@ def render_metrics_panel(metrics: dict[str, Any] | None, job: dict[str, Any] | N
                 _format_cd(c_cd),
                 hint="Chamfer distance (lower is better)",
             ),
-            _metric_card_html("时间 (生成耗时)", _format_seconds_zh(c_dur)),
+            _metric_card_html(
+                "推理耗时 (docker 内)",
+                _format_seconds_zh(c_dur),
+                hint="不含 docker 启动 / checkpoint 加载 / I/O",
+            ),
             _metric_card_html(
                 "显存 reserved 最大值",
                 _format_mb(c_reserved),
@@ -907,8 +927,19 @@ def render_metrics_panel(metrics: dict[str, Any] | None, job: dict[str, Any] | N
                 ),
             ),
         ]
+        if (
+            cadrille_stage_dur is not None
+            and c_dur is not None
+            and cadrille_stage_dur - c_dur >= 0.5
+        ):
+            residual = cadrille_stage_dur - c_dur
+            cards.append(_metric_card_html(
+                "docker 启动 + 加载",
+                _format_seconds_zh(residual),
+                hint=f"生成阶段总 {_format_seconds_zh(cadrille_stage_dur)}",
+            ))
         st.markdown(
-            f'<div style="display:grid; grid-template-columns:repeat(4, 1fr); '
+            f'<div style="display:grid; grid-template-columns:repeat({len(cards)}, 1fr); '
             f'gap:0.7rem; margin-bottom:0.6rem;">{"".join(cards)}</div>',
             unsafe_allow_html=True,
         )
@@ -1178,10 +1209,10 @@ def show_completed_result(job: dict[str, Any]) -> None:
     wclass = result_paths.get("workpiece_class")
     mcode = result_paths.get("model_code")
 
-    render_section_heading("Results", "Processing finished. Review the preview meshes and exported files below.")
-
-    render_cadrille_settings(job)
-
+    # "Results" heading and the duplicate render_cadrille_settings call
+    # were removed: the section is self-evident (we're on the completed
+    # page rendering result cards), and the live page already shows the
+    # Cadrille settings row up top.
     if sam3d_mesh or cadrille_mesh or scaled_mesh:
         render_section_heading("Mesh previews")
         # If post-scaling ran, show three columns (SAM3D, Cadrille canonical, Cadrille scaled mm).
