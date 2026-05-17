@@ -226,28 +226,39 @@ def render_output_group(
     *,
     job_id: str | None = None,
 ) -> None:
-    """Render a group of output paths. If job_id is supplied, also expose a
-    download button per entry (file is fetched via /jobs/{id}/file)."""
+    """Render a group of output entries as a tight stack of download buttons.
+
+    Each button's label is the friendly name (e.g. "Scaled STEP (mm)"); the
+    file's actual on-disk filename is used for the download itself, and the
+    relative path is tucked into the button's hover tooltip so the location
+    information isn't lost from the UI."""
     render_section_heading(title)
-    found_any = False
+    rendered_any = False
     for label, path in entries:
-        display_path = format_output_path(path, output_root)
-        if not display_path or path is None:
+        if not path:
             continue
-        found_any = True
-        st.caption(label)
-        st.code(display_path)
+        # When job_id is set we serve the file via /jobs/{id}/file and
+        # expose a download button. Without job_id we can't fetch the file,
+        # so just show a tiny caption with the relative path as a fallback.
         if job_id:
             file_bytes = fetch_file_bytes(job_id, path)
-            if file_bytes is not None:
-                st.download_button(
-                    label=f"Download {Path(path).name}",
-                    data=file_bytes,
-                    file_name=Path(path).name,
-                    key=f"dl_{job_id}_{label}_{Path(path).name}",
-                    use_container_width=True,
-                )
-    if not found_any:
+            if file_bytes is None:
+                continue
+            rendered_any = True
+            st.download_button(
+                label=label,
+                data=file_bytes,
+                file_name=Path(path).name,
+                key=f"dl_{job_id}_{label}",
+                help=format_output_path(path, output_root) or path,
+                use_container_width=True,
+            )
+        else:
+            display_path = format_output_path(path, output_root)
+            if display_path:
+                rendered_any = True
+                st.caption(f"{label}: {display_path}")
+    if not rendered_any:
         st.caption("No files available.")
 
 
