@@ -550,6 +550,9 @@ def sync_pipeline_timings(job: dict[str, Any]) -> dict[str, dict[str, float | No
     now = time.time()
     current_label = job.get("stage_label")
     previous_label = tracker.get("current_stage_label")
+    status = job.get("status")
+    request = job.get("request") or {}
+    postscale_enabled = bool(request.get("postscale_enabled") or request.get("workpiece_class"))
 
     if current_label in PIPELINE_STAGES:
         current_entry = merged.setdefault(current_label, {})
@@ -561,12 +564,36 @@ def sync_pipeline_timings(job: dict[str, Any]) -> dict[str, dict[str, float | No
         previous_entry.setdefault("started_at", now)
         previous_entry.setdefault("ended_at", now)
 
-    if job.get("status") in TERMINAL_STATUSES:
+    # Back-fill every stage earlier than the current stage as Done. Otherwise
+    # a stage that was too fast to be observed as `current_stage_label` (e.g.
+    # SAM3D "Loading checkpoints" finishing between polls) would stay on
+    # "Waiting" even though the pipeline has clearly moved past it.
+    if current_label in PIPELINE_STAGES:
+        current_idx = PIPELINE_STAGES.index(current_label)
+        for earlier_label in PIPELINE_STAGES[:current_idx]:
+            earlier_entry = merged.setdefault(earlier_label, {})
+            earlier_entry.setdefault("started_at", job.get("started_at") or now)
+            earlier_entry.setdefault("ended_at", now)
+
+    if status in TERMINAL_STATUSES:
         active_label = previous_label if previous_label in PIPELINE_STAGES else current_label
         if active_label in PIPELINE_STAGES:
             active_entry = merged.setdefault(active_label, {})
             active_entry.setdefault("started_at", job.get("started_at") or now)
             active_entry.setdefault("ended_at", job.get("ended_at") or job.get("updated_at") or now)
+        # When the job has ended, mark every stage Done (skipping post-scaling
+        # if the user didn't pick a workpiece — that stage is rendered as
+        # "Skipped" elsewhere). Without this, any stage whose `ended_at`
+        # wasn't recorded inline would stay on "Waiting" forever on the final
+        # page.
+        terminal_end = job.get("ended_at") or job.get("updated_at") or now
+        terminal_start = job.get("started_at") or terminal_end
+        for label in PIPELINE_STAGES:
+            if label == POSTSCALE_STAGE_LABEL and not postscale_enabled:
+                continue
+            entry = merged.setdefault(label, {})
+            entry.setdefault("started_at", terminal_start)
+            entry.setdefault("ended_at", terminal_end)
         tracker["current_stage_label"] = None
     else:
         tracker["current_stage_label"] = current_label
@@ -610,6 +637,20 @@ def _pipeline_stage_style(job: dict[str, Any], stage_label: str, stage_timings: 
     if stage_label == current_label and status not in TERMINAL_STATUSES:
         return "Live", "rgba(30, 64, 175, 0.32)", "#3b82f6", "Running", "#bfdbfe"
     if status == "completed" and not has_any_timing:
+        return "Done", "rgba(20, 83, 45, 0.35)", "#22c55e", "Done", "#bbf7d0"
+    # Safety net: any stage earlier than the currently-live stage should be
+    # rendered as Done even if its `ended_at` somehow wasn't back-filled
+    # (sync_pipeline_timings normally handles this, but this guard prevents
+    # stale "Waiting" cards in any edge case).
+    if (
+        stage_label in PIPELINE_STAGES
+        and current_label in PIPELINE_STAGES
+        and PIPELINE_STAGES.index(stage_label) < PIPELINE_STAGES.index(current_label)
+    ):
+        return "Done", "rgba(20, 83, 45, 0.35)", "#22c55e", "Done", "#bbf7d0"
+    # When the job has ended, every stage that wasn't explicitly skipped
+    # should look Done.
+    if status == "completed":
         return "Done", "rgba(20, 83, 45, 0.35)", "#22c55e", "Done", "#bbf7d0"
     return "Waiting", "rgba(15, 23, 42, 0.78)", "#334155", "Waiting", "#cbd5e1"
 
