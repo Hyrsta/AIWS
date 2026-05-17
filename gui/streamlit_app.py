@@ -1500,16 +1500,14 @@ else:
         job = api_get(f"/jobs/{active_job_id}")
         message_level, message_text = stage_message(job)
 
-        render_section_heading(
-            "Live job status",
-            "The page refreshes automatically while this reconstruction is in progress.",
-        )
+        # Terminal status messages only — the running-state "Generating X..."
+        # info banners are redundant with the pipeline strip directly below,
+        # and the "Live job status" section heading + subtitle just took up
+        # vertical space that pushed the strip below the fold.
         if message_level == "success":
             st.success(message_text)
         elif message_level == "error":
             st.error(message_text)
-        else:
-            st.info(message_text)
 
         render_cadrille_settings(job)
         render_pipeline(job)
@@ -1559,6 +1557,3 @@ else:
         if st.button("Reset GUI"):
             clear_active_job()
             st.rerun()
-
-st.divider()
-st.caption("This GUI intentionally keeps all runtime settings in code and only exposes the user-facing reconstruction flow.")
