@@ -459,6 +459,139 @@ def fetch_job_inputs(job_id: str) -> dict[str, Any] | None:
         return None
 
 
+def fetch_jobs_list() -> list[dict[str, Any]]:
+    """Return the list of historical jobs (newest first per backend
+    ordering). Used by the history panel on the upload form."""
+    try:
+        result = api_get("/jobs") or []
+        return result if isinstance(result, list) else []
+    except Exception:
+        return []
+
+
+def _format_relative_time(epoch: float | None) -> str:
+    if epoch is None:
+        return "—"
+    try:
+        delta = time.time() - float(epoch)
+    except (TypeError, ValueError):
+        return "—"
+    if delta < 0:
+        return "just now"
+    if delta < 60:
+        return f"{int(delta)}s ago"
+    if delta < 3600:
+        return f"{int(delta / 60)}m ago"
+    if delta < 86400:
+        return f"{int(delta / 3600)}h ago"
+    return f"{int(delta / 86400)}d ago"
+
+
+def _format_status_badge_html(status: str) -> str:
+    """Inline-HTML status pill matching the pipeline strip's colours."""
+    colours = {
+        "completed": ("#22c55e", "rgba(20,83,45,0.35)", "#bbf7d0", "Done"),
+        "failed": ("#ef4444", "rgba(127,29,29,0.35)", "#fecaca", "Failed"),
+        "running": ("#3b82f6", "rgba(30,64,175,0.32)", "#bfdbfe", "Running"),
+        "cancelled": ("#f59e0b", "rgba(146,64,14,0.35)", "#fde68a", "Cancelled"),
+        "terminated": ("#f59e0b", "rgba(146,64,14,0.35)", "#fde68a", "Terminated"),
+    }
+    border, bg, fg, label = colours.get(status, ("#334155", "rgba(15,23,42,0.78)", "#cbd5e1", status or "—"))
+    return (
+        f'<span style="display:inline-flex; align-items:center; gap:0.4rem; '
+        f'padding:0.18rem 0.6rem; border-radius:999px; border:1px solid {border}; '
+        f'background:{bg}; color:{fg}; font-size:0.74rem; font-weight:700;">'
+        f'<span style="width:0.4rem; height:0.4rem; border-radius:50%; background:{border};"></span>'
+        f'{html.escape(label)}</span>'
+    )
+
+
+def render_history_panel(active_job_id: str | None) -> None:
+    """Browseable list of past simple_reconstruct jobs on the upload form.
+
+    Click any row's Open button to switch the GUI into that job's result
+    view (the live page already does show_completed_result for terminal
+    jobs, so no separate "view past job" page is needed).
+    """
+    jobs = fetch_jobs_list()
+    jobs = [
+        j for j in jobs
+        if j.get("kind") == "simple_reconstruct" and j.get("job_id") != active_job_id
+    ]
+    if not jobs:
+        return
+
+    render_section_heading(
+        "Previous reconstructions",
+        f"{len(jobs)} historical job(s). Click Open to load any one's results.",
+    )
+
+    shown = jobs[:20]
+
+    # Header row
+    head = st.columns([2, 1, 2, 1, 1])
+    for col, label in zip(head, ("When", "Status", "Workpiece", "Duration", "")):
+        col.markdown(
+            f"<div style='color:#94a3b8; font-size:0.74rem; font-weight:700; "
+            f"text-transform:uppercase; letter-spacing:0.02em; padding-bottom:0.3rem; "
+            f"border-bottom:1px solid #1e293b; margin-bottom:0.35rem;'>{html.escape(label)}</div>",
+            unsafe_allow_html=True,
+        )
+
+    for job in shown:
+        jid = str(job.get("job_id") or "")
+        status = job.get("status") or "unknown"
+        started_at = job.get("started_at") or job.get("created_at")
+        ended_at = job.get("ended_at")
+        result_paths = job.get("result_paths") or {}
+        wclass = result_paths.get("workpiece_class")
+        mcode = result_paths.get("model_code")
+
+        when = _format_relative_time(started_at)
+        # Strip the job-kind prefix so the short id is readable.
+        short_id = jid.replace("simple_reconstruct-", "")[:23]
+        workpiece = (
+            (wclass + (f" / {mcode}" if mcode else ""))
+            if wclass else "—"
+        )
+        if status in TERMINAL_STATUSES and started_at and ended_at:
+            duration = format_duration_words(float(ended_at) - float(started_at))
+        elif status not in TERMINAL_STATUSES and started_at:
+            # In-flight job — show live elapsed.
+            duration = f"{_format_relative_time(started_at).replace(' ago', '')} elapsed"
+        else:
+            duration = "—"
+
+        row = st.columns([2, 1, 2, 1, 1])
+        with row[0]:
+            st.markdown(
+                f"<div style='font-size:0.92rem; color:#e2e8f0; font-weight:600; line-height:1.3;'>{html.escape(when)}</div>"
+                f"<div style='font-size:0.72rem; color:#64748b; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;'>{html.escape(short_id)}</div>",
+                unsafe_allow_html=True,
+            )
+        with row[1]:
+            st.markdown(_format_status_badge_html(status), unsafe_allow_html=True)
+        with row[2]:
+            st.markdown(
+                f"<div style='font-size:0.92rem; color:#e2e8f0;'>{html.escape(workpiece)}</div>",
+                unsafe_allow_html=True,
+            )
+        with row[3]:
+            st.markdown(
+                f"<div style='font-size:0.92rem; color:#cbd5e1;'>{html.escape(duration)}</div>",
+                unsafe_allow_html=True,
+            )
+        with row[4]:
+            if st.button("Open", key=f"history_open_{jid}", use_container_width=True):
+                set_active_job_id(jid)
+                st.rerun()
+
+    if len(jobs) > len(shown):
+        st.caption(
+            f"Showing the {len(shown)} most recent. {len(jobs) - len(shown)} older job(s) not displayed."
+        )
+
+
 def fetch_postscale_metadata(job: dict[str, Any]) -> dict[str, Any] | None:
     """Load the postscale metadata.json via /jobs/{id}/file so the details
     expander can show the matrix M, axis pairing, and after-scale bbox."""
@@ -1620,6 +1753,13 @@ if not active_job_id:
                 """,
                 unsafe_allow_html=True,
             )
+
+    # History panel — lists every past simple_reconstruct job with a one
+    # click "Open" affordance. Sits below the upload form so first-time
+    # users see the form first; once there's any history, it's right
+    # there without needing a separate page.
+    st.divider()
+    render_history_panel(active_job_id)
 else:
     try:
         # Single-pass render + st.rerun() polling — this is the streamlit
