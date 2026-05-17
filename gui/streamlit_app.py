@@ -780,13 +780,14 @@ def _metric_card_html(label: str, value: str, hint: str | None = None) -> str:
     )
 
 
-def render_metrics_panel(metrics: dict[str, Any] | None) -> None:
-    """Render SAM3D + Cadrille runtime metrics under the pipeline strip.
+def render_metrics_panel(metrics: dict[str, Any] | None, job: dict[str, Any] | None = None) -> None:
+    """Render SAM3D + Cadrille + Post-scaling runtime metrics under the
+    pipeline strip.
 
-    Shows: SAM3D 时间 + 显存 reserved 最大值; Cadrille 平均 IoU + 中位 CD +
-    时间 + 显存 reserved 最大值. Each section is hidden until the backend
-    has data for it (so the panel doesn't flash a row of placeholders the
-    moment a job starts)."""
+    `job` is used to reconcile sub-measurements (e.g. SAM3D `model_init_sec`)
+    against the corresponding stage duration so the user can see the
+    breakdown (model construction vs. imports + preprocessing). Each
+    section is hidden until the backend has data for it."""
     if not metrics:
         return
     sam3d = (metrics or {}).get("sam3d") or {}
@@ -798,6 +799,21 @@ def render_metrics_panel(metrics: dict[str, Any] | None) -> None:
         and not postscale.get("available")
     ):
         return
+
+    # Look up loading-stage duration so we can show the residual
+    # (imports + preprocessing) alongside the SAM3D model_init_sec, which
+    # is wrapped tightly around the Inference() constructor only. Without
+    # this the cards "stage = 36s" and "模型加载 = 22.43s" look
+    # contradictory even though both are accurate.
+    sam3d_loading_dur: float | None = None
+    if job is not None:
+        try:
+            stage_timings = sync_pipeline_timings(job)
+            sam3d_loading_dur = stage_duration_seconds(
+                job, "SAM3D: Loading checkpoints", stage_timings
+            )
+        except Exception:
+            sam3d_loading_dur = None
 
     render_section_heading(
         "Runtime metrics",
@@ -825,7 +841,29 @@ def render_metrics_panel(metrics: dict[str, Any] | None) -> None:
             )
         )
         if sam3d_init is not None:
-            cards.append(_metric_card_html("模型加载耗时", _format_seconds_zh(sam3d_init)))
+            # The previous label "模型加载耗时" was misleading because the
+            # "Loading checkpoints" stage card above already covers imports
+            # + image preprocessing on top of the constructor. Clarify what
+            # this specific number measures.
+            cards.append(_metric_card_html(
+                "SAM3D 模型构造",
+                _format_seconds_zh(sam3d_init),
+                hint="Inference() 构造时间, 不含 imports / 预处理",
+            ))
+            # If we know the full loading-stage duration, surface the
+            # residual so the math reconciles: stage = model construction +
+            # imports + preprocessing. Only show when the residual is
+            # meaningfully positive (>= 0.5s) to avoid noise.
+            if (
+                sam3d_loading_dur is not None
+                and sam3d_loading_dur - sam3d_init >= 0.5
+            ):
+                residual = sam3d_loading_dur - sam3d_init
+                cards.append(_metric_card_html(
+                    "imports + 预处理",
+                    _format_seconds_zh(residual),
+                    hint=f"加载阶段总 {_format_seconds_zh(sam3d_loading_dur)}",
+                ))
         st.markdown(
             f'<div style="display:grid; grid-template-columns:repeat({len(cards)}, 1fr); '
             f'gap:0.7rem; margin-bottom:1.0rem;">{"".join(cards)}</div>',
@@ -1475,7 +1513,7 @@ else:
 
         render_cadrille_settings(job)
         render_pipeline(job)
-        render_metrics_panel(fetch_job_metrics(active_job_id))
+        render_metrics_panel(fetch_job_metrics(active_job_id), job)
 
         is_running = job.get("status") not in TERMINAL_STATUSES
 
