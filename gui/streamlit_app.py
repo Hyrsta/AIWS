@@ -1077,63 +1077,61 @@ if not active_job_id:
             )
 else:
     try:
-        status_placeholder = st.empty()
-        pipeline_placeholder = st.empty()
-        action_placeholder = st.empty()
-        log_placeholder = st.empty()
-        refresh_placeholder = st.empty()
+        # Single-pass render + st.rerun() polling — this is the streamlit
+        # idiom for "live" pages with control widgets. The previous version
+        # used `while True + sleep` which re-registered the cancel button
+        # under the same key on every iteration, tripping streamlit's
+        # duplicate-key guard.
+        job = api_get(f"/jobs/{active_job_id}")
+        message_level, message_text = stage_message(job)
 
-        while True:
-            job = api_get(f"/jobs/{active_job_id}")
-            message_level, message_text = stage_message(job)
+        render_section_heading(
+            "Live job status",
+            "The page refreshes automatically while this reconstruction is in progress.",
+        )
+        if message_level == "success":
+            st.success(message_text)
+        elif message_level == "error":
+            st.error(message_text)
+        else:
+            st.info(message_text)
 
-            with status_placeholder.container():
-                render_section_heading("Live job status", "The page refreshes automatically while this reconstruction is in progress.")
-                if message_level == "success":
-                    st.success(message_text)
-                elif message_level == "error":
-                    st.error(message_text)
-                else:
-                    st.info(message_text)
+        render_cadrille_settings(job)
+        render_pipeline(job)
 
-            with pipeline_placeholder.container():
-                render_cadrille_settings(job)
-                render_pipeline(job)
+        is_running = job.get("status") not in TERMINAL_STATUSES
 
-            # Cancel button (only while running)
-            if job.get("status") not in TERMINAL_STATUSES:
-                with action_placeholder.container():
-                    cancel_col, _ = st.columns([1, 4])
-                    with cancel_col:
-                        cancel_clicked = st.button(
-                            "Cancel job",
-                            key=f"cancel_{active_job_id}",
-                            type="secondary",
-                            use_container_width=True,
-                        )
-                    if cancel_clicked:
-                        if cancel_job(active_job_id):
-                            st.warning("Cancel request sent. The job will stop shortly.")
-                        else:
-                            st.error("Failed to send cancel request.")
-            else:
-                action_placeholder.empty()
-
-            # Live log tail (last 40 lines, in an expander)
-            with log_placeholder.container():
-                with st.expander("Live log (tail of job.log)", expanded=False):
-                    log_text = fetch_log_tail(active_job_id, n_lines=40)
-                    if log_text.strip():
-                        st.code(log_text[-4000:], language=None)
+        # Cancel button — rendered once per script run while the job is alive.
+        if is_running:
+            cancel_col, _ = st.columns([1, 4])
+            with cancel_col:
+                if st.button(
+                    "Cancel job",
+                    key=f"cancel_{active_job_id}",
+                    type="secondary",
+                    use_container_width=True,
+                ):
+                    if cancel_job(active_job_id):
+                        st.warning("Cancel request sent. The job will stop shortly.")
                     else:
-                        st.caption("Log file empty so far.")
+                        st.error("Failed to send cancel request.")
+                    # Re-poll immediately so the UI reflects the new state.
+                    time.sleep(0.5)
+                    st.rerun()
 
-            if job.get("status") in TERMINAL_STATUSES:
-                refresh_placeholder.empty()
-                break
+        # Live log tail (rendered once per run). The expander has its own
+        # default key derived from its label, so no explicit key is needed.
+        with st.expander("Live log (tail of job.log)", expanded=False):
+            log_text = fetch_log_tail(active_job_id, n_lines=40)
+            if log_text.strip():
+                st.code(log_text[-4000:], language=None)
+            else:
+                st.caption("Log file empty so far.")
 
-            refresh_placeholder.caption("Updating live...")
+        if is_running:
+            st.caption("Updating live...")
             time.sleep(POLL_INTERVAL_SEC)
+            st.rerun()
 
         if job.get("status") == "completed":
             show_completed_result(job)
