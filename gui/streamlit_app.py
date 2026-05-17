@@ -1822,6 +1822,15 @@ else:
         if st.button("Start another reconstruction"):
             clear_active_job()
             st.rerun()
+
+        # Also expose the history panel on the live/completed page so
+        # users can jump straight to any past run without first going
+        # back to the upload form. The auto-resume on launch (any job
+        # touched in the last 12 h becomes the active job) means most
+        # visits never see the upload form, so without this the panel
+        # was effectively hidden.
+        st.divider()
+        render_history_panel(active_job_id)
     except Exception as exc:  # pragma: no cover - UI only
         st.error(exc)
         if st.button("Reset GUI"):
