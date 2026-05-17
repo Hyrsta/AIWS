@@ -416,7 +416,10 @@ async def create_simple_reconstruct(
 
 
 @app.get("/jobs/{job_id}/logs")
-def get_job_logs(job_id: str, tail_lines: int = Query(200, ge=1, le=2000)) -> dict[str, Any]:
+def get_job_logs(job_id: str, tail_lines: int = Query(200, ge=0, le=200000)) -> dict[str, Any]:
+    """Return the job log. `tail_lines=0` means full file (no `tail -n` cap).
+    The cap was previously 2000 — too short for jobs that emit thousands of
+    lines per stage, which made the GUI's log viewer drop earlier output."""
     job = refresh_job(load_job(job_path(job_id)))
     log_text = read_remote_tail(job["ssh_host"], job["log_path"], tail_lines=tail_lines)
     return {
@@ -426,6 +429,75 @@ def get_job_logs(job_id: str, tail_lines: int = Query(200, ge=1, le=2000)) -> di
         "tail_lines": tail_lines,
         "log": log_text,
     }
+
+
+@app.get("/jobs/{job_id}/metrics")
+def get_job_metrics(job_id: str) -> dict[str, Any]:
+    """Aggregate runtime metrics from the job's output files. Cheap, partial:
+    any missing/unreadable section is reported as {"available": False}.
+    Surfaces SAM3D runtime+GPU, Cadrille mean IoU / median CD / runtime / GPU,
+    and a tiny postscale summary."""
+    job = load_job(job_path(job_id))
+    output_root = Path(job["output_root"]).resolve()
+
+    def _read_json(path: Path) -> dict[str, Any] | None:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    # SAM3D meta.json (sam3d/GUI/user_upload/<stem>__obj01/meta.json).
+    sam3d: dict[str, Any] = {"available": False}
+    sam3d_dir = output_root / "sam3d"
+    if sam3d_dir.is_dir():
+        for meta_path in sorted(sam3d_dir.glob("**/meta.json")):
+            data = _read_json(meta_path)
+            if not data:
+                continue
+            sam3d = {
+                "available": True,
+                "duration_sec": data.get("duration_sec"),
+                "model_init_sec": data.get("model_init_sec"),
+                "peak_memory_reserved_mb": data.get("peak_memory_reserved_mb"),
+                "peak_memory_allocated_mb": data.get("peak_memory_allocated_mb"),
+                "cuda_visible_devices": data.get("cuda_visible_devices"),
+            }
+            break
+
+    # Cadrille metrics + GPU memory.
+    cadrille: dict[str, Any] = {"available": False}
+    cadrille_dir = output_root / "cadrille"
+    metrics_data = _read_json(cadrille_dir / "metrics.json") or {}
+    gpu_data = _read_json(cadrille_dir / "gpu_memory.json") or {}
+    if metrics_data or gpu_data:
+        summary = metrics_data.get("summary") or {}
+        devices = gpu_data.get("devices") or []
+        device = devices[0] if devices else {}
+        cadrille = {
+            "available": True,
+            "mean_iou": summary.get("mean_iou"),
+            "median_cd": summary.get("median_cd"),
+            "invalid_cd": summary.get("invalid_cd"),
+            "invalid_iou": summary.get("invalid_iou"),
+            "n_samples": gpu_data.get("n_samples"),
+            "duration_sec": gpu_data.get("duration_sec"),
+            "peak_memory_reserved_mb": device.get("peak_memory_reserved_mb"),
+            "peak_memory_allocated_mb": device.get("peak_memory_allocated_mb"),
+            "device_name": device.get("device_name"),
+            "device_total_memory_mb": device.get("total_memory_mb"),
+        }
+
+    # Post-scaling summary (optional stage).
+    postscale: dict[str, Any] = {"available": False}
+    ps_summary = _read_json(output_root / "postscale" / "_postscale_summary.json")
+    if ps_summary:
+        postscale = {"available": True}
+        for key in ("count", "ok", "failed", "skipped", "workpiece_class", "model_code", "rewrite_mode"):
+            if key in ps_summary:
+                postscale[key] = ps_summary[key]
+
+    return {"job_id": job_id, "sam3d": sam3d, "cadrille": cadrille, "postscale": postscale}
 
 
 @app.post("/jobs/{job_id}/terminate")
@@ -949,7 +1021,14 @@ def mesh_to_payload(mesh: trimesh.Trimesh, *, path: str, max_faces: int) -> dict
 
 
 def read_remote_tail(ssh_host: str, log_path: str, tail_lines: int) -> str:
-    script = f"if [ -f {shlex.quote(log_path)} ]; then tail -n {int(tail_lines)} {shlex.quote(log_path)}; fi"
+    """Return either the last N lines of the log (when `tail_lines > 0`) or
+    the full file (when `tail_lines == 0`). The GUI uses `tail_lines=0` so
+    the in-browser scrollable log container retains every line."""
+    quoted = shlex.quote(log_path)
+    if int(tail_lines) <= 0:
+        script = f"if [ -f {quoted} ]; then cat {quoted}; fi"
+    else:
+        script = f"if [ -f {quoted} ]; then tail -n {int(tail_lines)} {quoted}; fi"
     return run_ssh_command(ssh_host, script, check=False).stdout
 
 

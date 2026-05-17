@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import io
 import json
 import os
@@ -10,6 +11,7 @@ from typing import Any
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 
 
@@ -425,12 +427,23 @@ def image_dimensions(uploaded_bytes: bytes) -> tuple[int, int] | None:
         return None
 
 
-def fetch_log_tail(job_id: str, n_lines: int = 40) -> str:
+def fetch_log_tail(job_id: str, n_lines: int = 0) -> str:
+    """Fetch the job log. `n_lines=0` (the default now) asks the backend for
+    the full file so the scrollable log container retains every line. We
+    used to pass `40` and then clip to the last 4000 chars in the GUI,
+    which silently dropped earlier output on long-running jobs."""
     try:
         payload = api_get(f"/jobs/{job_id}/logs", tail_lines=n_lines)
         return payload.get("log") or ""
     except Exception as exc:
         return f"(log fetch failed: {exc})"
+
+
+def fetch_job_metrics(job_id: str) -> dict[str, Any] | None:
+    try:
+        return api_get(f"/jobs/{job_id}/metrics")
+    except Exception:
+        return None
 
 
 def fetch_postscale_metadata(job: dict[str, Any]) -> dict[str, Any] | None:
@@ -657,6 +670,196 @@ def _pipeline_stage_style(job: dict[str, Any], stage_label: str, stage_timings: 
 
 def _pipeline_stage_title(stage_label: str) -> str:
     return stage_label.replace(": ", "<br>")
+
+
+def _format_seconds_zh(value: Any) -> str:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if v >= 60:
+        m, s = divmod(v, 60.0)
+        return f"{int(m)} 分 {s:.1f} 秒"
+    return f"{v:.2f} 秒"
+
+
+def _format_mb(value: Any) -> str:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if v >= 1024:
+        return f"{v / 1024.0:.2f} GB"
+    return f"{v:.0f} MB"
+
+
+def _format_iou(value: Any) -> str:
+    try:
+        return f"{float(value):.4f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _format_cd(value: Any) -> str:
+    try:
+        return f"{float(value):.4e}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _metric_card_html(label: str, value: str, hint: str | None = None) -> str:
+    hint_html = (
+        f'<div style="font-size:0.74rem; color:#94a3b8; margin-top:0.25rem;">{html.escape(hint)}</div>'
+        if hint
+        else ""
+    )
+    return (
+        '<div style="background:rgba(15,23,42,0.65); border:1px solid #1e293b; '
+        'border-radius:14px; padding:0.85rem 1.0rem; min-height:96px; '
+        'display:flex; flex-direction:column; justify-content:center;">'
+        f'<div style="font-size:0.74rem; color:#94a3b8; letter-spacing:0.02em; '
+        f'text-transform:uppercase; font-weight:600;">{html.escape(label)}</div>'
+        f'<div style="font-size:1.35rem; color:#f8fafc; font-weight:700; '
+        f'margin-top:0.25rem;">{html.escape(value)}</div>'
+        f"{hint_html}"
+        "</div>"
+    )
+
+
+def render_metrics_panel(metrics: dict[str, Any] | None) -> None:
+    """Render SAM3D + Cadrille runtime metrics under the pipeline strip.
+
+    Shows: SAM3D 时间 + 显存 reserved 最大值; Cadrille 平均 IoU + 中位 CD +
+    时间 + 显存 reserved 最大值. Each section is hidden until the backend
+    has data for it (so the panel doesn't flash a row of placeholders the
+    moment a job starts)."""
+    if not metrics:
+        return
+    sam3d = (metrics or {}).get("sam3d") or {}
+    cadrille = (metrics or {}).get("cadrille") or {}
+    if not sam3d.get("available") and not cadrille.get("available"):
+        return
+
+    render_section_heading(
+        "Runtime metrics",
+        "Stage-level timing and GPU memory readings emitted by the pipeline.",
+    )
+
+    if sam3d.get("available"):
+        st.markdown(
+            '<div style="font-weight:700; color:#cbd5e1; margin:0.3rem 0 0.4rem 0; font-size:0.92rem;">'
+            "SAM3D · Mesh generation"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        sam3d_init = sam3d.get("model_init_sec")
+        sam3d_dur = sam3d.get("duration_sec")
+        sam3d_reserved = sam3d.get("peak_memory_reserved_mb")
+        sam3d_alloc = sam3d.get("peak_memory_allocated_mb")
+        cards = []
+        cards.append(_metric_card_html("时间 (推理耗时)", _format_seconds_zh(sam3d_dur)))
+        cards.append(
+            _metric_card_html(
+                "显存 reserved 最大值",
+                _format_mb(sam3d_reserved),
+                hint=f"allocated 峰值 {_format_mb(sam3d_alloc)}" if sam3d_alloc is not None else None,
+            )
+        )
+        if sam3d_init is not None:
+            cards.append(_metric_card_html("模型加载耗时", _format_seconds_zh(sam3d_init)))
+        st.markdown(
+            f'<div style="display:grid; grid-template-columns:repeat({len(cards)}, 1fr); '
+            f'gap:0.7rem; margin-bottom:1.0rem;">{"".join(cards)}</div>',
+            unsafe_allow_html=True,
+        )
+
+    if cadrille.get("available"):
+        st.markdown(
+            '<div style="font-weight:700; color:#cbd5e1; margin:0.3rem 0 0.4rem 0; font-size:0.92rem;">'
+            "Cadrille · CAD generation"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        c_iou = cadrille.get("mean_iou")
+        c_cd = cadrille.get("median_cd")
+        c_dur = cadrille.get("duration_sec")
+        c_reserved = cadrille.get("peak_memory_reserved_mb")
+        c_alloc = cadrille.get("peak_memory_allocated_mb")
+        c_n = cadrille.get("n_samples")
+        device = cadrille.get("device_name")
+        cards = [
+            _metric_card_html(
+                "平均 IoU",
+                _format_iou(c_iou),
+                hint=f"{c_n} candidates" if c_n else None,
+            ),
+            _metric_card_html(
+                "中位 CD",
+                _format_cd(c_cd),
+                hint="Chamfer distance (lower is better)",
+            ),
+            _metric_card_html("时间 (生成耗时)", _format_seconds_zh(c_dur)),
+            _metric_card_html(
+                "显存 reserved 最大值",
+                _format_mb(c_reserved),
+                hint=(
+                    f"allocated 峰值 {_format_mb(c_alloc)}"
+                    + (f" · {device}" if device else "")
+                    if c_alloc is not None
+                    else (device or None)
+                ),
+            ),
+        ]
+        st.markdown(
+            f'<div style="display:grid; grid-template-columns:repeat(4, 1fr); '
+            f'gap:0.7rem; margin-bottom:0.6rem;">{"".join(cards)}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_log_viewer(job_id: str) -> None:
+    """Render a fixed-height scrollable log container that retains the full
+    job log. Replaces the old `st.expander` + `st.code(log[-4000:])` block
+    which truncated to the last 4000 characters."""
+    log_text = fetch_log_tail(job_id, n_lines=0)  # 0 → full file
+    raw = log_text if log_text.strip() else "(log file empty so far)"
+    body = html.escape(raw)
+    line_count = raw.count("\n") + (0 if raw.endswith("\n") else 1)
+    byte_count = len(raw.encode("utf-8"))
+    size_label = f"{byte_count / 1024:.1f} KB" if byte_count >= 1024 else f"{byte_count} B"
+
+    with st.expander(f"Live log ({line_count} lines · {size_label})", expanded=False):
+        # `components.html` runs the markup inside an iframe, which lets the
+        # small auto-scroll script work without leaking globals into the host
+        # page. Height is fixed so the container scrolls instead of pushing
+        # later sections off-screen.
+        html_block = f"""
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  html, body {{ margin:0; padding:0; height:100%; background:#0b1220; }}
+  #log {{
+    height:100%; overflow:auto;
+    padding:14px 16px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12px; line-height:1.5; color:#e2e8f0;
+    white-space:pre-wrap; word-break:break-word;
+    box-sizing:border-box;
+  }}
+  #log::-webkit-scrollbar {{ width:10px; }}
+  #log::-webkit-scrollbar-thumb {{ background:#334155; border-radius:5px; }}
+  #log::-webkit-scrollbar-track {{ background:#0b1220; }}
+</style></head>
+<body>
+<div id="log">{body}</div>
+<script>
+  // Auto-scroll to the latest output on every rerun so users always see
+  // the freshest lines without losing the ability to scroll back manually
+  // mid-render.
+  const el = document.getElementById('log');
+  if (el) {{ el.scrollTop = el.scrollHeight; }}
+</script>
+</body></html>"""
+        components.html(html_block, height=480, scrolling=False)
 
 
 def render_pipeline(job: dict[str, Any]) -> None:
@@ -1157,6 +1360,7 @@ else:
 
         render_cadrille_settings(job)
         render_pipeline(job)
+        render_metrics_panel(fetch_job_metrics(active_job_id))
 
         is_running = job.get("status") not in TERMINAL_STATUSES
 
@@ -1178,14 +1382,10 @@ else:
                     time.sleep(0.5)
                     st.rerun()
 
-        # Live log tail (rendered once per run). The expander has its own
-        # default key derived from its label, so no explicit key is needed.
-        with st.expander("Live log (tail of job.log)", expanded=False):
-            log_text = fetch_log_tail(active_job_id, n_lines=40)
-            if log_text.strip():
-                st.code(log_text[-4000:], language=None)
-            else:
-                st.caption("Log file empty so far.")
+        # Full log in a fixed-height scrollable container (retains every
+        # line — previously this was truncated to ~40 lines from the
+        # backend and the last 4000 chars in the GUI).
+        render_log_viewer(active_job_id)
 
         if is_running:
             st.caption("Updating live...")
