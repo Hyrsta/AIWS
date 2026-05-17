@@ -490,12 +490,64 @@ def get_job_metrics(job_id: str) -> dict[str, Any]:
 
     # Post-scaling summary (optional stage).
     postscale: dict[str, Any] = {"available": False}
-    ps_summary = _read_json(output_root / "postscale" / "_postscale_summary.json")
+    ps_dir = output_root / "postscale"
+    ps_summary = _read_json(ps_dir / "_postscale_summary.json")
     if ps_summary:
         postscale = {"available": True}
         for key in ("count", "ok", "failed", "skipped", "workpiece_class", "model_code", "rewrite_mode"):
             if key in ps_summary:
                 postscale[key] = ps_summary[key]
+
+    # Per-sample postscale metadata holds the actual bbox numbers:
+    # canonical_bbox (Cadrille's native units, "scale before scaling"),
+    # catalog.bbox_mm (the catalog target dimensions selected for this
+    # workpiece), and after_scale_bbox_mm (the actual dimensions after
+    # the affine rewrite). Surface all three so the GUI can show them
+    # as cards instead of burying them in a details expander.
+    if ps_dir.is_dir():
+        for meta_path in sorted(ps_dir.glob("*__metadata.json")):
+            if meta_path.name.startswith("_"):
+                continue
+            data = _read_json(meta_path)
+            if not data:
+                continue
+            cat = data.get("catalog") or {}
+            canonical = data.get("canonical_bbox") or {}
+            after = data.get("after_scale_bbox_mm") or {}
+            scale = data.get("scale") or {}
+            target_bbox = cat.get("bbox_mm") or [None, None, None]
+            actual = [after.get("xlen"), after.get("ylen"), after.get("zlen")]
+            canonical_extents = [canonical.get("xlen"), canonical.get("ylen"), canonical.get("zlen")]
+
+            # Per-axis match. Tolerance matches the existing expander
+            # (1e-3 relative error); any axis missing data → match=False.
+            max_rel: float | None = None
+            match_ok: bool | None = None
+            if any(a is not None for a in actual) and any(t is not None for t in target_bbox):
+                match_ok = True
+                max_rel = 0.0
+                for t, a in zip(target_bbox, actual):
+                    if t is None or a is None or t == 0:
+                        match_ok = False
+                        continue
+                    rel = abs(a - t) / t
+                    if rel > max_rel:
+                        max_rel = rel
+                    if rel >= 1e-3:
+                        match_ok = False
+
+            postscale.update({
+                "available": True,
+                "workpiece_class": cat.get("workpiece_class") or postscale.get("workpiece_class"),
+                "model_code": cat.get("model_code") or postscale.get("model_code"),
+                "rewrite_mode": data.get("rewrite_mode") or scale.get("mode") or postscale.get("rewrite_mode"),
+                "canonical_extents": canonical_extents,
+                "catalog_target_mm": target_bbox,
+                "after_scale_mm": actual,
+                "max_rel_error": max_rel,
+                "match_ok": match_ok,
+            })
+            break
 
     return {"job_id": job_id, "sam3d": sam3d, "cadrille": cadrille, "postscale": postscale}
 

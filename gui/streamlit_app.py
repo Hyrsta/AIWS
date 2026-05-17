@@ -395,6 +395,9 @@ def format_duration(seconds: float | None) -> str:
 def format_duration_words(seconds: float | None) -> str:
     if seconds is None:
         return "--"
+    # Sub-10s: keep one decimal so a 0.46s stage doesn't render as "0 seconds".
+    if seconds < 10:
+        return f"{max(seconds, 0):.1f} seconds"
     total_seconds = max(int(round(seconds)), 0)
     hours, remainder = divmod(total_seconds, 3600)
     minutes, secs = divmod(remainder, 60)
@@ -567,15 +570,23 @@ def sync_pipeline_timings(job: dict[str, Any]) -> dict[str, dict[str, float | No
     request = job.get("request") or {}
     postscale_enabled = bool(request.get("postscale_enabled") or request.get("workpiece_class"))
 
+    # None-aware "set if missing" — `dict.setdefault` checks for key existence,
+    # which doesn't help when the backend wrote `ended_at: None` explicitly
+    # (the case for every transition in the current backend, see the comment
+    # at the end of this function).
+    def _set_if_missing(entry: dict[str, Any], key: str, value: Any) -> None:
+        if entry.get(key) is None and value is not None:
+            entry[key] = value
+
     if current_label in PIPELINE_STAGES:
         current_entry = merged.setdefault(current_label, {})
         default_started_at = job.get("started_at") if current_label == PIPELINE_STAGES[0] else now
-        current_entry.setdefault("started_at", default_started_at or now)
+        _set_if_missing(current_entry, "started_at", default_started_at or now)
 
     if previous_label in PIPELINE_STAGES and previous_label != current_label:
         previous_entry = merged.setdefault(previous_label, {})
-        previous_entry.setdefault("started_at", now)
-        previous_entry.setdefault("ended_at", now)
+        _set_if_missing(previous_entry, "started_at", now)
+        _set_if_missing(previous_entry, "ended_at", now)
 
     # Back-fill every stage earlier than the current stage as Done. Otherwise
     # a stage that was too fast to be observed as `current_stage_label` (e.g.
@@ -585,28 +596,49 @@ def sync_pipeline_timings(job: dict[str, Any]) -> dict[str, dict[str, float | No
         current_idx = PIPELINE_STAGES.index(current_label)
         for earlier_label in PIPELINE_STAGES[:current_idx]:
             earlier_entry = merged.setdefault(earlier_label, {})
-            earlier_entry.setdefault("started_at", job.get("started_at") or now)
-            earlier_entry.setdefault("ended_at", now)
+            _set_if_missing(earlier_entry, "started_at", job.get("started_at") or now)
+            # NB: do NOT default ended_at to `now` here — the next-stage
+            # inference pass below derives it from the next stage's
+            # started_at, which gives an accurate per-stage duration
+            # instead of "everything up to now".
+
+    # Next-stage inference: for any past stage whose ended_at wasn't
+    # explicitly recorded, derive it from the next stage's started_at.
+    # The current backend writes `ended_at: None` on stage open and the
+    # close-out path uses `setdefault` (existence-only), so transitions
+    # never overwrite that None — leaving every past stage with no end
+    # time on disk. Since the backend records started_at correctly, we
+    # can reconstruct each per-stage duration from the next stage's
+    # start. (When this runs server-side too the inference becomes a
+    # harmless no-op.)
+    for i, label in enumerate(PIPELINE_STAGES[:-1]):
+        entry = merged.get(label)
+        if not entry or entry.get("started_at") is None or entry.get("ended_at") is not None:
+            continue
+        for next_label in PIPELINE_STAGES[i + 1:]:
+            next_entry = merged.get(next_label)
+            if next_entry and next_entry.get("started_at") is not None:
+                entry["ended_at"] = next_entry["started_at"]
+                break
 
     if status in TERMINAL_STATUSES:
         active_label = previous_label if previous_label in PIPELINE_STAGES else current_label
         if active_label in PIPELINE_STAGES:
             active_entry = merged.setdefault(active_label, {})
-            active_entry.setdefault("started_at", job.get("started_at") or now)
-            active_entry.setdefault("ended_at", job.get("ended_at") or job.get("updated_at") or now)
-        # When the job has ended, mark every stage Done (skipping post-scaling
-        # if the user didn't pick a workpiece — that stage is rendered as
-        # "Skipped" elsewhere). Without this, any stage whose `ended_at`
-        # wasn't recorded inline would stay on "Waiting" forever on the final
-        # page.
+            _set_if_missing(active_entry, "started_at", job.get("started_at") or now)
+            _set_if_missing(active_entry, "ended_at", job.get("ended_at") or job.get("updated_at") or now)
+        # Last-resort back-fill for any stage still missing timings on the
+        # final page. Without this, a stage whose ended_at wasn't recorded
+        # (and that has no following stage to infer from — e.g. the very
+        # last stage in the pipeline) would stay on "Waiting" forever.
         terminal_end = job.get("ended_at") or job.get("updated_at") or now
         terminal_start = job.get("started_at") or terminal_end
         for label in PIPELINE_STAGES:
             if label == POSTSCALE_STAGE_LABEL and not postscale_enabled:
                 continue
             entry = merged.setdefault(label, {})
-            entry.setdefault("started_at", terminal_start)
-            entry.setdefault("ended_at", terminal_end)
+            _set_if_missing(entry, "started_at", terminal_start)
+            _set_if_missing(entry, "ended_at", terminal_end)
         tracker["current_stage_label"] = None
     else:
         tracker["current_stage_label"] = current_label
@@ -707,6 +739,28 @@ def _format_cd(value: Any) -> str:
         return "—"
 
 
+def _format_bbox_zh(extents: Any, unit: str = "") -> str:
+    """Render [x, y, z] as 'x × y × z (unit)'. Picks decimal places based
+    on magnitude so a 0.0034 canonical extent and a 404.0 mm extent both
+    look reasonable in the same card."""
+    if not isinstance(extents, (list, tuple)) or len(extents) != 3:
+        return "—"
+    parts: list[str] = []
+    for v in extents:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return "—"
+        if abs(f) >= 100:
+            parts.append(f"{f:.1f}")
+        elif abs(f) >= 1:
+            parts.append(f"{f:.2f}")
+        else:
+            parts.append(f"{f:.3g}")
+    body = " × ".join(parts)
+    return f"{body} {unit}" if unit else body
+
+
 def _metric_card_html(label: str, value: str, hint: str | None = None) -> str:
     hint_html = (
         f'<div style="font-size:0.74rem; color:#94a3b8; margin-top:0.25rem;">{html.escape(hint)}</div>'
@@ -737,7 +791,12 @@ def render_metrics_panel(metrics: dict[str, Any] | None) -> None:
         return
     sam3d = (metrics or {}).get("sam3d") or {}
     cadrille = (metrics or {}).get("cadrille") or {}
-    if not sam3d.get("available") and not cadrille.get("available"):
+    postscale = (metrics or {}).get("postscale") or {}
+    if (
+        not sam3d.get("available")
+        and not cadrille.get("available")
+        and not postscale.get("available")
+    ):
         return
 
     render_section_heading(
@@ -808,6 +867,62 @@ def render_metrics_panel(metrics: dict[str, Any] | None) -> None:
                     if c_alloc is not None
                     else (device or None)
                 ),
+            ),
+        ]
+        st.markdown(
+            f'<div style="display:grid; grid-template-columns:repeat(4, 1fr); '
+            f'gap:0.7rem; margin-bottom:0.6rem;">{"".join(cards)}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Post-scaling metric alignment: canonical-before, catalog target, and
+    # after-scale dimensions. The expander further down on the completed
+    # page shows the full matrix M + axis pairing — these cards surface the
+    # numbers the user cares about most ("what scale did the model output
+    # vs. what scale did the catalog say").
+    if postscale.get("available") and (
+        postscale.get("canonical_extents") or postscale.get("catalog_target_mm")
+    ):
+        st.markdown(
+            '<div style="font-weight:700; color:#cbd5e1; margin:0.3rem 0 0.4rem 0; font-size:0.92rem;">'
+            "Post-scaling · Metric alignment"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        cls = postscale.get("workpiece_class") or "—"
+        code = postscale.get("model_code")
+        mode = postscale.get("rewrite_mode")
+        workpiece_value = f"{cls} / {code}" if code else cls
+        workpiece_hint = f"mode: {mode}" if mode else None
+
+        canonical = postscale.get("canonical_extents") or [None, None, None]
+        target = postscale.get("catalog_target_mm") or [None, None, None]
+        actual = postscale.get("after_scale_mm") or [None, None, None]
+        max_rel = postscale.get("max_rel_error")
+        match_ok = postscale.get("match_ok")
+
+        after_hint = None
+        if match_ok is True:
+            after_hint = f"matched catalog (max Δ rel = {max_rel:.2e})" if max_rel is not None else "matched catalog"
+        elif match_ok is False and max_rel is not None:
+            after_hint = f"mismatch (max Δ rel = {max_rel:.2e})"
+
+        cards = [
+            _metric_card_html("工件型号", workpiece_value, hint=workpiece_hint),
+            _metric_card_html(
+                "缩放前 canonical bbox",
+                _format_bbox_zh(canonical, unit="canonical units"),
+                hint="Cadrille 原生输出尺寸",
+            ),
+            _metric_card_html(
+                "目录目标 bbox",
+                _format_bbox_zh(target, unit="mm"),
+                hint="catalog 选定的真实尺寸",
+            ),
+            _metric_card_html(
+                "缩放后实际 bbox",
+                _format_bbox_zh(actual, unit="mm"),
+                hint=after_hint,
             ),
         ]
         st.markdown(
