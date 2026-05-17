@@ -449,6 +449,16 @@ def fetch_job_metrics(job_id: str) -> dict[str, Any] | None:
         return None
 
 
+def fetch_job_inputs(job_id: str) -> dict[str, Any] | None:
+    """Return {input_image, input_mask} absolute paths for a job, or None
+    on error. Used by show_completed_result to render the uploaded image
+    pair alongside the reconstruction outputs."""
+    try:
+        return api_get(f"/jobs/{job_id}/inputs")
+    except Exception:
+        return None
+
+
 def fetch_postscale_metadata(job: dict[str, Any]) -> dict[str, Any] | None:
     """Load the postscale metadata.json via /jobs/{id}/file so the details
     expander can show the matrix M, axis pairing, and after-scale bbox."""
@@ -1209,10 +1219,33 @@ def show_completed_result(job: dict[str, Any]) -> None:
     wclass = result_paths.get("workpiece_class")
     mcode = result_paths.get("model_code")
 
-    # "Results" heading and the duplicate render_cadrille_settings call
-    # were removed: the section is self-evident (we're on the completed
-    # page rendering result cards), and the live page already shows the
-    # Cadrille settings row up top.
+    # Uploaded photo + mask. Source paths come from the backend's
+    # /jobs/{id}/inputs (job_root/input/{input,mask}.<ext>) so the GUI
+    # works for jobs created before result_paths started tracking them.
+    job_id_str = str(job.get("job_id") or "")
+    inputs = fetch_job_inputs(job_id_str) or {}
+    input_image_path = inputs.get("input_image")
+    input_mask_path = inputs.get("input_mask")
+    if input_image_path or input_mask_path:
+        render_section_heading("Uploaded inputs", "The photo + mask the reconstruction started from.")
+        input_col1, input_col2 = st.columns(2)
+        with input_col1:
+            if input_image_path:
+                img_bytes = fetch_file_bytes(job_id_str, input_image_path)
+                if img_bytes:
+                    img_dims = image_dimensions(img_bytes)
+                    lbl = f"Photo · {img_dims[0]}×{img_dims[1]}" if img_dims else "Photo"
+                    st.caption(lbl)
+                    st.image(img_bytes, use_column_width=True)
+        with input_col2:
+            if input_mask_path:
+                mask_bytes = fetch_file_bytes(job_id_str, input_mask_path)
+                if mask_bytes:
+                    mask_dims = image_dimensions(mask_bytes)
+                    lbl = f"Mask · {mask_dims[0]}×{mask_dims[1]}" if mask_dims else "Mask"
+                    st.caption(lbl)
+                    st.image(mask_bytes, use_column_width=True)
+
     if sam3d_mesh or cadrille_mesh or scaled_mesh:
         render_section_heading("Mesh previews")
         # If post-scaling ran, show three columns (SAM3D, Cadrille canonical, Cadrille scaled mm).
@@ -1251,6 +1284,71 @@ def show_completed_result(job: dict[str, Any]) -> None:
     if scaled_mesh:
         meta = fetch_postscale_metadata(job)
         if meta:
+            # First, surface the headline numbers (canonical-before,
+            # catalog-target, after-scale) as visible cards so they don't
+            # require expanding the details block to see them. The matrix
+            # and axis-map detail stays inside the expander below.
+            render_section_heading(
+                "Metric alignment",
+                "Canonical Cadrille bbox → catalog target → after-scale actual.",
+            )
+            cat = meta.get("catalog") or {}
+            target_bbox = cat.get("bbox_mm") or [None, None, None]
+            after = meta.get("after_scale_bbox_mm") or {}
+            actual_bbox = [after.get("xlen"), after.get("ylen"), after.get("zlen")]
+            canonical = meta.get("canonical_bbox") or {}
+            canonical_bbox = [canonical.get("xlen"), canonical.get("ylen"), canonical.get("zlen")]
+
+            # Per-axis match indicator (matches the table inside the expander).
+            mismatch_axes: list[str] = []
+            max_rel = 0.0
+            for axis_name, t, a in zip("XYZ", target_bbox, actual_bbox):
+                if t is None or a is None or t == 0:
+                    continue
+                rel = abs(a - t) / t
+                if rel > max_rel:
+                    max_rel = rel
+                if rel >= 1e-3:
+                    mismatch_axes.append(axis_name)
+            match_hint = (
+                f"matched catalog (max Δ rel = {max_rel:.2e})"
+                if not mismatch_axes and any(a is not None for a in actual_bbox)
+                else (f"mismatch on {', '.join(mismatch_axes)} (max Δ rel = {max_rel:.2e})" if mismatch_axes else None)
+            )
+
+            mode = meta.get("rewrite_mode") or (meta.get("scale") or {}).get("mode")
+            workpiece_value = f"{cat.get('workpiece_class') or '—'}"
+            if cat.get("model_code"):
+                workpiece_value = f"{workpiece_value} / {cat['model_code']}"
+
+            align_cards = [
+                _metric_card_html(
+                    "工件型号",
+                    workpiece_value,
+                    hint=f"mode: {mode}" if mode else None,
+                ),
+                _metric_card_html(
+                    "缩放前 canonical bbox",
+                    _format_bbox_zh(canonical_bbox, unit="canonical units"),
+                    hint="Cadrille 原生输出尺寸",
+                ),
+                _metric_card_html(
+                    "目录目标 bbox",
+                    _format_bbox_zh(target_bbox, unit="mm"),
+                    hint="catalog 选定的真实尺寸",
+                ),
+                _metric_card_html(
+                    "缩放后实际 bbox",
+                    _format_bbox_zh(actual_bbox, unit="mm"),
+                    hint=match_hint,
+                ),
+            ]
+            st.markdown(
+                f'<div style="display:grid; grid-template-columns:repeat(4, 1fr); '
+                f'gap:0.7rem; margin-bottom:0.8rem;">{"".join(align_cards)}</div>',
+                unsafe_allow_html=True,
+            )
+
             with st.expander("Post-scaling details (matrix, axis pairing, bbox match)", expanded=False):
                 cat = meta.get("catalog") or {}
                 target = cat.get("bbox_mm") or [None, None, None]
@@ -1312,7 +1410,8 @@ def show_completed_result(job: dict[str, Any]) -> None:
         render_section_heading("Saved output folder")
         st.code(output_root)
 
-    job_id_str = str(job.get("job_id") or "")
+    # `job_id_str` was already defined at the top of show_completed_result
+    # for the input-photo + mask fetch — reuse it instead of re-assigning.
     if scaled_mesh:
         output_col1, output_col2, output_col3 = st.columns(3)
     else:

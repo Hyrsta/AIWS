@@ -242,6 +242,29 @@ def download_job_file(job_id: str, path: str = Query(..., min_length=1)) -> File
     return FileResponse(target, filename=target.name)
 
 
+@app.get("/jobs/{job_id}/inputs")
+def get_job_inputs(job_id: str) -> dict[str, Any]:
+    """Return absolute paths to the uploaded photo + mask for a job.
+
+    Both files live under `<job_root>/input/` and are named `input.{ext}`
+    and `mask.{ext}` where ext depends on what the user uploaded. We glob
+    rather than relying on result_paths so this works for jobs created
+    before result_paths started tracking inputs."""
+    job = load_job(job_path(job_id))
+    output_root = Path(job["output_root"]).resolve()
+    input_dir = output_root / "input"
+    image_path: str | None = None
+    mask_path: str | None = None
+    if input_dir.is_dir():
+        for p in sorted(input_dir.iterdir()):
+            stem = p.stem.lower()
+            if stem == "input" and p.is_file() and image_path is None:
+                image_path = str(p)
+            elif stem == "mask" and p.is_file() and mask_path is None:
+                mask_path = str(p)
+    return {"job_id": job_id, "input_image": image_path, "input_mask": mask_path}
+
+
 @app.get("/jobs", response_model=list[JobSummary])
 def list_jobs() -> list[JobSummary]:
     jobs = [refresh_job(load_job(path)) for path in sorted(JOBS_ROOT.glob("*.json"), reverse=True)]
