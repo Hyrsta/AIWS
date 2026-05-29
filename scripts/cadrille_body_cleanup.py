@@ -18,10 +18,10 @@ import sys
 from pathlib import Path
 
 import cadquery as cq
-import trimesh
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from body_cleanup_core import assess_confidence, cluster_bodies  # noqa: E402
+from cad_mesh_utils import compound_to_mesh  # noqa: E402
 
 try:
     from OCP.BRepExtrema import BRepExtrema_DistShapeShape
@@ -76,11 +76,6 @@ def overall_bbox_diagonal(solids: list) -> float:
         xmax, ymax, zmax = max(xmax, bb.xmax), max(ymax, bb.ymax), max(zmax, bb.zmax)
     dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
     return (dx * dx + dy * dy + dz * dz) ** 0.5
-
-
-def compound_to_mesh(compound, linear_deflection: float, angular_deflection: float):
-    vertices, faces = compound.tessellate(linear_deflection, angular_deflection)
-    return trimesh.Trimesh([(v.x, v.y, v.z) for v in vertices], faces)
 
 
 def run_cleanup(args) -> dict:

@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import tempfile
 import trimesh
@@ -11,6 +12,9 @@ from argparse import ArgumentParser
 from multiprocessing import Process
 
 import open3d
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cad_mesh_utils import compound_to_mesh  # noqa: E402
 
 
 def sample_mesh_points(mesh, n_points):
@@ -46,11 +50,6 @@ def compute_iou(gt_mesh, pred_mesh):
         return intersection_volume / union_volume
     except Exception:
         pass
-
-
-def compound_to_mesh(compound):
-    vertices, faces = compound.tessellate(0.001, 0.1)
-    return trimesh.Trimesh([(v.x, v.y, v.z) for v in vertices], faces)
 
 
 def py_file_to_mesh_and_brep_files(py_path, mesh_path, brep_path, export_brep):
