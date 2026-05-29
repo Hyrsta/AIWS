@@ -611,6 +611,25 @@ def fetch_postscale_metadata(job: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
 
+def fetch_cleanup_metadata(job: dict[str, Any]) -> dict[str, Any] | None:
+    """Load cadrille_cleanup_metadata.json via /jobs/{id}/file for the
+    before/after caption (body counts, removed-volume %, confidence flag)."""
+    result_paths = job.get("result_paths") or {}
+    meta_path = result_paths.get("cleanup_metadata")
+    if not meta_path:
+        return None
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/jobs/{job['job_id']}/file",
+            params={"path": meta_path},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return None
+
+
 def fetch_file_bytes(job_id: str, file_path: str) -> bytes | None:
     """Download a file from the job's output root via the backend."""
     try:
@@ -1412,6 +1431,38 @@ def show_completed_result(job: dict[str, Any]) -> None:
                                   path=cadrille_mesh, color="#4f8bf9",
                                   units="(canonical units)")
 
+    # ─── Body cleanup before/after ───
+    cleaned_mesh = result_paths.get("cleaned_mesh_stl")
+    if cleaned_mesh:
+        cleanup_meta = fetch_cleanup_metadata(job) or {}
+        nb = result_paths.get("n_bodies_before")
+        if nb is None:
+            nb = cleanup_meta.get("n_bodies_before")
+        na = result_paths.get("n_bodies_after")
+        if na is None:
+            na = cleanup_meta.get("n_bodies_after")
+        removed = cleanup_meta.get("n_bodies_removed")
+        render_section_heading("Body cleanup (before / after)")
+        bc_col1, bc_col2 = st.columns(2)
+        with bc_col1:
+            before_title = f"Before — {nb} bodies" if nb is not None else "Before (raw Cadrille)"
+            show_mesh_preview(job, title=before_title, path=result_paths.get("selected_mesh"),
+                              color="#94a3b8", units="(canonical units)")
+        with bc_col2:
+            if na is not None and removed:
+                after_title = f"After — {na} bodies ({removed} removed)"
+            elif na is not None:
+                after_title = f"After — {na} bodies (no change)"
+            else:
+                after_title = "After (cleaned)"
+            show_mesh_preview(job, title=after_title, path=cleaned_mesh,
+                              color="#22c55e", units="(canonical units)")
+        if cleanup_meta.get("confidence_flag"):
+            reasons = "; ".join(cleanup_meta.get("confidence_reasons") or [])
+            base_msg = ("Multiple comparable bodies were present — please verify the "
+                        "cleanup didn't remove a real part.")
+            st.warning(f"{base_msg} ({reasons})" if reasons else base_msg)
+
     # Post-scaling transparency: show the affine M, axis pairing, det note,
     # and a catalog-target vs after-scale bbox match table.
     if scaled_mesh:
@@ -1584,6 +1635,18 @@ def show_completed_result(job: dict[str, Any]) -> None:
                 output_root,
                 job_id=job_id_str,
             )
+
+    if result_paths.get("cleaned_mesh_stl") or result_paths.get("cleaned_brep_step"):
+        render_output_group(
+            "Cleaned CAD (post body-cleanup)",
+            [
+                ("Cleaned STEP", result_paths.get("cleaned_brep_step")),
+                ("Cleaned STL", result_paths.get("cleaned_mesh_stl")),
+                ("Cleanup metadata.json", result_paths.get("cleanup_metadata")),
+            ],
+            output_root,
+            job_id=job_id_str,
+        )
 
 
 st.set_page_config(page_title="AIWS offline pipeline CAD Reconstruction", page_icon="🧩", layout="wide")
