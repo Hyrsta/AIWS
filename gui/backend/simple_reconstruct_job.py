@@ -69,11 +69,13 @@ def parse_args() -> argparse.Namespace:
 
 
 POSTSCALE_STAGE_LABEL = "Post-scaling: Aligning CAD to catalog (mm)"
+BODY_CLEANUP_STAGE_LABEL = "Body cleanup: Removing hallucinated bodies"
 PIPELINE_STAGE_LABELS = [
     "SAM3D: Loading checkpoints",
     "SAM3D: Generating mesh",
     "Cadrille: Preparing input",
     "Cadrille: Generating CAD result",
+    BODY_CLEANUP_STAGE_LABEL,
     POSTSCALE_STAGE_LABEL,
 ]
 TERMINAL_STATUSES = {"completed", "failed", "terminated"}
@@ -206,6 +208,12 @@ def build_simple_result_paths(
         "selected_mesh": None,
         "selected_py": None,
         "selected_brep": None,
+        # Body-cleanup slots — populated by run_body_cleanup_stage.
+        "cleaned_brep_step": None,
+        "cleaned_mesh_stl": None,
+        "cleanup_metadata": None,
+        "n_bodies_before": None,
+        "n_bodies_after": None,
         # Post-scaling slots — populated by run_postscale_stage when applicable.
         "postscale_dir": None,
         "scaled_mesh_stl": None,
@@ -287,6 +295,56 @@ def run_postscale_stage(
         "workpiece_class": workpiece_class,
         "model_code": (model_code if model_code and model_code not in ("(default)", "") else None),
     }
+    return {k: v for k, v in populated.items() if v is not None}
+
+
+def run_body_cleanup_stage(
+    *,
+    repo_root: Path,
+    job_root: Path,
+    selected_brep_host: Path,
+    docker_image: str,
+) -> dict[str, Any]:
+    """Run scripts/cadrille_body_cleanup.py in docker on the selected .step and
+    copy cleaned outputs into <job_root>/results/. Returns result_paths keys to
+    merge. Raises on hard failure (caller treats cleanup as best-effort)."""
+    cleanup_work = (job_root / "cleanup").resolve()
+    cleanup_work.mkdir(parents=True, exist_ok=True)
+    brep_in_ctr = "/job/" + str(selected_brep_host.resolve().relative_to(job_root))
+
+    docker_cmd = [
+        "docker", "run", "--rm",
+        "--user", f"{os.getuid()}:{os.getgid()}",
+        "-v", f"{repo_root}:/repo:ro",
+        "-v", f"{job_root}:/job",
+        docker_image,
+        "python",
+        "/repo/scripts/cadrille_body_cleanup.py",
+        "--in-step", brep_in_ctr,
+        "--out-dir", "/job/cleanup",
+        "--export-stl",
+    ]
+    run_cmd(docker_cmd)
+
+    stem = selected_brep_host.stem  # e.g. "cadrille_selected"
+    src_step = cleanup_work / f"{stem}__cleaned.step"
+    src_stl = cleanup_work / f"{stem}__cleaned.stl"
+    src_meta = cleanup_work / f"{stem}__cleanup_metadata.json"
+
+    results_root = job_root / "results"
+    results_root.mkdir(parents=True, exist_ok=True)
+    populated: dict[str, Any] = {
+        "cleaned_brep_step": copy_result_file(str(src_step), results_root / "cadrille_cleaned.step"),
+        "cleaned_mesh_stl": copy_result_file(str(src_stl), results_root / "cadrille_cleaned.stl"),
+        "cleanup_metadata": copy_result_file(str(src_meta), results_root / "cadrille_cleanup_metadata.json"),
+    }
+    if src_meta.exists():
+        try:
+            meta = json.loads(src_meta.read_text(encoding="utf-8"))
+            populated["n_bodies_before"] = meta.get("n_bodies_before")
+            populated["n_bodies_after"] = meta.get("n_bodies_after")
+        except Exception:  # noqa: BLE001
+            pass
     return {k: v for k, v in populated.items() if v is not None}
 
 
@@ -515,6 +573,27 @@ def main() -> None:
             selected_py=selected_py,
             selected_brep=selected_brep,
         )
+
+        # ─── Body cleanup stage (always-on when a BRep exists) ───
+        if result_paths.get("selected_brep"):
+            current_stage = "body_cleanup"
+            write_status(
+                status_path,
+                status="running",
+                stage="body_cleanup",
+                stage_label=BODY_CLEANUP_STAGE_LABEL,
+                result_paths=result_paths,
+            )
+            try:
+                cleanup_results = run_body_cleanup_stage(
+                    repo_root=repo_root,
+                    job_root=job_root,
+                    selected_brep_host=Path(result_paths["selected_brep"]),
+                    docker_image=args.cadrille_docker_image,
+                )
+                result_paths.update(cleanup_results)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[body-cleanup] stage skipped: {exc!r}", flush=True)
 
         # ─── Post-scaling stage (optional) ───
         if args.workpiece_class and selected_py:
