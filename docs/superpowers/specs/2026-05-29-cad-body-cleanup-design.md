@@ -41,7 +41,9 @@ with CadQuery 2.5 + OCP `BRepExtrema_DistShapeShape` inside `cadrille:latest`:
     ≥ ~0.09. A threshold in between cleanly separates them.
 
 This is what makes **proximity clustering** the right policy and fixes the
-default threshold (below).
+default threshold (below). Re-validated 2026-05-29 on a fresh 62-file `RL·PC`
+sample (64.5% multi-body; ε=0.07 removes only negligible-volume specks while
+keeping every split object) — see §5.
 
 ## 3. Approach — proximity clustering (chosen)
 
@@ -184,10 +186,17 @@ Error handling:
     regardless of size);
   - three mutually touching boxes → all kept;
   - single box → `noop: true`.
-- **Real-case smoke** on known steps:
-  - `NEW-G90-WHITE-59` (`[0.6, 0.4]`, touching) → both kept (1 cluster);
-  - `NEW-G140-47` (`[1.0, 0.0]`, far) → speck removed;
-  - `NEW-G140-56` (`[0.574,0.243,0.183, 0.0]`) → 3 kept, 1 speck removed.
+- **Real-case smoke** — validated 2026-05-29 on a 62-file `RL·PC` sample; these
+  are real `selected_brep` stems under `…/pc/shard-*/selected_brep/`:
+  - `NEW__cover_plate__NEW-G90-WHITE-11__obj01` — 2 touching bodies → 1 cluster,
+    both kept (noop);
+  - `NEW__cover_plate__NEW-G140-55__obj01` — 2 bodies, far speck (gap/diag `0.42`,
+    removed-vol ≈ 0) → 1 kept;
+  - `NEW__cover_plate__NEW-G140-33__obj01` — 4 bodies, one far (gap/diag `0.41`)
+    → 3 kept, 1 removed.
+  - Aggregate: **64.5% multi-body** (`{1:22, 2:31, 3:5, 4:4}`); 32 noop / 30 with
+    a removal; removed volume ≈ 0 in nearly all (only specks); 3 confidence-flagged
+    (comparable-volume) — matches the §2/§3 design.
 - **Visual** before/after in the GUI on a few uploads.
 
 ## 6. Out of scope (follow-ups)
