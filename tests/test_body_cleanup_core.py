@@ -76,6 +76,35 @@ def test_assess_confidence_quiet_for_tiny_speck():
     assert flag is False and reasons == []
 
 
+# --- edge-case regression locks (behaviors that already work; guard against drift) ---
+
+def test_empty_input_is_safe_noop():
+    r = cluster_bodies([], [], D, EPS)
+    assert r["n_clusters"] == 0 and r["noop"] is True
+    assert r["kept_body_indices"] == [] and r["per_body"] == []
+
+
+def test_zero_bbox_diagonal_does_not_crash():
+    # Degenerate diagonal: threshold collapses to 0 (touching still connects);
+    # min_gap_rel must fall back to inf, not divide by zero.
+    r = cluster_bodies([1.0, 1.0], _gap(2, {(0, 1): 0.0}), 0.0, EPS)
+    assert r["n_clusters"] == 1 and r["noop"] is True
+    assert r["per_body"][0]["min_gap_rel"] == float("inf")
+
+
+def test_volume_tie_breaks_to_smallest_index():
+    # Two far, equal-volume bodies → deterministic: keep cluster/body index 0.
+    r = cluster_bodies([0.5, 0.5], _gap(2, {(0, 1): 0.42}), D, EPS)
+    assert r["n_clusters"] == 2
+    assert r["kept_body_indices"] == [0]
+
+
+def test_all_zero_volume_no_division_error():
+    r = cluster_bodies([0.0, 0.0], _gap(2, {(0, 1): 0.0}), D, EPS)
+    assert r["n_clusters"] == 1 and r["noop"] is True
+    assert r["per_body"][0]["volume_fraction"] == 0.0
+
+
 def _run_all():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

@@ -47,6 +47,9 @@ def cluster_bodies(
     n = len(volumes)
     total_vol = float(sum(volumes)) if volumes else 0.0
 
+    # min_gap_rel is REPORT-ONLY (surfaced in metadata for inspection). The
+    # connectivity decision below uses the absolute threshold
+    # (epsilon_rel * bbox_diagonal), not this normalized ratio.
     min_gap_rel: list[float] = []
     for i in range(n):
         others = [gap_matrix[i][j] for j in range(n) if j != i]
