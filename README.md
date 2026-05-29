@@ -30,9 +30,10 @@ graph TD
 
 ```text
 AIWS/
-├── repos/
-│   ├── sam-3d-objects/   # upstream SAM3D repo (submodule)
-│   └── cadrille/         # upstream Cadrille repo (submodule)
+├── repos/               # upstream model repos tracked as submodules
+│   ├── sam-3d-objects/   # upstream SAM3D repo
+│   └── cadrille/         # upstream Cadrille repo
+├── runtime/             # AIWS-owned runtime assets (checkpoints, caches, prepared data)
 ├── scripts/             # AIWS orchestration, wrappers, and experiment runners
 ├── docs/                # reports, SOPs, technical records, and outlines
 ├── gui/                 # local GUI for launching and inspecting runs
@@ -47,27 +48,30 @@ AIWS/
   - main entry points used by this workflow include `demo.py`, `notebook/inference.py`, and `checkpoints/hf/pipeline.yaml`
 - `repos/cadrille`
   - upstream Cadrille codebase
-  - main entry points used by this workflow include `test.py`, `evaluate.py`, and `convert_cadquery.py`
+  - main entry points used by this workflow include `test.py` and `evaluate.py`
 
 ## AIWS-specific integration code
 
 ### Cadrille wrappers around the upstream repo
 
-- `scripts/cadrille_test_wrapper.py`
-  - thin wrapper for processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
-- `scripts/cadrille_evaluate.py`
-  - evaluation wrapper used by the AIWS e2e pipeline
-- `scripts/cadrille_convert_cadquery.py`
-  - CAD conversion wrapper used by the AIWS e2e pipeline
+- `scripts/cadrille_infer_wrapper.py`
+  - thin AIWS wrapper around the Cadrille inference flow, adding processor/checkpoint override, sample-count control, batch-size control, and GPU-memory logging
+- `scripts/cadrille_evaluate_wrapper.py`
+  - thin AIWS wrapper around the Cadrille evaluation flow, adding CAD materialization, best-candidate selection, and metrics output
 
 ### Main offline pipeline scripts
 
-- `scripts/dataset_usable_view_build.py`
-- `scripts/dataset_instance_masks_generate.py`
-- `scripts/sam3d_batch.py`
-- `scripts/sam3d_run_metrics_analysis.py`
-- `scripts/sam3d_to_cadrille_e2e.py`
-- `scripts/cadrille_full_modalities_4gpu.py`
+- **Data preparation**
+  - `scripts/dataset_usable_view_build.py`
+  - `scripts/dataset_instance_masks_generate.py`
+- **SAM3D**
+  - `scripts/sam3d_batch.py`
+  - `scripts/sam3d_run_metrics_analysis.py`
+- **Cadrille**
+  - `scripts/cadrille_batch.py`
+  - `scripts/cadrille_run_metrics_analysis.py`
+- **End-to-end bridge/orchestration**
+  - `scripts/e2e_sam3d_to_cadrille.py`
 
 ## Clone and initialize
 
@@ -94,6 +98,17 @@ This repo is meant to contain:
 - local GUI and analysis tooling
 
 This repo is **not** meant to vendor large upstream codebases directly into AIWS when a clean submodule can track them instead.
+
+## Runtime asset ownership
+
+Model checkpoints and prepared runtime data should live under AIWS-owned runtime paths, not inside the upstream repos.
+
+- preferred Cadrille runtime root: `runtime/cadrille/`
+- example paths:
+  - `runtime/cadrille/ckpt/`
+  - `runtime/cadrille/data/`
+
+This keeps upstream repos under `repos/` clean and treats checkpoints and prepared data as AIWS runtime state.
 
 ## Current focus
 
