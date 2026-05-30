@@ -69,3 +69,5 @@ tmp/
 
 # AIWS code — kept on GitHub (origin) + RXL server; not tracked in this local workspace
 gui/
+scripts/
+tests/
