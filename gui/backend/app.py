@@ -1198,3 +1198,12 @@ print(json.dumps(result))
         return json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=500, detail=f"Invalid summary JSON: {result.stdout[:500]}") from exc
+
+
+# --- serve the built React SPA (same-origin; no CORS). Guarded so dev still runs without a build. ---
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+_FRONTEND_DIST = _Path(__file__).resolve().parents[1] / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")
