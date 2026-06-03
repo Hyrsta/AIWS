@@ -62,6 +62,26 @@ def collect_cuda_memory_stats() -> list[dict[str, object]]:
     return stats
 
 
+def _force_open3d_allow_arbitrary_camera() -> None:
+    """open3d 0.18's legacy ViewControl.convert_from_pinhole_camera_parameters
+    silently DROPS an off-axis camera extrinsic unless allow_arbitrary=True,
+    collapsing cadrille's 4 multi-view (img-mode) renders to a single viewpoint.
+    Force the flag on at the open3d layer so upstream cadrille/dataset.py's
+    mesh_to_image() stays untouched (no submodule edit). Idempotent."""
+    import open3d  # already imported by dataset.py; this just grabs the module
+
+    view_control = open3d.visualization.ViewControl
+    original = view_control.convert_from_pinhole_camera_parameters
+    if getattr(original, "_aiws_allow_arbitrary", False):
+        return
+
+    def convert_from_pinhole_camera_parameters(self, parameters, allow_arbitrary=True):
+        return original(self, parameters, allow_arbitrary)
+
+    convert_from_pinhole_camera_parameters._aiws_allow_arbitrary = True
+    view_control.convert_from_pinhole_camera_parameters = convert_from_pinhole_camera_parameters
+
+
 def _percentile(sorted_values: list[float], q: float) -> float | None:
     if not sorted_values:
         return None
@@ -266,6 +286,11 @@ def run(
 
     from cadrille import Cadrille, collate  # noqa: E402
     from dataset import CadRecodeDataset  # noqa: E402
+
+    # img mode renders multi-view sheets via open3d; force the camera fix without
+    # editing the pinned upstream cadrille/dataset.py (see helper docstring).
+    if mode == "img":
+        _force_open3d_allow_arbitrary_camera()
 
     py_path = py_path.resolve()
     py_path.mkdir(parents=True, exist_ok=True)
