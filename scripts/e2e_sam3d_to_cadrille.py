@@ -2,29 +2,28 @@
 from __future__ import annotations
 
 import argparse
-import json
-import math
-import re
-import shlex
-import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
-from typing import Any
 
-import trimesh
+from sam3d_cadrille_bridge import (
+    ensure_clean_dir,
+    load_sam3d_ok_records,
+    prepare_cadrille_split,
+    sanitize_stem,
+    write_manifest_jsonl,
+)
+
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "End-to-end pipeline: run SAM3D batch inference, normalize SAM3D STL outputs "
-            "to Cadrille-compatible unit cube [0,1], run Cadrille inference, and export CAD outputs."
+            "End-to-end pipeline: RGB input -> SAM3D -> bridged Cadrille split -> "
+            "Cadrille inference -> selected CadQuery/CAD outputs."
         )
     )
 
-    # SAM3D stage
     sam = parser.add_argument_group("SAM3D stage")
     sam.add_argument("--skip-sam3d", action="store_true", help="Skip SAM3D and reuse existing results.jsonl under --sam3d-output-root")
     sam.add_argument("--sam3d-python", default=sys.executable, help="Python executable for SAM3D stage")
@@ -37,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     sam.add_argument(
         "--dataset-root",
         type=Path,
-        default=Path("/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable-materialized"),
+        default=Path("/ssd1/rxl/zhankaiming/AIWS/data/aiws5.2-usable"),
         help="Dataset root for SAM3D",
     )
     sam.add_argument(
@@ -66,16 +65,31 @@ def parse_args() -> argparse.Namespace:
     sam.add_argument("--resume", dest="resume", action="store_true", default=True, help="Enable SAM3D --resume (default on)")
     sam.add_argument("--no-resume", dest="resume", action="store_false", help="Disable SAM3D --resume")
 
-    # Bridge stage
-    bridge = parser.add_argument_group("SAM3D -> Cadrille bridge")
-    bridge.add_argument("--normalize-stl", dest="normalize_stl", action="store_true", default=True,
-                        help="Normalize SAM3D STL to unit cube [0,1] for Cadrille (default on)")
-    bridge.add_argument("--no-normalize-stl", dest="normalize_stl", action="store_false",
-                        help="Use SAM3D STL as-is (not recommended)")
-    bridge.add_argument("--max-samples", type=int, default=None, help="Max number of SAM3D samples to pass into Cadrille")
-    bridge.add_argument("--sample-offset", type=int, default=0, help="Start offset after sorting SAM3D task_id")
+    bridge = parser.add_argument_group("Bridge stage")
+    bridge.add_argument(
+        "--normalize-stl",
+        dest="normalize_stl",
+        action="store_true",
+        default=True,
+        help="Normalize SAM3D STL to unit cube [0,1] for Cadrille (default on)",
+    )
+    bridge.add_argument(
+        "--no-normalize-stl",
+        dest="normalize_stl",
+        action="store_false",
+        help="Use SAM3D STL as-is (not recommended)",
+    )
+    bridge.add_argument(
+        "--bridge-split-name",
+        default=None,
+        help="Optional name for the bridged split stored under <cadrille-output-root>/bridge/data",
+    )
+    bridge.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing e2e output root / bridge directory",
+    )
 
-    # Cadrille stage
     cad = parser.add_argument_group("Cadrille stage")
     cad.add_argument("--cadrille-python", default=sys.executable, help="Python executable for Cadrille host runtime")
     cad.add_argument(
@@ -86,11 +100,11 @@ def parse_args() -> argparse.Namespace:
     )
     cad.add_argument("--cadrille-docker-image", default="cadrille:latest", help="Docker image for Cadrille runtime")
     cad.add_argument("--cadrille-docker-python", default="python", help="Python executable inside Cadrille Docker image")
-    cad.add_argument("--cadrille-docker-gpus", default="device=0", help="Value for docker --gpus (for example device=0, all, 0)")
+    cad.add_argument("--cadrille-docker-gpus", default="device=0", help="Value for docker --gpus")
     cad.add_argument(
         "--cadrille-docker-extra-args",
         default="",
-        help="Extra raw args appended to docker run (for example '--ipc=host --ulimit memlock=-1')",
+        help="Extra raw args appended to docker run",
     )
     cad.add_argument(
         "--cadrille-root",
@@ -98,346 +112,47 @@ def parse_args() -> argparse.Namespace:
         default=Path("/ssd1/rxl/zhankaiming/AIWS/repos/cadrille"),
         help="Cadrille repository root",
     )
-    cad.add_argument(
-        "--cadrille-data-root",
-        type=Path,
-        default=None,
-        help="Cadrille data root (default: <cadrille-root>/data)",
-    )
-    cad.add_argument("--cadrille-checkpoint", default="ckpt/cadrille_sft", help="Checkpoint path passed to the AIWS Cadrille test wrapper")
-    cad.add_argument("--cadrille-processor-path", default="ckpt/Qwen2-VL-2B-Instruct", help="Processor path passed to the AIWS Cadrille test wrapper")
-    cad.add_argument("--cadrille-mode", choices=("pc", "img"), default="pc", help="Cadrille mode")
-    cad.add_argument(
-        "--cadrille-n-samples",
-        type=int,
-        default=None,
-        help="Number of generated candidates per sample in Cadrille test.py (default: img=1, pc=5)",
-    )
-    cad.add_argument("--cadrille-batch-size", type=int, default=64,
-                     help="Batch size passed to Cadrille test.py (lower is safer for GPU memory)")
-    cad.add_argument(
-        "--cadrille-input-source",
-        choices=("mesh", "point_cloud", "multi_view"),
-        default="mesh",
-        help=(
-            "Input source passed to Cadrille test.py. "
-            "This SAM3D bridge currently materializes mesh (.stl) inputs."
-        ),
-    )
-    cad.add_argument("--cadrille-split-name", default=None,
-                     help="Split name created under Cadrille data root (default auto-generated)")
-    cad.add_argument(
-        "--cadrille-output-root",
-        type=Path,
-        required=True,
-        help="Output root for Cadrille tmp/selected outputs and pipeline summary",
-    )
-    cad.add_argument("--mesh-ext", default="stl", help="Mesh extension passed to the AIWS Cadrille test wrapper")
-    cad.add_argument("--point-cloud-exts", default="ply,pcd,xyz,txt,npz,npy", help="Reserved for future wrapper expansion")
-    cad.add_argument("--image-exts", default="png,jpg,jpeg,bmp", help="Reserved for future wrapper expansion")
-    cad.add_argument("--export-brep", dest="export_brep", action="store_true", default=True,
-                     help="Export STEP/BRep during cadrille_evaluate_wrapper.py materialization (default on)")
-    cad.add_argument("--no-export-brep", dest="export_brep", action="store_false", help="Skip STEP/BRep export during materialization")
-    cad.add_argument("--brep-ext", default="step", help="BRep extension produced during materialization")
-    cad.add_argument("--convert-timeout-sec", type=float, default=5.0, help="Timeout per CadQuery file conversion/materialization")
+    cad.add_argument("--cadrille-checkpoint", default="ckpt/cadrille_sft", help="Cadrille checkpoint path")
+    cad.add_argument("--cadrille-processor-path", default="ckpt/Qwen2-VL-2B-Instruct", help="Processor / tokenizer path for Cadrille")
+    cad.add_argument("--cadrille-mode", choices=("pc", "img"), default="pc", help="Cadrille modality: point-cloud-conditioned (`pc`) or image-conditioned (`img`)")
+    cad.add_argument("--cadrille-n-samples", type=int, default=None, help="Number of Cadrille candidates per sample (defaults: pc=5, img=1 in the downstream runner)")
+    cad.add_argument("--cadrille-batch-size", type=int, default=64, help="Batch size used during Cadrille inference")
+    cad.add_argument("--cadrille-output-root", type=Path, required=True, help="Output root for this end-to-end run, including bridge artifacts and selected CAD outputs")
+    cad.add_argument("--export-brep", dest="export_brep", action="store_true", default=True, help="Export STEP/BRep outputs alongside selected code and mesh outputs")
+    cad.add_argument("--no-export-brep", dest="export_brep", action="store_false", help="Disable STEP/BRep export")
+    cad.add_argument("--brep-ext", default="step", help="BRep export extension")
+    cad.add_argument("--convert-timeout-sec", type=float, default=5.0, help="Timeout for per-candidate CAD conversion during evaluation")
 
-    # Selection / safety
-    misc = parser.add_argument_group("Selection and safety")
-    misc.add_argument(
-        "--selection-mode",
-        choices=("evaluate", "index"),
-        default="evaluate",
-        help=(
-            "Candidate selection strategy: evaluate.py best_names (paper-aligned) "
-            "or fixed index fallback"
-        ),
-    )
-    misc.add_argument("--selected-candidate-index", type=int, default=0,
-                      help="Preferred candidate index (+k suffix), used by selection-mode=index or evaluate fallback")
-    misc.add_argument(
-        "--allow-selection-fallback",
-        action="store_true",
-        help="When selection-mode=evaluate and best_names is missing for a sample, fallback to --selected-candidate-index",
-    )
-    misc.add_argument("--eval-gt-path", type=Path, default=None,
-                      help="Ground-truth path for cadrille_evaluate_wrapper.py (default: prepared Cadrille split)")
-    misc.add_argument("--eval-gt-format", choices=("mesh", "point_cloud"), default="mesh",
-                      help="Ground-truth format for cadrille_evaluate_wrapper.py")
-    misc.add_argument("--eval-gt-mesh-ext", default=None,
-                      help="Ground-truth mesh extension for evaluate.py (default: --mesh-ext)")
-    misc.add_argument("--eval-gt-point-cloud-exts", default=None,
-                      help="Ground-truth point-cloud extensions for evaluate.py (default: --point-cloud-exts)")
-    misc.add_argument("--eval-n-points", type=int, default=8192,
-                      help="Number of sampled points for Chamfer in evaluate.py")
-    misc.add_argument("--prepare-input-only", action="store_true",
-                      help="Stop after preparing normalized STL split for Cadrille")
-    misc.add_argument("--force", action="store_true",
-                      help="Allow deleting existing split/output folders created by this script")
-    misc.add_argument("--dry-run", action="store_true", help="Print planned commands/actions without executing")
+    select = parser.add_argument_group("Candidate selection")
+    select.add_argument("--selection-mode", choices=("evaluate", "index"), default="evaluate", help="How to choose the final candidate per sample")
+    select.add_argument("--selected-candidate-index", type=int, default=0, help="Candidate index used when --selection-mode index is selected")
+    select.add_argument("--allow-selection-fallback", action="store_true", help="Allow fallback to --selected-candidate-index when evaluation cannot choose a best candidate")
+    select.add_argument("--eval-gt-path", type=Path, default=None, help="Optional evaluation ground-truth path (defaults to the bridged split directory)")
+    select.add_argument("--eval-gt-mesh-ext", default=None, help="Ground-truth mesh extension for evaluation (defaults to stl)")
+    select.add_argument("--eval-n-points", type=int, default=8192, help="Number of sampled points used during geometric evaluation")
+    select.add_argument("--dry-run", action="store_true", help="Print planned actions without running SAM3D or Cadrille")
 
     return parser.parse_args()
 
 
-def shell_join(cmd: list[str]) -> str:
-    return shlex.join(cmd)
-
 
 def run_cmd(cmd: list[str], cwd: Path | None = None, dry_run: bool = False) -> None:
     prefix = "[DRY-RUN]" if dry_run else "[RUN]"
-    cwd_txt = f" (cwd={cwd})" if cwd else ""
-    print(f"{prefix} {shell_join(cmd)}{cwd_txt}")
+    print(prefix, " ".join(str(x) for x in cmd) + (f" (cwd={cwd})" if cwd else ""))
     if dry_run:
         return
     subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
 
 
-def is_relative_to(path: Path, base: Path) -> bool:
-    try:
-        path.relative_to(base)
-        return True
-    except ValueError:
-        return False
 
+def default_bridge_split_name(cadrille_output_root: Path) -> str:
+    return f"sam3d_bridge_{sanitize_stem(cadrille_output_root.name)}"
 
-def command_exists(name: str) -> bool:
-    return shutil.which(name) is not None
-
-
-def docker_image_exists(image: str) -> bool:
-    if not command_exists("docker"):
-        return False
-    result = subprocess.run(
-        ["docker", "image", "inspect", image],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    return result.returncode == 0
-
-
-def choose_cadrille_runtime(args: argparse.Namespace) -> str:
-    if args.cadrille_runtime in ("docker", "host"):
-        if args.cadrille_runtime == "docker":
-            if not command_exists("docker"):
-                raise RuntimeError("--cadrille-runtime docker requested but 'docker' command is not available")
-            if not docker_image_exists(args.cadrille_docker_image):
-                raise RuntimeError(
-                    f"--cadrille-runtime docker requested but image not found: {args.cadrille_docker_image}"
-                )
-        return args.cadrille_runtime
-
-    # auto mode
-    if command_exists("docker") and docker_image_exists(args.cadrille_docker_image):
-        print(f"[INFO] Cadrille runtime auto-selected: docker ({args.cadrille_docker_image})")
-        return "docker"
-
-    print("[INFO] Cadrille runtime auto-selected: host (docker image unavailable)")
-    return "host"
-
-
-def build_docker_mounts(
-    cadrille_root: Path,
-    cadrille_data_root: Path,
-    cadrille_output_root: Path,
-) -> tuple[list[tuple[Path, Path]], Path, Path, Path]:
-    container_cadrille_root = Path("/workspace/cadrille")
-    mounts: list[tuple[Path, Path]] = [(cadrille_root, container_cadrille_root)]
-
-    if is_relative_to(cadrille_data_root, cadrille_root):
-        container_data_root = container_cadrille_root / cadrille_data_root.relative_to(cadrille_root)
-    else:
-        container_data_root = Path("/workspace/cadrille_data")
-        mounts.append((cadrille_data_root, container_data_root))
-
-    if is_relative_to(cadrille_output_root, cadrille_root):
-        container_output_root = container_cadrille_root / cadrille_output_root.relative_to(cadrille_root)
-    elif is_relative_to(cadrille_output_root, cadrille_data_root):
-        container_output_root = container_data_root / cadrille_output_root.relative_to(cadrille_data_root)
-    else:
-        container_output_root = Path("/workspace/cadrille_output")
-        mounts.append((cadrille_output_root, container_output_root))
-
-    # dedupe mounts while preserving order
-    deduped: list[tuple[Path, Path]] = []
-    seen: set[tuple[str, str]] = set()
-    for host, container in mounts:
-        key = (str(host), str(container))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append((host, container))
-
-    return deduped, container_cadrille_root, container_data_root, container_output_root
-
-
-def map_host_to_container(path: Path, mounts: list[tuple[Path, Path]]) -> Path:
-    for host_root, container_root in mounts:
-        if is_relative_to(path, host_root):
-            return container_root / path.relative_to(host_root)
-    raise RuntimeError(f"Path {path} is not covered by docker mounts")
-
-
-def ensure_clean_dir(path: Path, force: bool, dry_run: bool, label: str) -> None:
-    if path.exists():
-        existing = list(path.iterdir())
-        if existing and not force:
-            raise RuntimeError(
-                f"{label} already exists and is not empty: {path}. "
-                "Use --force to overwrite."
-            )
-        if existing and force:
-            print(f"[INFO] Removing existing {label}: {path}")
-            if not dry_run:
-                shutil.rmtree(path)
-    if not dry_run:
-        path.mkdir(parents=True, exist_ok=True)
-
-
-def sanitize_stem(name: str) -> str:
-    stem = name.replace("/", "__").replace("\\", "__")
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem)
-    stem = stem.strip("._-")
-    return stem or "sample"
-
-
-def load_sam3d_ok_records(run_root: Path) -> list[dict[str, Any]]:
-    files: list[Path] = []
-    root_results = run_root / "results.jsonl"
-    if root_results.exists():
-        files.append(root_results)
-    files.extend(sorted(run_root.glob("shard-*/results.jsonl")))
-
-    if not files:
-        raise RuntimeError(f"No results.jsonl found under {run_root}")
-
-    raw: list[dict[str, Any]] = []
-    for path in files:
-        with path.open("r", encoding="utf-8") as f:
-            for line_no, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                row = json.loads(line)
-                if row.get("status") != "ok":
-                    continue
-                stl_path = row.get("stl_path")
-                if not stl_path:
-                    continue
-                row["_source_results_file"] = str(path)
-                row["_source_line"] = line_no
-                raw.append(row)
-
-    # dedupe by task_id, keep latest record
-    by_task: dict[str, tuple[float, int, dict[str, Any]]] = {}
-    for idx, row in enumerate(raw):
-        task_id = str(row.get("task_id") or row.get("stl_path") or f"row-{idx}")
-        ts = row.get("ended_at_epoch")
-        if ts is None:
-            ts = row.get("started_at_epoch")
-        try:
-            ts_f = float(ts)
-        except (TypeError, ValueError):
-            ts_f = float(idx)
-        prev = by_task.get(task_id)
-        if prev is None or ts_f >= prev[0]:
-            by_task[task_id] = (ts_f, idx, row)
-
-    deduped = [triple[2] for triple in sorted(by_task.values(), key=lambda t: t[1])]
-    deduped.sort(key=lambda r: str(r.get("task_id") or r.get("stl_path")))
-    return deduped
-
-
-def normalize_stl_to_unit_cube(src: Path, dst: Path) -> dict[str, Any]:
-    mesh = trimesh.load_mesh(str(src), process=False)
-    if isinstance(mesh, trimesh.Scene):
-        geoms = [g for g in mesh.geometry.values() if g is not None]
-        if not geoms:
-            raise RuntimeError(f"No geometry found in scene mesh: {src}")
-        mesh = trimesh.util.concatenate(geoms)
-
-    bounds = mesh.bounds
-    mins = bounds[0]
-    maxs = bounds[1]
-    extents = maxs - mins
-    scale = float(extents.max())
-    if not math.isfinite(scale) or scale <= 1e-12:
-        raise RuntimeError(f"Invalid mesh scale for {src}: {scale}")
-
-    mesh.apply_translation(-mins)
-    mesh.apply_scale(1.0 / scale)
-
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    mesh.export(str(dst))
-
-    new_bounds = mesh.bounds
-    return {
-        "src_bounds_min": [float(v) for v in mins],
-        "src_bounds_max": [float(v) for v in maxs],
-        "src_extent_max": float(scale),
-        "dst_bounds_min": [float(v) for v in new_bounds[0]],
-        "dst_bounds_max": [float(v) for v in new_bounds[1]],
-    }
-
-
-def pick_candidate_stem(tmp_py_dir: Path, base_stem: str, preferred_idx: int) -> str | None:
-    preferred = tmp_py_dir / f"{base_stem}+{preferred_idx}.py"
-    if preferred.exists():
-        return preferred.stem
-
-    candidates = sorted(tmp_py_dir.glob(f"{base_stem}+*.py"))
-    if candidates:
-        return candidates[0].stem
-    return None
-
-
-def split_candidate_stem(candidate_stem: str) -> tuple[str, str] | None:
-    if "+" not in candidate_stem:
-        return None
-    base, idx = candidate_stem.rsplit("+", 1)
-    if not base or not idx:
-        return None
-    return base, idx
-
-
-def load_best_candidate_map(metrics_path: Path, best_names_path: Path) -> tuple[dict[str, str], dict[str, Any] | None]:
-    best_names: list[str] = []
-    eval_summary: dict[str, Any] | None = None
-
-    if metrics_path.exists():
-        data = json.loads(metrics_path.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            if isinstance(data.get("summary"), dict):
-                eval_summary = data["summary"]
-            if isinstance(data.get("best_names"), list):
-                best_names = [str(v).strip() for v in data["best_names"] if str(v).strip()]
-
-    if not best_names and best_names_path.exists():
-        best_names = [line.strip() for line in best_names_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-    best_map: dict[str, str] = {}
-    for name in best_names:
-        stem = Path(name).stem
-        parts = split_candidate_stem(stem)
-        if parts is None:
-            continue
-        base, _idx = parts
-        best_map[base] = stem
-
-    return best_map, eval_summary
 
 
 def main() -> None:
     args = parse_args()
 
-    if args.cadrille_mode == "pc" and args.cadrille_input_source == "multi_view":
-        raise RuntimeError("Cadrille mode=pc is incompatible with input-source=multi_view")
-    if args.cadrille_mode == "img" and args.cadrille_input_source == "point_cloud":
-        raise RuntimeError("Cadrille mode=img is incompatible with input-source=point_cloud")
-    if args.cadrille_input_source != "mesh":
-        raise RuntimeError(
-            "Current SAM3D bridge in this script materializes only mesh (.stl) inputs. "
-            "Use --cadrille-input-source mesh for e2e, or run Cadrille directly for point_cloud/multi_view datasets."
-        )
     if args.cadrille_n_samples is not None and args.cadrille_n_samples <= 0:
         raise RuntimeError("--cadrille-n-samples must be > 0")
     if args.cadrille_batch_size <= 0:
@@ -445,42 +160,9 @@ def main() -> None:
     if args.eval_n_points <= 0:
         raise RuntimeError("--eval-n-points must be > 0")
 
-    cadrille_n_samples = args.cadrille_n_samples if args.cadrille_n_samples is not None else (1 if args.cadrille_mode == "img" else 5)
-
     sam3d_output_root = args.sam3d_output_root.resolve()
     cadrille_root = args.cadrille_root.resolve()
-    cadrille_data_root = (args.cadrille_data_root.resolve() if args.cadrille_data_root else (cadrille_root / "data").resolve())
     cadrille_output_root = args.cadrille_output_root.resolve()
-
-    split_name = args.cadrille_split_name or f"sam3d_bridge_{int(time.time())}"
-    split_dir = cadrille_data_root / split_name
-
-    bridge_dir = cadrille_output_root / "bridge"
-    tmp_py_dir = cadrille_output_root / "tmp_py"
-    tmp_mesh_dir = cadrille_output_root / "tmp_mesh"
-    tmp_brep_dir = cadrille_output_root / "tmp_brep"
-    selected_py_dir = cadrille_output_root / "selected_py"
-    selected_mesh_dir = cadrille_output_root / "selected_mesh"
-    selected_brep_dir = cadrille_output_root / "selected_brep"
-
-    wrapper_scripts_root = Path(__file__).resolve().parent
-    cadrille_infer_wrapper_script = wrapper_scripts_root / "cadrille_infer_wrapper.py"
-    cadrille_evaluate_wrapper_script = wrapper_scripts_root / "cadrille_evaluate_wrapper.py"
-    container_wrapper_scripts_root = Path("/workspace/integration_scripts")
-
-    cadrille_runtime = choose_cadrille_runtime(args)
-    docker_mounts: list[tuple[Path, Path]] = []
-    container_cadrille_root: Path | None = None
-    container_cadrille_data_root: Path | None = None
-    container_cadrille_output_root: Path | None = None
-    if cadrille_runtime == "docker":
-        (
-            docker_mounts,
-            container_cadrille_root,
-            container_cadrille_data_root,
-            container_cadrille_output_root,
-        ) = build_docker_mounts(cadrille_root, cadrille_data_root, cadrille_output_root)
-        docker_mounts.append((wrapper_scripts_root, container_wrapper_scripts_root))
 
     if not args.skip_sam3d:
         sam_cmd = [
@@ -509,344 +191,103 @@ def main() -> None:
             sam_cmd.extend(["--exclude-stems-file", str(args.exclude_stems_file)])
         run_cmd(sam_cmd, dry_run=args.dry_run)
 
+    ensure_clean_dir(cadrille_output_root, force=args.force, dry_run=args.dry_run, label="cadrille-output-root")
+    bridge_root = cadrille_output_root / "bridge"
+    if not args.dry_run:
+        bridge_root.mkdir(parents=True, exist_ok=True)
+
+    split_name = args.bridge_split_name or default_bridge_split_name(cadrille_output_root)
+    split_dir = bridge_root / "data" / split_name
+    manifest_jsonl = bridge_root / "input_manifest.jsonl"
+
     records = load_sam3d_ok_records(sam3d_output_root)
-    if args.sample_offset < 0:
-        raise RuntimeError("--sample-offset must be >= 0")
-    if args.sample_offset >= len(records):
-        raise RuntimeError(f"--sample-offset {args.sample_offset} exceeds available records {len(records)}")
-
-    selected = records[args.sample_offset :]
-    if args.max_samples is not None:
-        if args.max_samples <= 0:
-            raise RuntimeError("--max-samples must be > 0")
-        selected = selected[: args.max_samples]
-
-    if not selected:
+    records_found_ok = len(records)
+    records_selected_for_bridge = len(records)
+    if not records:
         raise RuntimeError("No SAM3D OK records selected for Cadrille input")
 
-    ensure_clean_dir(cadrille_output_root, force=args.force, dry_run=args.dry_run, label="cadrille-output-root")
-    ensure_clean_dir(split_dir, force=args.force, dry_run=args.dry_run, label="cadrille split directory")
-    if not args.dry_run:
-        bridge_dir.mkdir(parents=True, exist_ok=True)
+    ensure_clean_dir(split_dir, force=args.force, dry_run=args.dry_run, label="e2e bridge split directory")
+    prepared_rows = prepare_cadrille_split(
+        records,
+        split_dir=split_dir,
+        normalize_stl=bool(args.normalize_stl),
+        dry_run=args.dry_run,
+    )
+    write_manifest_jsonl(manifest_jsonl, prepared_rows, dry_run=args.dry_run)
+    print(f"[INFO] Prepared {len(prepared_rows)} STL inputs for bridged split: {split_dir}")
 
-    # Prepare normalized STL split for Cadrille
-    prepared_rows: list[dict[str, Any]] = []
-    used_stems: dict[str, int] = {}
-
-    for row in selected:
-        src = Path(str(row.get("stl_path"))).resolve()
-        if not src.exists():
-            continue
-
-        task_id = str(row.get("task_id") or src.stem)
-        stem_base = sanitize_stem(task_id)
-        dup_idx = used_stems.get(stem_base, 0)
-        used_stems[stem_base] = dup_idx + 1
-        stem = stem_base if dup_idx == 0 else f"{stem_base}__dup{dup_idx:02d}"
-
-        dst = split_dir / f"{stem}.stl"
-        norm_meta: dict[str, Any] | None = None
-
-        if args.dry_run:
-            print(f"[DRY-RUN] prepare {src} -> {dst}")
-        else:
-            if args.normalize_stl:
-                norm_meta = normalize_stl_to_unit_cube(src, dst)
-            else:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
-
-        prepared_rows.append(
-            {
-                "task_id": task_id,
-                "subset": row.get("subset"),
-                "workpiece": row.get("workpiece"),
-                "stem": row.get("stem"),
-                "object_index": row.get("object_index"),
-                "sam3d_stl_path": str(src),
-                "cadrille_stl_path": str(dst),
-                "cadrille_stem": stem,
-                "normalized": bool(args.normalize_stl),
-                "normalization": norm_meta,
-            }
-        )
-
-    if not prepared_rows:
-        raise RuntimeError("No STL files were prepared for Cadrille")
-
-    manifest_jsonl = bridge_dir / "input_manifest.jsonl"
-    if not args.dry_run:
-        with manifest_jsonl.open("w", encoding="utf-8") as f:
-            for row in prepared_rows:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    print(f"[INFO] Prepared {len(prepared_rows)} STL inputs for Cadrille split: {split_name}")
-
-    if args.prepare_input_only:
-        print("[INFO] --prepare-input-only set, stopping before Cadrille inference.")
-        return
-
-    eval_gt_host = args.eval_gt_path.resolve() if args.eval_gt_path else split_dir
-    eval_gt_mesh_ext = (args.eval_gt_mesh_ext or args.mesh_ext).lower()
-    eval_gt_point_cloud_exts = args.eval_gt_point_cloud_exts or args.point_cloud_exts
-
-    # Prepare runtime-specific paths/commands for Cadrille stage
-    if cadrille_runtime == "docker":
-        assert container_cadrille_root is not None
-        assert container_cadrille_data_root is not None
-        assert container_cadrille_output_root is not None
-
-        cadrille_data_arg = str(map_host_to_container(cadrille_data_root, docker_mounts))
-        tmp_py_arg = str(map_host_to_container(tmp_py_dir, docker_mounts))
-        tmp_mesh_arg = str(map_host_to_container(tmp_mesh_dir, docker_mounts))
-        tmp_brep_arg = str(map_host_to_container(tmp_brep_dir, docker_mounts))
-        eval_gt_arg = str(map_host_to_container(eval_gt_host, docker_mounts))
-
-        checkpoint_arg = args.cadrille_checkpoint
-        checkpoint_path = Path(args.cadrille_checkpoint)
-        if checkpoint_path.is_absolute():
-            checkpoint_arg = str(map_host_to_container(checkpoint_path.resolve(), docker_mounts))
-
-        processor_arg = args.cadrille_processor_path
-        processor_path = Path(args.cadrille_processor_path)
-        if processor_path.is_absolute():
-            processor_arg = str(map_host_to_container(processor_path.resolve(), docker_mounts))
-
-        infer_wrapper_script_arg = str(container_wrapper_scripts_root / cadrille_infer_wrapper_script.name)
-        evaluate_wrapper_script_arg = str(container_wrapper_scripts_root / cadrille_evaluate_wrapper_script.name)
-
-        py_exec = args.cadrille_docker_python
-
-        def run_cadrille_inner(inner_cmd: list[str]) -> None:
-            docker_cmd = ["docker", "run", "--rm", "--gpus", args.cadrille_docker_gpus]
-            for host_path, container_path in docker_mounts:
-                docker_cmd.extend(["-v", f"{host_path}:{container_path}"])
-            if args.cadrille_docker_extra_args.strip():
-                docker_cmd.extend(shlex.split(args.cadrille_docker_extra_args))
-            docker_cmd.extend(["-w", str(container_cadrille_root), args.cadrille_docker_image])
-            docker_cmd.extend(inner_cmd)
-            run_cmd(docker_cmd, dry_run=args.dry_run)
-
-    else:
-        cadrille_data_arg = str(cadrille_data_root)
-        tmp_py_arg = str(tmp_py_dir)
-        tmp_mesh_arg = str(tmp_mesh_dir)
-        tmp_brep_arg = str(tmp_brep_dir)
-        eval_gt_arg = str(eval_gt_host)
-        checkpoint_arg = args.cadrille_checkpoint
-        processor_arg = args.cadrille_processor_path
-        infer_wrapper_script_arg = str(cadrille_infer_wrapper_script)
-        evaluate_wrapper_script_arg = str(cadrille_evaluate_wrapper_script)
-        py_exec = args.cadrille_python
-
-        def run_cadrille_inner(inner_cmd: list[str]) -> None:
-            run_cmd(inner_cmd, cwd=cadrille_root, dry_run=args.dry_run)
-
-    # Run Cadrille inference
-    test_cmd = [
-        py_exec,
-        infer_wrapper_script_arg,
-        "--cadrille-root",
-        str(container_cadrille_root) if cadrille_runtime == "docker" else str(cadrille_root),
-        "--data-path",
-        cadrille_data_arg,
-        "--split",
+    runner_script = Path(__file__).resolve().parent / "run_cadrille_on_split.py"
+    run_cmd_obj = [
+        sys.executable,
+        str(runner_script),
+        "--prepared-split-name",
         split_name,
-        "--mode",
+        "--prepared-split-dir",
+        str(split_dir),
+        "--bridge-manifest-jsonl",
+        str(manifest_jsonl),
+        "--cadrille-root",
+        str(cadrille_root),
+        "--cadrille-output-root",
+        str(cadrille_output_root),
+        "--cadrille-mode",
         args.cadrille_mode,
-        "--checkpoint-path",
-        checkpoint_arg,
-        "--processor-path",
-        processor_arg,
-        "--py-path",
-        tmp_py_arg,
-        "--n-samples",
-        str(cadrille_n_samples),
-        "--batch-size",
+        "--cadrille-input-source",
+        "mesh",
+        "--cadrille-runtime",
+        args.cadrille_runtime,
+        "--cadrille-python",
+        args.cadrille_python,
+        "--cadrille-docker-image",
+        args.cadrille_docker_image,
+        "--cadrille-docker-python",
+        args.cadrille_docker_python,
+        "--cadrille-docker-gpus",
+        args.cadrille_docker_gpus,
+        f"--cadrille-docker-extra-args={args.cadrille_docker_extra_args}",
+        "--cadrille-checkpoint",
+        args.cadrille_checkpoint,
+        "--cadrille-processor-path",
+        args.cadrille_processor_path,
+        "--cadrille-batch-size",
         str(args.cadrille_batch_size),
-    ]
-    run_cadrille_inner(test_cmd)
-
-    gpu_memory_path = cadrille_output_root / 'gpu_memory.json'
-    gpu_memory_summary: dict[str, Any] | None = None
-    if not args.dry_run and gpu_memory_path.exists():
-        gpu_memory_summary = json.loads(gpu_memory_path.read_text(encoding='utf-8'))
-
-    metrics_path = cadrille_output_root / "metrics.json"
-    best_names_path = cadrille_output_root / "tmp.txt"
-    best_candidate_map: dict[str, str] = {}
-    evaluate_summary: dict[str, Any] | None = None
-
-    # Materialize CadQuery outputs to meshes/BRep and optionally compute evaluation metrics.
-    evaluate_cmd = [
-        py_exec,
-        evaluate_wrapper_script_arg,
-        "--gt-path",
-        eval_gt_arg,
-        "--gt-format",
-        args.eval_gt_format,
-        "--gt-point-cloud-exts",
-        eval_gt_point_cloud_exts,
-        "--gt-mesh-ext",
-        eval_gt_mesh_ext,
-        "--pred-py-path",
-        tmp_py_arg,
-        "--n-points",
-        str(args.eval_n_points),
         "--brep-ext",
         args.brep_ext,
         "--convert-timeout-sec",
         str(args.convert_timeout_sec),
+        "--selection-mode",
+        args.selection_mode,
+        "--selected-candidate-index",
+        str(args.selected_candidate_index),
+        "--eval-gt-format",
+        "mesh",
+        "--eval-n-points",
+        str(args.eval_n_points),
+        "--sam3d-output-root",
+        str(sam3d_output_root),
+        "--records-found-ok",
+        str(records_found_ok),
+        "--records-selected-for-bridge",
+        str(records_selected_for_bridge),
     ]
+    if args.cadrille_n_samples is not None:
+        run_cmd_obj.extend(["--cadrille-n-samples", str(args.cadrille_n_samples)])
     if args.export_brep:
-        evaluate_cmd.append("--export-brep")
+        run_cmd_obj.append("--export-brep")
     else:
-        evaluate_cmd.append("--no-export-brep")
-    run_cadrille_inner(evaluate_cmd)
-    if not args.dry_run and args.selection_mode == "evaluate":
-        best_candidate_map, evaluate_summary = load_best_candidate_map(metrics_path, best_names_path)
-        print(f"[INFO] evaluate.py selected best candidates for {len(best_candidate_map)} samples")
-
-    # Select one candidate per input sample
-    selected_rows: list[dict[str, Any]] = []
-    if not args.dry_run:
-        selected_py_dir.mkdir(parents=True, exist_ok=True)
-        selected_mesh_dir.mkdir(parents=True, exist_ok=True)
-        if args.export_brep:
-            selected_brep_dir.mkdir(parents=True, exist_ok=True)
-
-        for item in prepared_rows:
-            base = item["cadrille_stem"]
-            candidate_stem: str | None = None
-            selection_reason: str | None = None
-
-            if args.selection_mode == "evaluate":
-                candidate_stem = best_candidate_map.get(base)
-                if candidate_stem is not None:
-                    selection_reason = "evaluate_best"
-                elif args.allow_selection_fallback:
-                    candidate_stem = pick_candidate_stem(tmp_py_dir, base, args.selected_candidate_index)
-                    selection_reason = "evaluate_fallback_index"
-            else:
-                candidate_stem = pick_candidate_stem(tmp_py_dir, base, args.selected_candidate_index)
-                if candidate_stem is not None:
-                    selection_reason = "fixed_index"
-
-            if candidate_stem is None:
-                selected_rows.append({
-                    "cadrille_stem": base,
-                    "status": "missing_candidate",
-                    "selection_reason": selection_reason,
-                })
-                continue
-
-            py_src = tmp_py_dir / f"{candidate_stem}.py"
-            if not py_src.exists():
-                selected_rows.append({
-                    "cadrille_stem": base,
-                    "candidate_stem": candidate_stem,
-                    "status": "missing_py",
-                    "selection_reason": selection_reason,
-                })
-                continue
-
-            mesh_src = tmp_mesh_dir / f"{candidate_stem}.stl"
-            brep_src = tmp_brep_dir / f"{candidate_stem}.{args.brep_ext}"
-
-            py_dst = selected_py_dir / f"{base}.py"
-            mesh_dst = selected_mesh_dir / f"{base}.stl"
-            brep_dst = selected_brep_dir / f"{base}.{args.brep_ext}"
-
-            shutil.copy2(py_src, py_dst)
-            if mesh_src.exists():
-                shutil.copy2(mesh_src, mesh_dst)
-            if args.export_brep and brep_src.exists():
-                shutil.copy2(brep_src, brep_dst)
-
-            selected_rows.append(
-                {
-                    "cadrille_stem": base,
-                    "candidate_stem": candidate_stem,
-                    "selection_reason": selection_reason,
-                    "selected_py": str(py_dst),
-                    "selected_mesh": str(mesh_dst) if mesh_src.exists() else None,
-                    "selected_brep": str(brep_dst) if (args.export_brep and brep_src.exists()) else None,
-                    "status": "ok",
-                }
-            )
-
-    summary = {
-        "sam3d": {
-            "skip_sam3d": bool(args.skip_sam3d),
-            "sam3d_output_root": str(sam3d_output_root),
-            "records_found_ok": len(records),
-            "records_selected_for_bridge": len(selected),
-        },
-        "bridge": {
-            "normalize_stl": bool(args.normalize_stl),
-            "sample_offset": args.sample_offset,
-            "max_samples": args.max_samples,
-            "prepared_count": len(prepared_rows),
-            "cadrille_split_name": split_name,
-            "cadrille_split_dir": str(split_dir),
-            "manifest_jsonl": str(manifest_jsonl),
-        },
-        "cadrille": {
-            "runtime": cadrille_runtime,
-            "cadrille_root": str(cadrille_root),
-            "cadrille_data_root": str(cadrille_data_root),
-            "cadrille_mode": args.cadrille_mode,
-            "cadrille_input_source": args.cadrille_input_source,
-            "cadrille_n_samples": cadrille_n_samples,
-            "checkpoint": args.cadrille_checkpoint,
-            "host_python": args.cadrille_python,
-            "docker_python": args.cadrille_docker_python,
-            "docker_image": args.cadrille_docker_image if cadrille_runtime == "docker" else None,
-            "docker_gpus": args.cadrille_docker_gpus if cadrille_runtime == "docker" else None,
-            "docker_mounts": (
-                [{"host": str(h), "container": str(c)} for h, c in docker_mounts]
-                if cadrille_runtime == "docker"
-                else None
-            ),
-            "tmp_py_dir": str(tmp_py_dir),
-            "tmp_mesh_dir": str(tmp_mesh_dir),
-            "tmp_brep_dir": str(tmp_brep_dir) if args.export_brep else None,
-            "selected_candidate_index": args.selected_candidate_index,
-            "gpu_memory_path": str(gpu_memory_path),
-            "gpu_memory": gpu_memory_summary,
-            "selected_outputs": {
-                "selected_py_dir": str(selected_py_dir),
-                "selected_mesh_dir": str(selected_mesh_dir),
-                "selected_brep_dir": str(selected_brep_dir) if args.export_brep else None,
-            },
-        },
-        "selection": {
-            "selection_mode": args.selection_mode,
-            "selected_candidate_index": args.selected_candidate_index,
-            "allow_selection_fallback": bool(args.allow_selection_fallback),
-            "best_candidate_count": len(best_candidate_map),
-            "evaluate": {
-                "gt_path": str(eval_gt_host),
-                "gt_format": args.eval_gt_format,
-                "gt_mesh_ext": eval_gt_mesh_ext,
-                "gt_point_cloud_exts": eval_gt_point_cloud_exts,
-                "n_points": args.eval_n_points,
-                "metrics_path": str(metrics_path),
-                "best_names_path": str(best_names_path),
-                "summary": evaluate_summary,
-            } if args.selection_mode == "evaluate" else None,
-        },
-        "selected_rows": selected_rows,
-    }
-
-    summary_path = cadrille_output_root / "pipeline_summary.json"
+        run_cmd_obj.append("--no-export-brep")
+    if args.allow_selection_fallback:
+        run_cmd_obj.append("--allow-selection-fallback")
+    if args.eval_gt_path is not None:
+        run_cmd_obj.extend(["--eval-gt-path", str(args.eval_gt_path)])
+    if args.eval_gt_mesh_ext is not None:
+        run_cmd_obj.extend(["--eval-gt-mesh-ext", args.eval_gt_mesh_ext])
+    if args.normalize_stl:
+        run_cmd_obj.append("--bridge-normalized")
     if args.dry_run:
-        print("[DRY-RUN] Summary preview:")
-        print(json.dumps(summary, ensure_ascii=False, indent=2)[:2500])
-    else:
-        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[INFO] Wrote summary: {summary_path}")
-        print(f"[INFO] Selected CAD outputs: {selected_py_dir}, {selected_mesh_dir}" + (f", {selected_brep_dir}" if args.export_brep else ""))
+        run_cmd_obj.append("--dry-run")
+
+    run_cmd(run_cmd_obj, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

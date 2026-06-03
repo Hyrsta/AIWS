@@ -9,24 +9,33 @@ import time
 from pathlib import Path
 from typing import Any
 
+from sam3d_cadrille_bridge import (
+    compute_chunks,
+    ensure_clean_dir,
+    load_sam3d_ok_records,
+    prepare_cadrille_split,
+    write_manifest_jsonl,
+)
+
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Launch full-dataset Cadrille e2e runs for both modalities (pc/img) "
-            "across multiple GPUs by partitioning SAM3D records into disjoint shards."
+            "Launch sharded Cadrille runs across multiple GPUs using shared prepared SAM3D bridge splits. "
+            "The batch script owns split partitioning; e2e remains full-pipeline oriented."
         )
     )
     parser.add_argument(
         "--python",
         default="/home/rxl/anaconda3/envs/sam3d-objects/bin/python",
-        help="Python executable used to run the e2e script",
+        help="Python executable used to run the Cadrille split runner",
     )
     parser.add_argument(
-        "--e2e-script",
+        "--runner-script",
         type=Path,
-        default=Path("/ssd1/rxl/zhankaiming/AIWS/scripts/e2e_sam3d_to_cadrille.py"),
-        help="Path to e2e_sam3d_to_cadrille.py",
+        default=Path("/ssd1/rxl/zhankaiming/AIWS/scripts/run_cadrille_on_split.py"),
+        help="Path to run_cadrille_on_split.py",
     )
     parser.add_argument(
         "--sam3d-output-root",
@@ -38,12 +47,18 @@ def parse_args() -> argparse.Namespace:
         "--output-root",
         type=Path,
         required=True,
-        help="Base output root for modality/shard runs",
+        help="Base output root for modality/shard runs, logs, manifests, and prepared shared splits",
     )
     parser.add_argument(
         "--split-prefix",
         default="sam3d_bridge_full",
-        help="Prefix used to generate per-shard Cadrille split names",
+        help="Prefix used to generate shared per-shard split names",
+    )
+    parser.add_argument(
+        "--shared-splits-root",
+        type=Path,
+        default=None,
+        help="Directory that will hold prepared per-shard split folders outside the Cadrille repo (default: <output-root>/shared_splits)",
     )
     parser.add_argument(
         "--modalities",
@@ -56,47 +71,60 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated GPU ids; one shard process per GPU",
     )
     parser.add_argument(
+        "--normalize-stl",
+        dest="normalize_stl",
+        action="store_true",
+        default=True,
+        help="Normalize bridged STL files to unit cube [0,1] before Cadrille (default on)",
+    )
+    parser.add_argument(
+        "--no-normalize-stl",
+        dest="normalize_stl",
+        action="store_false",
+        help="Use SAM3D STL as-is when preparing shared shard splits",
+    )
+    parser.add_argument(
         "--cadrille-runtime",
         choices=("auto", "docker", "host"),
         default="docker",
-        help="Runtime passed to e2e script",
+        help="Runtime passed to the split runner",
     )
     parser.add_argument(
         "--cadrille-docker-image",
         default="cadrille:latest",
-        help="Docker image passed to e2e script when runtime=docker/auto",
+        help="Docker image passed to the split runner when runtime=docker/auto",
     )
     parser.add_argument(
         "--cadrille-docker-extra-args",
         default="",
-        help="Extra raw args passed through to docker run in the e2e script",
+        help="Extra raw args passed through to docker run in the split runner",
     )
     parser.add_argument(
         "--cadrille-root",
         type=Path,
         default=Path("/ssd1/rxl/zhankaiming/AIWS/repos/cadrille"),
-        help="Cadrille repo root passed through to the e2e script",
+        help="Cadrille repo root passed through to the split runner",
     )
     parser.add_argument(
         "--cadrille-checkpoint",
         default="ckpt/cadrille_sft",
-        help="Checkpoint path passed through to the e2e script",
+        help="Checkpoint path passed through to the split runner",
     )
     parser.add_argument(
         "--cadrille-processor-path",
         default="ckpt/Qwen2-VL-2B-Instruct",
-        help="Processor path passed through to the e2e script",
+        help="Processor path passed through to the split runner",
     )
     parser.add_argument(
         "--selection-mode",
         choices=("evaluate", "index"),
         default="evaluate",
-        help="Selection mode passed to e2e script",
+        help="Selection mode passed to the split runner",
     )
     parser.add_argument(
         "--allow-selection-fallback",
         action="store_true",
-        help="Allow evaluate -> index fallback in e2e script",
+        help="Allow evaluate -> index fallback in the split runner",
     )
     parser.add_argument(
         "--pc-n-samples",
@@ -114,7 +142,7 @@ def parse_args() -> argparse.Namespace:
         "--cadrille-batch-size",
         type=int,
         default=64,
-        help="Batch size passed to Cadrille test.py for each shard",
+        help="Batch size passed to Cadrille for each shard",
     )
     parser.add_argument(
         "--export-brep",
@@ -132,7 +160,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Pass --force to e2e shard jobs",
+        help="Overwrite existing shared splits and shard output folders",
     )
     parser.add_argument(
         "--dry-run",
@@ -142,67 +170,65 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_sam3d_ok_records(run_root: Path) -> list[dict[str, Any]]:
-    files: list[Path] = []
-    root_results = run_root / "results.jsonl"
-    if root_results.exists():
-        files.append(root_results)
-    files.extend(sorted(run_root.glob("shard-*/results.jsonl")))
-
-    if not files:
-        raise RuntimeError(f"No results.jsonl found under {run_root}")
-
-    raw: list[dict[str, Any]] = []
-    for path in files:
-        with path.open("r", encoding="utf-8") as f:
-            for line_no, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                row = json.loads(line)
-                if row.get("status") != "ok":
-                    continue
-                if not row.get("stl_path"):
-                    continue
-                row["_source_results_file"] = str(path)
-                row["_source_line"] = line_no
-                raw.append(row)
-
-    by_task: dict[str, tuple[float, int, dict[str, Any]]] = {}
-    for idx, row in enumerate(raw):
-        task_id = str(row.get("task_id") or row.get("stl_path") or f"row-{idx}")
-        ts = row.get("ended_at_epoch")
-        if ts is None:
-            ts = row.get("started_at_epoch")
-        try:
-            ts_f = float(ts)
-        except (TypeError, ValueError):
-            ts_f = float(idx)
-        prev = by_task.get(task_id)
-        if prev is None or ts_f >= prev[0]:
-            by_task[task_id] = (ts_f, idx, row)
-
-    deduped = [triple[2] for triple in sorted(by_task.values(), key=lambda t: t[1])]
-    deduped.sort(key=lambda r: str(r.get("task_id") or r.get("stl_path")))
-    return deduped
-
-
-def compute_chunks(total: int, n_shards: int) -> list[tuple[int, int]]:
-    if n_shards <= 0:
-        raise RuntimeError("n_shards must be > 0")
-    base = total // n_shards
-    rem = total % n_shards
-    chunks: list[tuple[int, int]] = []
-    offset = 0
-    for i in range(n_shards):
-        size = base + (1 if i < rem else 0)
-        chunks.append((offset, size))
-        offset += size
-    return chunks
-
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+
+def resolve_shared_splits_root(args: argparse.Namespace) -> Path:
+    if args.shared_splits_root is not None:
+        return args.shared_splits_root.resolve()
+    return (args.output_root / "shared_splits").resolve()
+
+
+
+def prepare_shared_splits(
+    *,
+    records: list[dict[str, Any]],
+    chunks: list[tuple[int, int]],
+    args: argparse.Namespace,
+    shared_splits_root: Path,
+) -> list[dict[str, Any]]:
+    manifests_root = args.output_root / "bridge_manifests"
+    if not args.dry_run:
+        manifests_root.mkdir(parents=True, exist_ok=True)
+
+    split_plans: list[dict[str, Any]] = []
+    for shard_idx, (sample_offset, max_samples) in enumerate(chunks):
+        if max_samples <= 0:
+            continue
+        shard_records = records[sample_offset: sample_offset + max_samples]
+        split_name = f"{args.split_prefix}_s{shard_idx}"
+        split_dir = shared_splits_root / split_name
+        manifest_jsonl = manifests_root / f"{split_name}.jsonl"
+
+        ensure_clean_dir(split_dir, force=args.force, dry_run=args.dry_run, label=f"shared split shard-{shard_idx}")
+        prepared_rows = prepare_cadrille_split(
+            shard_records,
+            split_dir=split_dir,
+            normalize_stl=bool(args.normalize_stl),
+            dry_run=args.dry_run,
+        )
+        write_manifest_jsonl(manifest_jsonl, prepared_rows, dry_run=args.dry_run)
+        print(f"[INFO] Prepared shared split shard={shard_idx} count={len(prepared_rows)} split={split_name} dir={split_dir}")
+
+        split_plans.append(
+            {
+                "shard": shard_idx,
+                "sample_offset": sample_offset,
+                "max_samples": max_samples,
+                "split_name": split_name,
+                "split_dir": str(split_dir),
+                "manifest_jsonl": str(manifest_jsonl),
+                "prepared_count": len(prepared_rows),
+            }
+        )
+
+    if not split_plans:
+        raise RuntimeError("No shared splits were prepared")
+    return split_plans
+
 
 
 def run_modality(
@@ -210,9 +236,10 @@ def run_modality(
     modality: str,
     n_samples: int,
     gpus: list[str],
-    chunks: list[tuple[int, int]],
+    split_plans: list[dict[str, Any]],
     args: argparse.Namespace,
     logs_dir: Path,
+    total_records: int,
 ) -> None:
     mode_root = args.output_root / modality
     ensure_dir(mode_root)
@@ -220,40 +247,43 @@ def run_modality(
     procs: list[tuple[int, str, Path, subprocess.Popen[Any]]] = []
     launch_records: list[dict[str, Any]] = []
 
-    for shard_idx, gpu in enumerate(gpus):
-        sample_offset, max_samples = chunks[shard_idx]
-        if max_samples <= 0:
-            continue
-
+    for plan, gpu in zip(split_plans, gpus):
+        shard_idx = int(plan["shard"])
         shard_out = mode_root / f"shard-{shard_idx}"
-        split_name = f"{args.split_prefix}_{modality}_s{shard_idx}"
         log_path = logs_dir / f"{modality}-shard-{shard_idx}.log"
+
+        ensure_clean_dir(shard_out, force=args.force, dry_run=args.dry_run, label=f"{modality} shard-{shard_idx} output")
 
         cmd = [
             args.python,
-            str(args.e2e_script),
-            "--skip-sam3d",
+            str(args.runner_script),
+            "--prepared-split-name",
+            str(plan["split_name"]),
+            "--prepared-split-dir",
+            str(plan["split_dir"]),
+            "--bridge-manifest-jsonl",
+            str(plan["manifest_jsonl"]),
             "--sam3d-output-root",
             str(args.sam3d_output_root),
+            "--records-found-ok",
+            str(total_records),
+            "--records-selected-for-bridge",
+            str(plan["max_samples"]),
             "--cadrille-output-root",
             str(shard_out),
-            "--cadrille-split-name",
-            split_name,
+            "--cadrille-root",
+            str(args.cadrille_root),
+            "--cadrille-mode",
+            modality,
             "--cadrille-runtime",
             args.cadrille_runtime,
             "--cadrille-docker-image",
             args.cadrille_docker_image,
             f"--cadrille-docker-extra-args={args.cadrille_docker_extra_args}",
-            "--cadrille-root",
-            str(args.cadrille_root),
             "--cadrille-checkpoint",
             args.cadrille_checkpoint,
             "--cadrille-processor-path",
             args.cadrille_processor_path,
-            "--cadrille-mode",
-            modality,
-            "--cadrille-input-source",
-            "mesh",
             "--cadrille-n-samples",
             str(n_samples),
             "--cadrille-batch-size",
@@ -262,10 +292,6 @@ def run_modality(
             f"device={gpu}",
             "--selection-mode",
             args.selection_mode,
-            "--sample-offset",
-            str(sample_offset),
-            "--max-samples",
-            str(max_samples),
         ]
         if args.allow_selection_fallback:
             cmd.append("--allow-selection-fallback")
@@ -273,30 +299,35 @@ def run_modality(
             cmd.append("--export-brep")
         else:
             cmd.append("--no-export-brep")
-        if args.force:
-            cmd.append("--force")
+        if args.normalize_stl:
+            cmd.append("--bridge-normalized")
 
         launch_records.append(
             {
                 "modality": modality,
                 "shard": shard_idx,
                 "gpu": gpu,
-                "sample_offset": sample_offset,
-                "max_samples": max_samples,
+                "sample_offset": plan["sample_offset"],
+                "max_samples": plan["max_samples"],
+                "prepared_count": plan["prepared_count"],
                 "output_root": str(shard_out),
-                "split_name": split_name,
+                "split_name": plan["split_name"],
+                "split_dir": plan["split_dir"],
+                "manifest_jsonl": plan["manifest_jsonl"],
                 "log_path": str(log_path),
                 "cmd": cmd,
             }
         )
 
-        print(f"[PLAN] mode={modality} shard={shard_idx} gpu={gpu} offset={sample_offset} max={max_samples}")
+        print(
+            f"[PLAN] mode={modality} shard={shard_idx} gpu={gpu} "
+            f"offset={plan['sample_offset']} max={plan['max_samples']} split={plan['split_name']}"
+        )
         print(f"[CMD] {' '.join(cmd)}")
 
         if args.dry_run:
             continue
 
-        ensure_dir(shard_out)
         with log_path.open("w", encoding="utf-8") as logf:
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -323,12 +354,14 @@ def run_modality(
         raise RuntimeError(f"One or more shard runs failed for modality={modality}")
 
 
+
 def main() -> None:
     args = parse_args()
 
-    args.e2e_script = args.e2e_script.resolve()
+    args.runner_script = args.runner_script.resolve()
     args.sam3d_output_root = args.sam3d_output_root.resolve()
     args.output_root = args.output_root.resolve()
+    args.cadrille_root = args.cadrille_root.resolve()
 
     modalities = [m.strip().lower() for m in args.modalities.split(",") if m.strip()]
     allowed = {"pc", "img"}
@@ -350,6 +383,7 @@ def main() -> None:
         raise RuntimeError("No SAM3D ok records found")
 
     chunks = compute_chunks(total, len(gpus))
+    shared_splits_root = resolve_shared_splits_root(args)
 
     ensure_dir(args.output_root)
     logs_dir = args.output_root / "logs"
@@ -366,20 +400,28 @@ def main() -> None:
         "pc_n_samples": args.pc_n_samples,
         "img_n_samples": args.img_n_samples,
         "cadrille_batch_size": args.cadrille_batch_size,
+        "normalize_stl": bool(args.normalize_stl),
+        "shared_splits_root": str(shared_splits_root),
     }
     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[INFO] Wrote run plan: {plan_path}")
 
+    split_plans = prepare_shared_splits(records=records, chunks=chunks, args=args, shared_splits_root=shared_splits_root)
+    split_plan_path = args.output_root / "shared_split_plan.json"
+    split_plan_path.write_text(json.dumps(split_plans, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"[INFO] Wrote shared split plan: {split_plan_path}")
+
     for mode in modalities:
         n_samples = args.pc_n_samples if mode == "pc" else args.img_n_samples
-        print(f"\n[INFO] Starting modality={mode} with n_samples={n_samples} across {len(gpus)} shards")
+        print(f"\n[INFO] Starting modality={mode} with n_samples={n_samples} across {len(split_plans)} shared splits")
         run_modality(
             modality=mode,
             n_samples=n_samples,
             gpus=gpus,
-            chunks=chunks,
+            split_plans=split_plans,
             args=args,
             logs_dir=logs_dir,
+            total_records=total,
         )
 
     print("\n[DONE] All requested modalities completed successfully.")

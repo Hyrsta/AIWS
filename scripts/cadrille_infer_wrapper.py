@@ -114,6 +114,52 @@ def write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _point_tensor_to_rows(value: Any) -> list[list[float]] | None:
+    if not torch.is_tensor(value):
+        return None
+    points = value.detach().cpu().float()
+    if points.ndim != 2:
+        return None
+    if points.shape[-1] == 3:
+        rows = points.tolist()
+    elif points.shape[0] == 3:
+        rows = points.transpose(0, 1).tolist()
+    else:
+        return None
+    return [[float(x), float(y), float(z)] for x, y, z in rows]
+
+
+def write_input_points_artifact(
+    output_root: Path,
+    *,
+    mode: str,
+    source_stem: str,
+    output_file_name: str,
+    generation_id: int,
+    points: Any,
+) -> str | None:
+    if mode != "pc":
+        return None
+    rows = _point_tensor_to_rows(points)
+    if not rows:
+        return None
+    out_dir = output_root / "input_points"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{Path(output_file_name).stem}.json"
+    artifact = {
+        "mode": mode,
+        "source_stem": source_stem,
+        "source_candidate": Path(output_file_name).stem,
+        "output_file_name": output_file_name,
+        "generation_id": generation_id,
+        "n_points": len(rows),
+        "points": rows,
+        "note": "Saved from batch['point_clouds'] immediately before Cadrille generate().",
+    }
+    out_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(out_path)
+
+
 def write_gpu_memory_report(
     output_root: Path,
     *,
@@ -288,6 +334,7 @@ def run(
         for batch_idx, batch in enumerate(tqdm(dataloader), start=1):
             batch_file_names = [str(v) for v in batch["file_name"]]
             batch_item_count = len(batch_file_names)
+            batch_point_clouds = batch.get("point_clouds")
             cuda_synchronize_all()
             reset_cuda_peak_stats()
             batch_started = time.perf_counter()
@@ -344,16 +391,27 @@ def run(
                 }
             )
 
-            for stem, py_string in zip(batch_file_names, py_strings):
+            for sample_idx, (stem, py_string) in enumerate(zip(batch_file_names, py_strings)):
                 generation_id = generated_count // len(dataset)
                 file_name = f"{stem}+{generation_id}.py"
                 (py_path / file_name).write_text(py_string, encoding="utf-8")
+                input_points_path = None
+                if torch.is_tensor(batch_point_clouds) and sample_idx < batch_point_clouds.shape[0]:
+                    input_points_path = write_input_points_artifact(
+                        output_root,
+                        mode=mode,
+                        source_stem=stem,
+                        output_file_name=file_name,
+                        generation_id=generation_id,
+                        points=batch_point_clouds[sample_idx],
+                    )
                 sample_trace_rows.append(
                     {
                         "batch_index": batch_idx,
                         "source_stem": stem,
                         "output_file_name": file_name,
                         "generation_id": generation_id,
+                        "input_points_path": input_points_path,
                         "estimated_runtime_sec": round(estimated_runtime_sec, 6) if estimated_runtime_sec is not None else None,
                         "batch_peak_memory_allocated_mb": batch_peak_allocated_mb,
                         "batch_peak_memory_reserved_mb": batch_peak_reserved_mb,
