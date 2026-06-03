@@ -645,8 +645,48 @@ def terminate_job(job_id: str) -> dict[str, Any]:
     if pid is None:
         raise HTTPException(status_code=400, detail="Job has no remote pid")
 
-    script = f"kill -TERM {int(pid)} 2>/dev/null || true"
-    run_ssh_command(job["ssh_host"], script, check=False)
+    # Cancel must tear the whole job down, not just the bash wrapper remote_pid
+    # points at. (1) Kill the runner's process group (created via setsid at
+    # launch) so the python child and its docker-CLI clients die too; fall back
+    # to the bare pid for jobs launched before the setsid change. (2) Kill any
+    # docker container bind-mounting this job's dir -- containers run under
+    # dockerd, outside the process group, so a process kill alone leaves them
+    # (and the GPU) running. (3) Stamp the live status.json terminated so
+    # refresh_job stops reverting it to "running" on the next poll.
+    teardown = (
+        f"pid={int(pid)}\n"
+        f"root={shlex.quote(job.get('output_root') or '')}\n"
+        f"status={shlex.quote(job.get('status_path') or '')}\n"
+        + r'''
+kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+sleep 2
+kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+if [ -n "$root" ]; then
+  for cid in $(docker ps -q 2>/dev/null); do
+    while IFS= read -r src; do
+      case "$src" in
+        "$root"|"$root"/*) docker kill "$cid" 2>/dev/null || true; break;;
+      esac
+    done < <(docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$cid" 2>/dev/null)
+  done
+fi
+if [ -n "$status" ]; then
+  python3 - "$status" <<'PY' 2>/dev/null || true
+import json, pathlib, sys, time
+p = pathlib.Path(sys.argv[1])
+d = {}
+if p.exists():
+    try:
+        d = json.loads(p.read_text())
+    except Exception:
+        d = {}
+d.update({"status": "terminated", "ended_at": time.time()})
+p.write_text(json.dumps(d, indent=2))
+PY
+fi
+'''
+    )
+    run_ssh_script(job["ssh_host"], teardown, check=False)
     job["status"] = "terminated"
     job["updated_at"] = now_ts()
     save_job(job)
@@ -969,7 +1009,10 @@ PY
 exit "$rc"
 BASH
 chmod +x "$RUNNER_PATH"
-nohup bash "$RUNNER_PATH" > "$LOG_PATH" 2>&1 < /dev/null &
+# setsid (not nohup) so the runner leads its OWN session/process group: $! is
+# both its pid and pgid, letting terminate_job signal the whole tree (python
+# child + docker-CLI clients) with `kill -- -<pgid>`, not just the bash wrapper.
+setsid bash "$RUNNER_PATH" > "$LOG_PATH" 2>&1 < /dev/null &
 echo $!
 """
     result = run_ssh_script(ssh_host, script)
