@@ -14,13 +14,13 @@ import { LogConsole } from "@/components/LogConsole";
 import type { JobSummary } from "@/api/types";
 
 /* ============================================================
-   STAGE_DEFS — maps visible-stage index → icon + group i18n key
-   Mirrors live.jsx STAGE_DEFS (s1..s5), postscaleOnly on s5.
+   STAGE_DEFS — maps visible-stage index → icon + group i18n key.
+   Cleanup is a visible post-processing stage; metric alignment is optional.
    ============================================================ */
 interface StageDef {
-  key: "s1" | "s2" | "s3" | "s4" | "s5";
-  icon: "download" | "box" | "layers" | "cube3d" | "ruler";
-  group: "stage.s1g" | "stage.s2g" | "stage.s3g" | "stage.s4g" | "stage.s5g";
+  key: "s1" | "s2" | "s3" | "s4" | "sClean" | "s5";
+  icon: "download" | "box" | "layers" | "cube3d" | "sliders" | "ruler";
+  group: "stage.s1g" | "stage.s2g" | "stage.s3g" | "stage.s4g" | "stage.sCleang" | "stage.s5g";
   postscaleOnly?: boolean;
 }
 
@@ -29,6 +29,7 @@ const STAGE_DEFS: StageDef[] = [
   { key: "s2", icon: "box",      group: "stage.s2g" },
   { key: "s3", icon: "layers",   group: "stage.s3g" },
   { key: "s4", icon: "cube3d",   group: "stage.s4g" },
+  { key: "sClean", icon: "sliders", group: "stage.sCleang" },
   { key: "s5", icon: "ruler",    group: "stage.s5g", postscaleOnly: true },
 ];
 
@@ -66,12 +67,13 @@ function PipelineStepper({ job, hasPostscale }: PipelineStepperProps) {
     "SAM3D: Generating mesh",
     "Cadrille: Preparing input",
     "Cadrille: Generating CAD result",
+    "Body cleanup: Removing hallucinated bodies",
     "Post-scaling: Aligning CAD to catalog (mm)",
   ];
 
   // The backend records each stage's started_at but not ended_at, so a finished
   // stage's duration is derived from the NEXT stage's start. All start times
-  // across the full pipeline (incl. the hidden body-cleanup stage), ascending.
+  // across the full pipeline, ascending.
   const allStarts = Object.values(timings)
     .map((tm) => tm?.started_at)
     .filter((s): s is number => s != null)

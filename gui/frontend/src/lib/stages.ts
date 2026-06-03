@@ -5,16 +5,18 @@ export const BASE_STAGES = [
   "Cadrille: Generating CAD result",
 ] as const;
 export const POSTSCALE_STAGE = "Post-scaling: Aligning CAD to catalog (mm)";
-export const HIDDEN_CLEANUP_STAGE = "Body cleanup: Removing hallucinated bodies";
+export const CLEANUP_STAGE = "Body cleanup: Removing hallucinated bodies";
+export const HIDDEN_CLEANUP_STAGE = CLEANUP_STAGE;
 
 export function visibleStages(hasPostscale: boolean): string[] {
-  return hasPostscale ? [...BASE_STAGES, POSTSCALE_STAGE] : [...BASE_STAGES];
+  return hasPostscale
+    ? [...BASE_STAGES, CLEANUP_STAGE, POSTSCALE_STAGE]
+    : [...BASE_STAGES, CLEANUP_STAGE];
 }
 
 /** Index of the currently-active visible step for a given backend stage_label. */
 export function stageToStep(stageLabel: string, hasPostscale: boolean): number {
   const stages = visibleStages(hasPostscale);
-  if (stageLabel === HIDDEN_CLEANUP_STAGE) return BASE_STAGES.length - 1; // sit on "Cadrille CAD"
   const i = stages.indexOf(stageLabel);
   if (i >= 0) return i;
   return stages.length - 1; // completed / terminal / unknown
@@ -26,8 +28,8 @@ const STAGE_KEY_TO_STEP: Record<string, number> = {
   queued: 0,
   sam3d: 0,
   cadrille: 2,
-  body_cleanup: 3, // hidden stage sits on "Cadrille CAD"
-  postscale: 4,
+  body_cleanup: 4,
+  postscale: 5,
 };
 
 /**

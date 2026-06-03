@@ -10,6 +10,7 @@ import { fmtIoU } from "@/lib/format";
 import { Icon, Chip } from "@/components/Icon";
 import { InputImagesPanel } from "@/components/InputImagesPanel";
 import { LogConsole } from "@/components/LogConsole";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import type { CadrilleInputPoints, CleanupMetadata, ScaledMetadata, JobSummary, Metrics, StageMetrics, Vec3 } from "@/api/types";
 
 /* ---- lazy-load the 3-D viewer to keep it in its own chunk ---- */
@@ -796,6 +797,11 @@ function PostProcessSection({ cleanup, meta }: PostProcessSectionProps) {
         </button>
       </div>
       <div className="panel-pad pp-pad">
+        {cleanup?.confidence_flag ? (
+          <Alert variant="destructive" className="mb-3">
+            <AlertTitle>{t("cl.warn")}</AlertTitle>
+          </Alert>
+        ) : null}
         {cleanup ? (
           <PPSub
             step={cleanupStep}

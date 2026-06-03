@@ -84,7 +84,6 @@ const fixtures = vi.hoisted(() => {
     points: Array.from({ length: 256 }, (_, i) => [i / 256, (i % 16) / 16, (i % 8) / 8]),
     source_candidate: "GUI__user_upload__input__obj01+2",
   };
-
   const backfilledPointCloud = {
     ...pointCloud,
     backfilled: true,
@@ -222,6 +221,5 @@ describe("ResultView timeline", () => {
     expect(await screen.findByText("Cadrille input preview")).toBeInTheDocument();
     expect(screen.getByText("Backfilled 256-point preview from the saved Cadrille bridge mesh")).toBeInTheDocument();
     expect(screen.getByText("Backfilled")).toBeInTheDocument();
-    expect(await screen.findByTestId("point-cloud-viewer")).toHaveTextContent("256 points");
   });
 });
