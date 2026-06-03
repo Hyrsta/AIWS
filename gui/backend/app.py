@@ -663,9 +663,11 @@ sleep 2
 kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
 if [ -n "$root" ]; then
   for cid in $(docker ps -q 2>/dev/null); do
-    if docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$cid" 2>/dev/null | grep -qF "$root"; then
-      docker kill "$cid" 2>/dev/null || true
-    fi
+    while IFS= read -r src; do
+      case "$src" in
+        "$root"|"$root"/*) docker kill "$cid" 2>/dev/null || true; break;;
+      esac
+    done < <(docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$cid" 2>/dev/null)
   done
 fi
 if [ -n "$status" ]; then
