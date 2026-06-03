@@ -157,7 +157,7 @@ def mesh_to_image(mesh, camera_distance=-0.9, front=(1, 1, 1), width=500, height
     view_control = vis.get_view_control()
     camera_params = view_control.convert_to_pinhole_camera_parameters()
     camera_params.extrinsic = extrinsic
-    view_control.convert_from_pinhole_camera_parameters(camera_params)
+    view_control.convert_from_pinhole_camera_parameters(camera_params, allow_arbitrary=True)
 
     vis.poll_events()
     vis.update_renderer()
