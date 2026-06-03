@@ -36,7 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cadrille-runtime", choices=("auto", "docker", "host"), default="docker")
     parser.add_argument("--cadrille-docker-image", default="cadrille:latest")
     parser.add_argument("--cadrille-docker-python", default="python")
-    parser.add_argument("--cadrille-docker-gpus", default="device=0")
+    parser.add_argument("--cadrille-docker-gpus", default="device=2")
+    parser.add_argument("--gpu-index", type=int, default=None)
     parser.add_argument("--cadrille-docker-extra-args", default="--ipc=host --shm-size=16g")
     parser.add_argument("--cadrille-root", type=Path, default=None)
     parser.add_argument("--cadrille-checkpoint", default="ckpt/cadrille_rl")
@@ -176,7 +177,7 @@ def first_match(path: Path, pattern: str) -> str | None:
     return str(matches[0]) if matches else None
 
 
-def copy_result_file(src: str | None, dst: Path) -> str | None:
+def copy_result_file(src: str | Path | None, dst: Path) -> str | None:
     if not src:
         return None
     src_path = Path(src)
@@ -185,6 +186,75 @@ def copy_result_file(src: str | None, dst: Path) -> str | None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src_path, dst)
     return str(dst)
+
+
+def resolve_cadrille_input_points(cadrille_output_root: Path, selected_py: str | None) -> Path | None:
+    """Return the saved point sample for the actual selected PC candidate.
+
+    When the later GUI reselection stage picks tmp_py/<stem>+N.py, prefer the
+    matching input_points/<stem>+N.json. Without reselection, run_cadrille_on_split
+    copies the selected sample to selected_input_points/<stem>.json.
+    """
+    input_points_dir = cadrille_output_root / "input_points"
+    selected_input_points_dir = cadrille_output_root / "selected_input_points"
+    if selected_py:
+        stem = Path(selected_py).stem
+        candidates = (
+            [input_points_dir / f"{stem}.json"]
+            if "+" in stem
+            else [selected_input_points_dir / f"{stem}.json"]
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+    selected = sorted(selected_input_points_dir.glob("*.json"))
+    if selected:
+        return selected[0]
+    return None
+
+
+SAM3D_PREVIEW_MAX_FACES = 60000
+
+
+def decimate_sam3d_preview(src_stl: Path, dst_stl: Path, max_faces: int = SAM3D_PREVIEW_MAX_FACES) -> dict | None:
+    """Write a quadric-decimated copy of the SAM3D mesh for fast GUI preview.
+
+    The SAM3D marching-cubes mesh is wildly over-tessellated for these welding
+    parts (~432k faces / 21MB). Quadric decimation preserves silhouettes, holes
+    and thin walls while collapsing flat-region noise. Cached next to results so
+    re-viewing a historical job never re-decimates. Best-effort: returns the
+    cached path on success, else None (caller falls back to the full mesh)."""
+    try:
+        import open3d as o3d  # available in the sam3d-objects env
+        import numpy as np
+        import trimesh
+
+        m = trimesh.load(str(src_stl), force="mesh")
+        if m is None or m.faces is None or len(m.faces) <= max_faces:
+            return None  # already small enough; full mesh is fine
+
+        om = o3d.geometry.TriangleMesh()
+        om.vertices = o3d.utility.Vector3dVector(np.asarray(m.vertices))
+        om.triangles = o3d.utility.Vector3iVector(np.asarray(m.faces))
+        dec = om.simplify_quadric_decimation(target_number_of_triangles=int(max_faces))
+        dec.remove_degenerate_triangles()
+        dec.remove_duplicated_vertices()
+        out = trimesh.Trimesh(
+            vertices=np.asarray(dec.vertices), faces=np.asarray(dec.triangles), process=False)
+        if len(out.faces) == 0:
+            return None
+        out.export(str(dst_stl))
+        return {
+            "path": str(dst_stl),
+            "faces_raw": int(len(m.faces)), "faces_kept": int(len(out.faces)),
+            "verts_raw": int(len(m.vertices)), "verts_kept": int(len(out.vertices)),
+            "budget": int(max_faces),
+            "pct": int(round((1 - len(out.faces) / max(1, len(m.faces))) * 100)),
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[sam3d-preview] decimation skipped: {exc!r}", flush=True)
+        return None
 
 
 def build_simple_result_paths(
@@ -204,10 +274,17 @@ def build_simple_result_paths(
         "results_root": str(results_root),
         "sam3d_mesh_glb": str(results_root / "sam3d_mesh.glb"),
         "sam3d_mesh_stl": str(results_root / "sam3d_mesh.stl"),
+        "sam3d_mesh_preview_stl": None,  # decimated copy for fast GUI preview
+        "sam3d_faces_raw": None, "sam3d_faces_kept": None,
+        "sam3d_verts_raw": None, "sam3d_verts_kept": None,
+        "sam3d_face_budget": None, "sam3d_reduce_pct": None,
         "cadrille_output_root": str(cadrille_output_root),
         "selected_mesh": None,
         "selected_py": None,
         "selected_brep": None,
+        "cadrille_reselect": None,
+        "cadrille_input_points": None,
+        "cadrille_input_render_grid": None,
         # Body-cleanup slots — populated by run_body_cleanup_stage.
         "cleaned_brep_step": None,
         "cleaned_mesh_stl": None,
@@ -222,12 +299,30 @@ def build_simple_result_paths(
         "scaled_metadata": None,
         "workpiece_class": None,
         "model_code": None,
+        "stage_metrics": None,  # per-stage IoU+CD vs SAM3D GT (results/cadrille_stage_metrics.json)
     }
     shutil.copy2(sam3d_mesh_glb, results_root / "sam3d_mesh.glb")
     shutil.copy2(sam3d_mesh_stl, results_root / "sam3d_mesh.stl")
+    _ds = decimate_sam3d_preview(
+        results_root / "sam3d_mesh.stl", results_root / "sam3d_mesh_preview.stl")
+    if isinstance(_ds, dict):
+        result_paths["sam3d_mesh_preview_stl"] = _ds["path"]
+        result_paths["sam3d_faces_raw"] = _ds["faces_raw"]
+        result_paths["sam3d_faces_kept"] = _ds["faces_kept"]
+        result_paths["sam3d_verts_raw"] = _ds["verts_raw"]
+        result_paths["sam3d_verts_kept"] = _ds["verts_kept"]
+        result_paths["sam3d_face_budget"] = _ds["budget"]
+        result_paths["sam3d_reduce_pct"] = _ds["pct"]
+    else:
+        result_paths["sam3d_mesh_preview_stl"] = _ds
     result_paths["selected_mesh"] = copy_result_file(selected_mesh, results_root / "cadrille_selected_mesh.stl")
     result_paths["selected_py"] = copy_result_file(selected_py, results_root / "cadrille_selected.py")
     result_paths["selected_brep"] = copy_result_file(selected_brep, results_root / f"cadrille_selected.{Path(selected_brep).suffix.lstrip('.')}" if selected_brep else results_root / "cadrille_selected.step")
+    result_paths["cadrille_reselect"] = copy_result_file(cadrille_output_root / "reselect.json", results_root / "cadrille_reselect.json")
+    result_paths["cadrille_input_points"] = copy_result_file(
+        resolve_cadrille_input_points(cadrille_output_root, selected_py),
+        results_root / "cadrille_input_points.json",
+    )
     return result_paths
 
 
@@ -235,7 +330,8 @@ def run_postscale_stage(
     *,
     repo_root: Path,
     job_root: Path,
-    selected_py_host: Path,
+    input_host: Path,
+    input_is_step: bool,
     docker_image: str,
     workpiece_class: str,
     model_code: str | None,
@@ -256,7 +352,8 @@ def run_postscale_stage(
 
     postscale_work = (job_root / "postscale").resolve()
     postscale_work.mkdir(parents=True, exist_ok=True)
-    selected_py_in_ctr = "/job/" + str(selected_py_host.resolve().relative_to(job_root))
+    input_in_ctr = "/job/" + str(input_host.resolve().relative_to(job_root))
+    input_flag = "--in-step" if input_is_step else "--py"
 
     docker_cmd = [
         "docker", "run", "--rm",
@@ -266,7 +363,7 @@ def run_postscale_stage(
         docker_image,
         "python",
         "/repo/scripts/cadrille_metric_postscale.py",
-        "--py", selected_py_in_ctr,
+        input_flag, input_in_ctr,
         "--out-dir", "/job/postscale",
         "--dimensions", "/repo/docs/workpiece-dimensions.md",
         "--workpiece-class", workpiece_class,
@@ -277,7 +374,7 @@ def run_postscale_stage(
         docker_cmd.extend(["--model-code", model_code])
     run_cmd(docker_cmd)
 
-    py_stem = selected_py_host.stem
+    py_stem = input_host.stem
     src_scaled_py = postscale_work / f"{py_stem}__scaled.py"
     src_scaled_step = postscale_work / f"{py_stem}__scaled.step"
     src_scaled_stl = postscale_work / f"{py_stem}__scaled.stl"
@@ -348,6 +445,110 @@ def run_body_cleanup_stage(
     return {k: v for k, v in populated.items() if v is not None}
 
 
+def run_reselect_stage(
+    *,
+    repo_root: Path,
+    job_root: Path,
+    cadrille_output_root: Path,
+    brep_ext: str,
+    docker_image: str,
+) -> dict[str, str] | None:
+    """Reselect the Cadrille candidate whose BODY-CLEANED mesh best matches the
+    SAM3D GT (centered IoU, CD tiebreak) via scripts/cadrille_reselect.py in docker.
+    Returns {'brep','mesh','py'} of the chosen candidate, or None to keep Cadrille's
+    min-CD default (IMG / single candidate, or on any failure)."""
+    import glob as _glob
+    cand_dir = cadrille_output_root / "tmp_brep"
+    py_dir = cadrille_output_root / "tmp_py"
+    mesh_dir = cadrille_output_root / "tmp_mesh"
+    cands = sorted(_glob.glob(str(cand_dir / f"*.{brep_ext}")))
+    if len(cands) <= 1:
+        return None
+    gt_candidates = (
+        _glob.glob(str(job_root / "bridge" / "data" / "*" / "*input*obj01.stl"))
+        or _glob.glob(str(job_root / "bridge" / "data" / "*" / "*.stl"))
+    )
+    if not gt_candidates:
+        return None
+    out_host = cadrille_output_root / "reselect.json"
+    docker_cmd = [
+        "docker", "run", "--rm",
+        "--user", f"{os.getuid()}:{os.getgid()}",
+        "-v", f"{repo_root}:/repo:ro",
+        "-v", f"{job_root}:/job",
+        docker_image,
+        "python", "/repo/scripts/cadrille_reselect.py",
+        "--candidates-dir", "/job/" + str(cand_dir.resolve().relative_to(job_root)),
+        "--gt-mesh", "/job/" + str(Path(gt_candidates[0]).resolve().relative_to(job_root)),
+        "--out", "/job/" + str(out_host.resolve().relative_to(job_root)),
+        "--brep-ext", brep_ext,
+        "--py-dir", "/job/" + str(py_dir.resolve().relative_to(job_root)),
+        "--mesh-dir", "/job/" + str(mesh_dir.resolve().relative_to(job_root)),
+    ]
+    run_cmd(docker_cmd)
+    if not out_host.exists():
+        return None
+    best = (json.loads(out_host.read_text(encoding="utf-8")) or {}).get("best")
+    if not best:
+        return None
+    brep = cand_dir / f"{best}.{brep_ext}"
+    mesh = cadrille_output_root / "tmp_mesh" / f"{best}.stl"
+    py = cadrille_output_root / "tmp_py" / f"{best}.py"
+    return {
+        "brep": str(brep) if brep.exists() else None,
+        "mesh": str(mesh) if mesh.exists() else None,
+        "py": str(py) if py.exists() else None,
+    }
+
+
+def run_stage_metrics_stage(
+    *,
+    repo_root: Path,
+    job_root: Path,
+    result_paths: dict[str, Any],
+    docker_image: str,
+) -> dict[str, Any]:
+    """Compute per-stage IoU+CD (canonical / cleaned / scaled) vs the SAM3D GT
+    via scripts/cadrille_stage_metrics.py in docker. Best-effort; returns the
+    'stage_metrics' result_paths key (path to results/cadrille_stage_metrics.json)."""
+    import glob as _glob
+    gt_candidates = (
+        _glob.glob(str(job_root / "bridge" / "data" / "*" / "*input*obj01.stl"))
+        or _glob.glob(str(job_root / "bridge" / "data" / "*" / "*.stl"))
+    )
+    if not gt_candidates:
+        raise RuntimeError("no SAM3D GT mesh found under bridge/data")
+
+    def _ctr(p: Any) -> "str | None":
+        return ("/job/" + str(Path(p).resolve().relative_to(job_root))) if p else None
+
+    out_host = job_root / "results" / "cadrille_stage_metrics.json"
+    cad_metrics = job_root / "cadrille" / "metrics.json"
+    docker_cmd = [
+        "docker", "run", "--rm",
+        "--user", f"{os.getuid()}:{os.getgid()}",
+        "-v", f"{repo_root}:/repo:ro",
+        "-v", f"{job_root}:/job",
+        docker_image,
+        "python", "/repo/scripts/cadrille_stage_metrics.py",
+        "--gt-mesh", _ctr(gt_candidates[0]),
+        "--out", "/job/results/cadrille_stage_metrics.json",
+    ]
+    if result_paths.get("selected_mesh"):
+        docker_cmd += ["--canonical-mesh", _ctr(result_paths["selected_mesh"])]
+    if result_paths.get("cleaned_mesh_stl"):
+        docker_cmd += ["--cleaned-mesh", _ctr(result_paths["cleaned_mesh_stl"])]
+    if result_paths.get("scaled_mesh_stl"):
+        docker_cmd += ["--scaled-mesh", _ctr(result_paths["scaled_mesh_stl"])]
+    if cad_metrics.exists():
+        docker_cmd += ["--cadrille-metrics", "/job/cadrille/metrics.json"]
+    reselect_json = job_root / "cadrille" / "reselect.json"
+    if reselect_json.exists():
+        docker_cmd += ["--reselect-json", "/job/cadrille/reselect.json"]
+    run_cmd(docker_cmd)
+    return {"stage_metrics": str(out_host)} if out_host.exists() else {}
+
+
 def run_cmd(cmd: list[str], cwd: Path | None = None) -> None:
     print("[RUN]", " ".join(str(x) for x in cmd), flush=True)
     subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
@@ -379,6 +580,12 @@ def main() -> None:
         os.environ.setdefault("CONDA_PREFIX", str(Path(sys.executable).resolve().parents[1]))
         os.environ.setdefault("ATTN_BACKEND", "flash_attn")
         os.environ.setdefault("SPARSE_ATTN_BACKEND", "flash_attn")
+        # Pin SAM3D to the selected GPU (shared box). gpu_index is resolved by
+        # the backend (explicit pick or least-busy auto); default 2 if unset.
+        if args.gpu_index is not None:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_index)
+        else:
+            os.environ.setdefault("CUDA_VISIBLE_DEVICES", "2")
 
         sys.path.insert(0, str(repo_root / "scripts"))
         sys.path.insert(0, str(sam3d_repo_root))
@@ -538,7 +745,10 @@ def main() -> None:
             "--cadrille-processor-path",
             args.cadrille_processor_path,
             "--cadrille-n-samples",
-            str(args.cadrille_n_samples),
+            # IMG generation is deterministic (fixed render + greedy decode) so all
+            # samples are identical — 1 suffices (~5x faster); PC re-samples its point
+            # cloud per draw, so it keeps the full budget for candidate diversity.
+            str(1 if args.cadrille_mode == "img" else args.cadrille_n_samples),
             "--cadrille-batch-size",
             str(args.cadrille_batch_size),
             "--selection-mode",
@@ -564,6 +774,30 @@ def main() -> None:
         selected_mesh = first_match(cadrille_output_root, "selected_mesh/*.stl")
         selected_py = first_match(cadrille_output_root, "selected_py/*.py")
         selected_brep = first_match(cadrille_output_root, f"selected_brep/*.{args.brep_ext}")
+
+        # ─── Candidate reselection (PC): pick the candidate whose BODY-CLEANED mesh
+        # best matches the SAM3D GT (centered IoU), overriding Cadrille's min-CD
+        # default. IMG has a single candidate so this is a no-op. Best-effort: on any
+        # failure the min-CD selection stands.
+        try:
+            reselected = run_reselect_stage(
+                repo_root=repo_root,
+                job_root=job_root,
+                cadrille_output_root=cadrille_output_root,
+                brep_ext=args.brep_ext,
+                docker_image=args.cadrille_docker_image,
+            )
+            if reselected:
+                if reselected.get("brep"):
+                    selected_brep = reselected["brep"]
+                if reselected.get("mesh"):
+                    selected_mesh = reselected["mesh"]
+                if reselected.get("py"):
+                    selected_py = reselected["py"]
+                print(f"[reselect] picked {Path(selected_brep).stem}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[reselect] skipped (keeping min-CD pick): {exc!r}", flush=True)
+
         result_paths = build_simple_result_paths(
             job_root=job_root,
             sam3d_mesh_glb=mesh_path,
@@ -596,7 +830,13 @@ def main() -> None:
                 print(f"[body-cleanup] stage skipped: {exc!r}", flush=True)
 
         # ─── Post-scaling stage (optional) ───
-        if args.workpiece_class and selected_py:
+        # Prefer the CLEANED CAD (.step) so metric alignment operates on the
+        # post-cleanup geometry, not the raw canonical Cadrille output. Fall
+        # back to the selected .py when no cleaned step exists.
+        cleaned_step = result_paths.get("cleaned_brep_step")
+        postscale_input = cleaned_step or selected_py
+        postscale_is_step = bool(cleaned_step)
+        if args.workpiece_class and postscale_input:
             current_stage = "postscale"
             write_status(
                 status_path,
@@ -608,7 +848,8 @@ def main() -> None:
             postscale_results = run_postscale_stage(
                 repo_root=repo_root,
                 job_root=job_root,
-                selected_py_host=Path(selected_py),
+                input_host=Path(postscale_input),
+                input_is_step=postscale_is_step,
                 docker_image=args.cadrille_docker_image,
                 workpiece_class=args.workpiece_class,
                 model_code=args.model_code,
@@ -616,6 +857,18 @@ def main() -> None:
                 postscale_catalog_override=args.postscale_catalog,
             )
             result_paths.update(postscale_results)
+
+        # ─── Stage metrics (best-effort): per-stage IoU + CD vs the SAM3D GT ───
+        try:
+            metrics_results = run_stage_metrics_stage(
+                repo_root=repo_root,
+                job_root=job_root,
+                result_paths=result_paths,
+                docker_image=args.cadrille_docker_image,
+            )
+            result_paths.update(metrics_results)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[stage-metrics] stage skipped: {exc!r}", flush=True)
 
         write_status(status_path, status="completed", stage="completed", stage_label="Done", result_paths=result_paths)
     except Exception as exc:  # noqa: BLE001

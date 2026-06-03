@@ -2,14 +2,18 @@
    Configure view — pixel-accurate port of AIWS Design Reference
    configure.jsx. Wired to real backend via useQuery + onStart.
    ============================================================ */
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Fragment } from "react";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import type { Catalog } from "@/api/types";
+import type { Catalog, Health } from "@/api/types";
 import type { ReconstructInput } from "@/api/types";
 import { api } from "@/api/client";
 import { Icon } from "@/components/Icon";
+// Bundled demo pair — real pipeline inputs from a top-IoU reconstruction
+// (cover_plate NEW-G140-52). Lets users try the pipeline without their own data.
+import samplePhotoUrl from "@/assets/samples/sample_part.png";
+import sampleMaskUrl from "@/assets/samples/sample_part_mask.png";
 
 /* ---------- types ---------- */
 
@@ -117,7 +121,7 @@ function DropZone({ slot, value, onPick, onClear }: DropZoneProps) {
             title={t("upl.remove")}
             onClick={onClear}
           >
-            <Icon n="x" size={14} />
+            <Icon n="x" size={20} sw={2.6} />
           </button>
         </div>
         <div className="thumb-cap">
@@ -167,13 +171,53 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
   });
   const catalog = catalogQ.data;
 
+  // GPU list for the device picker (from /health). Refreshed periodically so
+  // the free-memory readout stays roughly current on this shared box.
+  const healthQ = useQuery<Health>({
+    queryKey: ["health"],
+    queryFn: api.health,
+    refetchInterval: 15000,
+  });
+  const gpus = healthQ.data?.gpus ?? [];
+  const gpuLoading = healthQ.isFetching;
+  const gpuTs = healthQ.dataUpdatedAt || null;
+  // Device name + total VRAM for the section-header pill (all GPUs share a model here).
+  const gpu0 = gpus[0];
+  const commonGpuName =
+    gpus.length > 0 && gpus.every((g) => g.name === gpu0.name) ? gpu0.name : null;
+  const gpuTotalGb = gpu0 ? Math.round(gpu0.memory_total_mb / 1024) : null;
+  const gpuDeviceLabel =
+    gpuTotalGb != null
+      ? commonGpuName
+        ? `${commonGpuName} · ${gpuTotalGb} GB`
+        : `${gpuTotalGb} GB`
+      : null;
+  const fmtClock = (ms: number) => {
+    const d = new Date(ms);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  };
+
   const [photo, setPhoto] = useState<ImageSlot | null>(null);
   const [mask, setMask] = useState<ImageSlot | null>(null);
   const [ckpt, setCkpt] = useState<"RL" | "SFT">("RL");
   const [mode, setMode] = useState<"PC" | "IMG">("PC");
+  const [gpu, setGpu] = useState<string>(""); // "" until a GPU is auto-selected
+  const [gpuTouched, setGpuTouched] = useState(false); // user picked manually?
   const [psOn, setPsOn] = useState(false);
   const [wclass, setWclass] = useState("");
   const [model, setModel] = useState("");
+  const [sampleBusy, setSampleBusy] = useState(false); // loading the demo pair?
+
+  // Auto-select the least-busy GPU (most free memory) once the list loads, as
+  // long as the user hasn't picked one. Keeps a sensible default without a
+  // dedicated "Auto" cell.
+  useEffect(() => {
+    if (gpuTouched || gpus.length === 0) return;
+    const best = [...gpus].sort((a, b) => b.memory_free_mb - a.memory_free_mb)[0];
+    setGpu(String(best.index));
+  }, [gpus, gpuTouched]);
+  const pickGpu = (idx: string) => { setGpuTouched(true); setGpu(idx); };
 
   /* revoke object URLs on clear / unmount to avoid leaks */
   const revokeSlot = useCallback((slot: ImageSlot | null) => {
@@ -221,6 +265,33 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
   const pickPhoto = async (f: File) => setPhoto(await readImageFile(f));
   const pickMask = async (f: File) => setMask(await readImageFile(f));
 
+  // Populate both slots with the bundled demo pair. Fetches the bundled assets
+  // and rebuilds real File objects (onStart requires actual Files, not URLs),
+  // then loads them like a normal upload. The pair is dimension-matched, so the
+  // green "dimensions match" validation lights up automatically.
+  const useSample = async () => {
+    if (sampleBusy) return;
+    setSampleBusy(true);
+    try {
+      const [pBlob, mBlob] = await Promise.all([
+        fetch(samplePhotoUrl).then((r) => r.blob()),
+        fetch(sampleMaskUrl).then((r) => r.blob()),
+      ]);
+      const [pSlot, mSlot] = await Promise.all([
+        readImageFile(new File([pBlob], "sample_part.png", { type: "image/png" })),
+        readImageFile(new File([mBlob], "sample_part_mask.png", { type: "image/png" })),
+      ]);
+      revokeSlot(photo); // drop any prior object URLs before replacing
+      revokeSlot(mask);
+      setPhoto(pSlot);
+      setMask(mSlot);
+    } catch (err) {
+      console.error("[useSample] failed to load sample pair", err);
+    } finally {
+      setSampleBusy(false);
+    }
+  };
+
   const clearPhoto = () => {
     revokeSlot(photo);
     setPhoto(null);
@@ -244,14 +315,34 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
       cadrille_mode: mode,
       workpiece_class: psOn ? wclass : null,
       model_code: psOn ? model : null,
+      gpu_index: gpu === "" ? null : Number(gpu),
     });
   };
 
   return (
     <div className="canvas">
-      <p className="section-sub reveal" style={{ marginTop: 0 }}>
-        {t("sub.configure")}
-      </p>
+      {/* step strip — anchors the page (replaces the orphaned floating subtitle) */}
+      <div className="cfg-steps reveal">
+        {([
+          { n: "01", icon: "image" as const, title: t("cfg.step1"), sub: t("cfg.step1sub") },
+          { n: "02", icon: "sliders" as const, title: t("cfg.step2"), sub: t("cfg.step2sub") },
+          { n: "03", icon: "play" as const, title: t("cfg.step3"), sub: t("cfg.step3sub") },
+        ]).map((s, i, arr) => (
+          <Fragment key={s.n}>
+            <div className="cfg-step">
+              <span className="sn">{s.n}</span>
+              <span className="si"><Icon n={s.icon} size={16} /></span>
+              <span className="st">
+                <b>{s.title}</b>
+                <span>{s.sub}</span>
+              </span>
+            </div>
+            {i < arr.length - 1 ? (
+              <span className="cfg-step-sep"><Icon n="chevR" size={15} /></span>
+            ) : null}
+          </Fragment>
+        ))}
+      </div>
 
       <div className="cfg-grid">
         {/* ---- left: inputs ---- */}
@@ -261,7 +352,19 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
               <h3>{t("upl.inputs")}</h3>
               <p>{t("upl.formats")}</p>
             </div>
-            {/* "Use sample pair" button removed — no SAMPLE_PAIR fallback */}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => { void useSample(); }}
+              disabled={sampleBusy}
+            >
+              <Icon
+                n={sampleBusy ? "refresh" : "image"}
+                size={14}
+                className={sampleBusy ? "spin-ico" : undefined}
+              />
+              {t("upl.usePair")}
+            </button>
           </div>
 
           <div className="panel-pad">
@@ -337,7 +440,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
                   />
                 </div>
               </div>
-              <div className="field" style={{ marginBottom: 0 }}>
+              <div className="field">
                 <label>{t("set.modality")}</label>
                 <div className="opt-row">
                   <Opt
@@ -352,6 +455,91 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
                     on={mode === "IMG"}
                     onClick={() => setMode("IMG")}
                   />
+                </div>
+                <p className="hint" style={{ margin: "8px 0 0" }}>
+                  {t(mode === "IMG" ? "md.hint.img" : "md.hint.pc")}
+                </p>
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <div className="gpu-label-row">
+                  <label style={{ margin: 0 }}>
+                    <Icon n="cpu" size={14} />
+                    {t("set.gpu")}
+                    {gpuDeviceLabel ? (
+                      <span className="gpu-device-name mono">{gpuDeviceLabel}</span>
+                    ) : null}
+                  </label>
+                  <div className="gpu-status-meta">
+                    <span className="gpu-ts">
+                      {gpuLoading
+                        ? t("set.gpuRefreshing")
+                        : gpuTs
+                          ? t("set.gpuUpdated", { v: fmtClock(gpuTs) })
+                          : t("set.gpuNever")}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm gpu-refresh"
+                      disabled={gpuLoading}
+                      onClick={() => { void healthQ.refetch(); }}
+                    >
+                      <Icon n="refresh" size={14} className={gpuLoading ? "spin-ico" : undefined} />
+                      {t("set.gpuRefresh")}
+                    </button>
+                  </div>
+                </div>
+                <div className="gpu-seg">
+                  {/* One card per GPU. The least-busy is auto-selected on load
+                      (see effect); the user can override. */}
+                  {gpus.map((g) => {
+                    const usedMb = g.memory_total_mb - g.memory_free_mb;
+                    const memFrac = g.memory_total_mb > 0 ? usedMb / g.memory_total_mb : 0;
+                    const memTone = memFrac >= 0.85 ? " hot" : memFrac >= 0.55 ? " warm" : "";
+                    const util = Math.round(g.utilization);
+                    const idle = util <= 1 && memFrac < 0.1;
+                    const sel = gpu === String(g.index);
+                    return (
+                      <button
+                        key={g.index}
+                        type="button"
+                        className={"gpu-cell" + (sel ? " on" : "") + (gpuLoading ? " loading" : "")}
+                        aria-pressed={sel}
+                        onClick={() => pickGpu(String(g.index))}
+                      >
+                        <div className="gpu-cell-top">
+                          <span className="gpu-id">
+                            <span className="gpu-pre">cuda:</span>
+                            <span className="gpu-n">{g.index}</span>
+                          </span>
+                          {idle ? <span className="gpu-idle">{t("set.gpuFree")}</span> : null}
+                        </div>
+                        {/* compute utilisation — steady teal, value in % */}
+                        <div className="gpu-row">
+                          <span className="gpu-rl">{t("set.gpuUtil")}</span>
+                          <div className="gpu-bar">
+                            <span
+                              className="gpu-bar-fill util"
+                              style={{ width: Math.max(util > 0 ? 2 : 0, util) + "%" }}
+                            />
+                          </div>
+                          <span className="gpu-rv">{util}%</span>
+                        </div>
+                        {/* VRAM — ramps neutral→warm→hot, value in GB (used / total) */}
+                        <div className="gpu-row">
+                          <span className="gpu-rl">{t("set.gpuVram")}</span>
+                          <div className="gpu-bar">
+                            <span
+                              className={"gpu-bar-fill" + memTone}
+                              style={{ width: Math.max(2, Math.round(memFrac * 100)) + "%" }}
+                            />
+                          </div>
+                          <span className={"gpu-rv" + memTone}>
+                            {(usedMb / 1024).toFixed(1)} / {Math.round(g.memory_total_mb / 1024)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

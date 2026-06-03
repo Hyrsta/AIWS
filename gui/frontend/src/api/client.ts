@@ -42,8 +42,14 @@ export const api = {
     fd.append("cadrille_mode", input.cadrille_mode);
     if (input.workpiece_class) fd.append("workpiece_class", input.workpiece_class);
     if (input.model_code) fd.append("model_code", input.model_code);
+    if (input.gpu_index != null) fd.append("gpu_index", String(input.gpu_index));
     return jpost<JobSummary>("/jobs/simple-reconstruct", fd);
   },
   terminate: (id: string) => jpost<{ ok: boolean }>(`/jobs/${id}/terminate`),
   getJobInputs: (id: string) => jget<JobInputs>(`/jobs/${id}/inputs`),
+  async deleteJob(id: string): Promise<{ ok: boolean }> {
+    const r = await fetch(`${BASE}/jobs/${id}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(`DELETE /jobs/${id} → ${r.status}`);
+    return (await r.json()) as { ok: boolean };
+  },
 };

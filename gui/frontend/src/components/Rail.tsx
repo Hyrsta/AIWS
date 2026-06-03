@@ -21,11 +21,13 @@ export function Rail({
   activeId,
   onNew,
   onSelect,
+  onDelete,
 }: {
   jobs: JobSummary[];
   activeId: string | null;
   onNew: () => void;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const nowSec = Date.now() / 1000;
@@ -61,20 +63,32 @@ export function Rail({
           <div className="empty-rail">{t("nav.noHistory")}</div>
         ) : (
           jobs.map((j) => (
-            <button
+            <div
               key={j.job_id}
-              className={"history-item" + (j.job_id === activeId ? " active" : "")}
-              onClick={() => onSelect(j.job_id)}
+              className={"history-row" + (j.job_id === activeId ? " active" : "")}
             >
-              <StatusDot status={j.status as import("@/components/Icon").StatusKind} />
-              <div className="hi-main">
-                <div className="hi-when">
-                  {relTime(nowSec, j.created_at)}
+              <button
+                className={"history-item" + (j.job_id === activeId ? " active" : "")}
+                onClick={() => onSelect(j.job_id)}
+              >
+                <StatusDot status={j.status as import("@/components/Icon").StatusKind} />
+                <div className="hi-main">
+                  <div className="hi-when">
+                    {relTime(nowSec, j.created_at)}
+                  </div>
+                  <div className="hi-meta">{wpLabel(j)}</div>
                 </div>
-                <div className="hi-meta">{wpLabel(j)}</div>
-              </div>
-              <Icon n="chevR" size={14} style={{ color: "var(--tx-dim)" }} />
-            </button>
+                <Icon n="chevR" size={14} className="hi-chev" style={{ color: "var(--tx-dim)" }} />
+              </button>
+              <button
+                className="hi-del"
+                title={t("nav.delete")}
+                aria-label={t("nav.delete")}
+                onClick={(e) => { e.stopPropagation(); onDelete(j.job_id); }}
+              >
+                <Icon n="trash" size={15} />
+              </button>
+            </div>
           ))
         )}
       </div>

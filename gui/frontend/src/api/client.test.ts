@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
 import { api } from "./client";
@@ -8,40 +8,48 @@ import { api } from "./client";
 // are registered absolute to that same origin.
 const ORIGIN = "http://localhost:3000";
 
-let lastForm: FormData | null = null;
-
 const server = setupServer(
   http.get(`${ORIGIN}/health`, () => HttpResponse.json({ ok: true, workspace_root: "/w" })),
   http.get(`${ORIGIN}/jobs`, () => HttpResponse.json([{ job_id: "j1", status: "completed" }])),
   http.get(`${ORIGIN}/jobs/:id/metrics`, () =>
     HttpResponse.json({ job_id: "j1", sam3d: { available: false }, cadrille: { available: false }, postscale: { available: false } })),
-  http.post(`${ORIGIN}/jobs/simple-reconstruct`, async ({ request }) => {
-    lastForm = await request.formData();
-    return HttpResponse.json({ job_id: "new", status: "running" });
-  }),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterEach(() => { server.resetHandlers(); lastForm = null; });
-afterAll(() => server.close());
+afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
+afterAll(() => {
+  server.close();
+});
+
+function mockPostFetch() {
+  return vi.spyOn(globalThis, "fetch").mockResolvedValue({
+    ok: true,
+    json: async () => ({ job_id: "new", status: "running" }),
+  } as Response);
+}
 
 describe("api client", () => {
   it("GET /health", async () => { expect((await api.health()).ok).toBe(true); });
   it("GET /jobs returns a list", async () => { expect((await api.listJobs())[0].job_id).toBe("j1"); });
   it("POST /jobs/simple-reconstruct transmits the multipart fields", async () => {
+    const fetchMock = mockPostFetch();
     const f = new File(["x"], "rgb.png", { type: "image/png" });
     const job = await api.createSimpleReconstruct({ image: f, mask: f, cadrille_checkpoint_preset: "RL", cadrille_mode: "PC" });
     expect(job.job_id).toBe("new");
     // the real client must actually send the form fields, not just hit the URL
-    expect(lastForm?.get("cadrille_mode")).toBe("PC");
-    expect(lastForm?.get("cadrille_checkpoint_preset")).toBe("RL");
-    expect(lastForm?.get("image")).toBeTruthy();
-    expect(lastForm?.get("mask")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith("/jobs/simple-reconstruct", expect.objectContaining({ method: "POST" }));
+    const body = fetchMock.mock.calls[0][1]?.body as FormData;
+    expect(body.get("cadrille_mode")).toBe("PC");
+    expect(body.get("cadrille_checkpoint_preset")).toBe("RL");
+    expect(body.get("image")).toBe(f);
+    expect(body.get("mask")).toBe(f);
   });
   it("omits optional workpiece fields when not provided", async () => {
+    const fetchMock = mockPostFetch();
     const f = new File(["x"], "rgb.png", { type: "image/png" });
     await api.createSimpleReconstruct({ image: f, mask: f, cadrille_checkpoint_preset: "SFT", cadrille_mode: "IMG" });
-    expect(lastForm?.has("workpiece_class")).toBe(false);
-    expect(lastForm?.has("model_code")).toBe(false);
+    const body = fetchMock.mock.calls[0][1]?.body as FormData;
+    expect(body.has("workpiece_class")).toBe(false);
+    expect(body.has("model_code")).toBe(false);
   });
 });

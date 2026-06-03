@@ -17,6 +17,39 @@ import type { JobSummary } from "@/api/types";
 
 type View = "configure" | "live" | "result";
 
+interface RouteState {
+  view: View;
+  activeId: string | null;
+}
+
+function readRouteState(): RouteState {
+  if (typeof window === "undefined") return { view: "configure", activeId: null };
+  const raw = window.location.hash.replace(/^#/, "");
+  const params = new URLSearchParams(raw);
+  const view = params.get("view");
+  const activeId = params.get("job");
+  if ((view === "live" || view === "result") && activeId) {
+    return { view, activeId };
+  }
+  return { view: "configure", activeId: null };
+}
+
+function writeRouteState(view: View, activeId: string | null) {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams();
+  if (activeId && view !== "configure") {
+    params.set("view", view);
+    params.set("job", activeId);
+  }
+  const nextHash = params.toString() ? `#${params.toString()}` : "";
+  if (window.location.hash === nextHash) return;
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}${nextHash}`,
+  );
+}
+
 // ---- Toast ----
 function Toast({ msg }: { msg: string }) {
   if (!msg) return null;
@@ -78,15 +111,63 @@ function BackendGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// ---- ConfirmDialog (delete confirmation modal) ----
+function ConfirmDialog({
+  open, title, body, meta, confirmLabel, cancelLabel, onConfirm, onCancel,
+}: {
+  open: boolean;
+  title: string;
+  body: string;
+  meta?: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+      else if (e.key === "Enter") onConfirm();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onConfirm, onCancel]);
+  if (!open) return null;
+  return (
+    <div className="modal-scrim" onMouseDown={onCancel}>
+      <div
+        className="modal-card"
+        role="alertdialog"
+        aria-modal="true"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3 className="modal-title">{title}</h3>
+        <p className="modal-body">{body}</p>
+        {meta ? <div className="modal-meta mono">{meta}</div> : null}
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onCancel}>{cancelLabel}</button>
+          <button className="btn btn-danger" onClick={onConfirm} autoFocus>
+            <Icon n="trash" size={15} />
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- App shell ----
 export default function App() {
   const qc = useQueryClient();
+  const initialRoute = readRouteState();
   const [lang, setLangState] = useState<string>(
     () => localStorage.getItem("aiws.lang") ?? "en",
   );
-  const [view, setView] = useState<View>("configure");
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [view, setView] = useState<View>(initialRoute.view);
+  const [activeId, setActiveId] = useState<string | null>(initialRoute.activeId);
   const [toast, setToast] = useState("");
+  const [pendingDel, setPendingDel] = useState<string | null>(null);
 
   // Keep i18n in sync with lang state
   useEffect(() => {
@@ -96,6 +177,21 @@ export default function App() {
 
   const setLang = useCallback((l: string) => {
     setLangState(l);
+  }, []);
+
+  // Keep the selected page/job in the URL so a browser reload restores it.
+  useEffect(() => {
+    writeRouteState(view, activeId);
+  }, [view, activeId]);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = readRouteState();
+      setView(next.view);
+      setActiveId(next.activeId);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
   // Jobs list — polled every 5s
@@ -141,14 +237,13 @@ export default function App() {
 
   const onSelect = useCallback((id: string) => {
     setActiveId(id);
-    // Determine view from cached job data if available
-    const cached = qc.getQueryData<JobSummary>(["job", id]);
-    if (cached?.status === "completed") {
+    const selected = jobs.find((j) => j.job_id === id) ?? qc.getQueryData<JobSummary>(["job", id]);
+    if (selected?.status === "completed") {
       setView("result");
     } else {
       setView("live");
     }
-  }, [qc]);
+  }, [jobs, qc]);
 
   const onNew = useCallback(() => {
     setActiveId(null);
@@ -160,6 +255,27 @@ export default function App() {
     void qc.invalidateQueries({ queryKey: ["jobs"] });
   }, [qc]);
 
+  // Delete flow — request opens a confirmation; confirm removes the job.
+  const onRequestDelete = useCallback((id: string) => setPendingDel(id), []);
+  const onCancelDelete = useCallback(() => setPendingDel(null), []);
+  const onConfirmDelete = useCallback(async () => {
+    const id = pendingDel;
+    if (!id) return;
+    setPendingDel(null);
+    try {
+      await api.deleteJob(id);
+      // If the deleted job is on screen, fall back to the configure view.
+      if (activeId === id) {
+        setActiveId(null);
+        setView("configure");
+      }
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
+      showToast(i18n.t("del.toast"));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : i18n.t("del.failed"));
+    }
+  }, [pendingDel, activeId, qc, showToast]);
+
   return (
     <BackendGate>
       <div className="bg-field" />
@@ -170,6 +286,7 @@ export default function App() {
           activeId={activeId}
           onNew={onNew}
           onSelect={onSelect}
+          onDelete={onRequestDelete}
         />
         <TopBar view={view} job={activeJob} lang={lang} setLang={setLang} />
         <main className="main" key={view + (activeId ?? "")}>
@@ -183,6 +300,16 @@ export default function App() {
         </main>
       </div>
       <Toast msg={toast} />
+      <ConfirmDialog
+        open={pendingDel !== null}
+        title={i18n.t("del.title")}
+        body={i18n.t("del.body")}
+        meta={pendingDel ?? undefined}
+        confirmLabel={i18n.t("del.confirm")}
+        cancelLabel={i18n.t("del.cancel")}
+        onConfirm={() => { void onConfirmDelete(); }}
+        onCancel={onCancelDelete}
+      />
     </BackendGate>
   );
 }

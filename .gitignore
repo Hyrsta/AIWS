@@ -60,3 +60,9 @@ SAM3D_RUNTIME.md
 # Generated documentation artifacts
 docs/*.html
 docs/*.pdf
+
+# runtime artifacts / backups
+logs/
+tmp/
+.tmp/
+*.bak-*

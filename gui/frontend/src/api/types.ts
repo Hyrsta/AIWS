@@ -10,12 +10,26 @@ export interface SimpleDefaults {
   cadrille_checkpoint_preset: string; cadrille_checkpoint: string; cadrille_n_samples: number; cadrille_batch_size: number;
 }
 export interface HealthRuntime { docker_ok: boolean; docker_version: string; cadrille_image_present: boolean; cadrille_image: string; }
+export interface GpuInfo { index: number; name: string; memory_total_mb: number; memory_free_mb: number; utilization: number; }
 export interface Health {
   ok: boolean; workspace_root: string; jobs_root: string;
   defaults: HealthDefaults; simple_defaults: SimpleDefaults; runtime: HealthRuntime; catalog_path: string;
+  gpus?: GpuInfo[];
 }
 
 export type Vec3 = [number, number, number];
+export interface CadrilleInputPoints {
+  n_points?: number;
+  points: Vec3[];
+  backfilled?: boolean;
+  provenance?: string | null;
+  source_candidate?: string | null;
+  source_stem?: string | null;
+  generation_id?: number | null;
+  mode?: string;
+  note?: string;
+  [k: string]: unknown;
+}
 export interface CatalogEntry { bbox_m: Vec3; bbox_mm: Vec3; }
 export interface CatalogClass { models: string[]; entries: Record<string, CatalogEntry>; }
 export interface Catalog { source: string; classes: Record<string, CatalogClass>; }
@@ -25,14 +39,37 @@ export interface JobRequest {
   cadrille_checkpoint_preset: "RL" | "SFT"; cadrille_checkpoint: string;
   cadrille_mode: "pc" | "img"; cadrille_mode_label: "PC" | "IMG";
   workpiece_class: string | null; model_code: string | null; postscale_enabled: boolean;
+  gpu_index?: number | null;
 }
 export interface ResultPaths {
   job_root?: string; results_root?: string; sam3d_mesh_glb?: string; sam3d_mesh_stl?: string;
-  cadrille_output_root?: string; selected_mesh?: string; selected_py?: string; selected_brep?: string;
+  sam3d_mesh_preview_stl?: string | null;
+  sam3d_faces_raw?: number | null; sam3d_faces_kept?: number | null;
+  sam3d_verts_raw?: number | null; sam3d_verts_kept?: number | null;
+  sam3d_face_budget?: number | null; sam3d_reduce_pct?: number | null;
+  cadrille_output_root?: string; selected_mesh?: string; selected_py?: string; selected_brep?: string; cadrille_reselect?: string | null;
+  cadrille_input_points?: string | null; cadrille_input_render_grid?: string | null;
   cleaned_brep_step?: string; cleaned_mesh_stl?: string; cleanup_metadata?: string;
   n_bodies_before?: number; n_bodies_after?: number; postscale_dir?: string;
   scaled_mesh_stl?: string; scaled_brep_step?: string; scaled_py?: string; scaled_metadata?: string;
-  workpiece_class?: string; model_code?: string; [k: string]: unknown;
+  workpiece_class?: string; model_code?: string; stage_metrics?: string | null; [k: string]: unknown;
+}
+export interface StageMetrics {
+  n_points?: number;
+  normalization?: string;
+  gt_mesh?: string;
+  stages: Record<string, { iou: number | null; cd: number | null; iou_corner?: number | null; cd_corner?: number | null; error?: string }>;
+  cadrille_selection_metric?: { mean_iou: number | null; median_cd: number | null; note?: string };
+  cadrille_reselect?: {
+    best?: string | null;
+    selection_protocol?: string;
+    candidate_count?: number | null;
+    code_valid_count?: number | null;
+    code_invalid_count?: number | null;
+    boolean_iou_invalid_count?: number | null;
+    metric_invalid_count?: number | null;
+    selectable_count?: number | null;
+  };
 }
 export interface StageTiming { started_at: number | null; ended_at: number | null; }
 export interface JobSummary {
@@ -58,6 +95,7 @@ export interface ReconstructInput {
   image: File; mask: File;
   cadrille_checkpoint_preset: "RL" | "SFT"; cadrille_mode: "PC" | "IMG";
   workpiece_class?: string | null; model_code?: string | null;
+  gpu_index?: number | null;
 }
 
 export interface JobInputs {

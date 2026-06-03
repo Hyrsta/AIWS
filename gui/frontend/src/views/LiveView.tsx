@@ -2,13 +2,15 @@
    LiveView — pixel-accurate port of AIWS Design Reference aiws/live.jsx.
    Uses real data layer: useJobPolling, visibleStages/stageToStep, fmtElapsed.
    ============================================================ */
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import { visibleStages, stageToStep, failedStep } from "@/lib/stages";
 import { fmtElapsed } from "@/lib/format";
 import { api } from "@/api/client";
-import { Icon, Chip } from "@/components/Icon";
+import { Icon } from "@/components/Icon";
+import { InputImagesPanel } from "@/components/InputImagesPanel";
+import { LogConsole } from "@/components/LogConsole";
 import type { JobSummary } from "@/api/types";
 
 /* ============================================================
@@ -67,12 +69,28 @@ function PipelineStepper({ job, hasPostscale }: PipelineStepperProps) {
     "Post-scaling: Aligning CAD to catalog (mm)",
   ];
 
+  // The backend records each stage's started_at but not ended_at, so a finished
+  // stage's duration is derived from the NEXT stage's start. All start times
+  // across the full pipeline (incl. the hidden body-cleanup stage), ascending.
+  const allStarts = Object.values(timings)
+    .map((tm) => tm?.started_at)
+    .filter((s): s is number => s != null)
+    .sort((a, b) => a - b);
+
   function stageDur(i: number, isLive: boolean): number | null {
     const tm = timings[BACKEND_LABELS[i]];
     if (!tm || tm.started_at == null) return null;
-    const end = tm.ended_at != null ? tm.ended_at : (isLive ? nowSec : null);
+    const start = tm.started_at;
+    // Prefer a recorded end; else the next stage's start; else job-end / now.
+    let end: number | null = tm.ended_at ?? null;
+    if (end == null) {
+      const nextStart = allStarts.find((s) => s > start);
+      if (nextStart != null) end = nextStart;
+      else if (isLive) end = nowSec;
+      else end = job.ended_at ?? null;
+    }
     if (end == null) return null;
-    return Math.max(0, end - tm.started_at);
+    return Math.max(0, end - start);
   }
 
   const defs = STAGE_DEFS.filter((d) => !d.postscaleOnly || hasPostscale);
@@ -148,81 +166,6 @@ function PipelineStepper({ job, hasPostscale }: PipelineStepperProps) {
 }
 
 /* ============================================================
-   LogConsole
-   ============================================================ */
-interface LogConsoleProps {
-  lines: string[];
-  live: boolean;
-  title?: string;
-}
-
-function LogConsole({ lines, live, title }: LogConsoleProps) {
-  const { t } = useTranslation();
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to bottom whenever lines length changes
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.scrollTop = ref.current.scrollHeight;
-    }
-  }, [lines.length]);
-
-  function renderLine(line: string, i: number) {
-    // parse [mm:ss.s] [level] message
-    const m = line.match(/^(\[[\d:.]+\])\s+(?:\[(\w+)\]\s+)?(.*)$/);
-    if (!m) {
-      return (
-        <div className="ln" key={i}>
-          {line}
-        </div>
-      );
-    }
-    const [, ts, lv, msg] = m;
-    const lvClass =
-      lv === "ok" ? "lv-ok"
-      : lv === "warn" ? "lv-warn"
-      : lv === "info" ? "lv-info"
-      : lv === "stage" ? "lv-stage"
-      : "";
-    return (
-      <div className="ln" key={i}>
-        <span className="ts">{ts + " "}</span>
-        {lv ? <span className={lvClass}>{"[" + lv + "] "}</span> : "      "}
-        <span className={lv === "stage" ? "lv-stage" : ""}>{msg}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="log-wrap">
-      <div className="log-head">
-        <div className="row gap-8">
-          <span className="dots">
-            <i style={{ background: "#ff5f57" }} />
-            <i style={{ background: "#febc2e" }} />
-            <i style={{ background: "#28c840" }} />
-          </span>
-          <span style={{ marginLeft: 6 }}>{title ?? t("log.title")}</span>
-        </div>
-        <div className="row gap-8">
-          {live ? (
-            <Chip tone="info" dot={true}>
-              {t("log.live")}
-            </Chip>
-          ) : null}
-          <span className="mono" style={{ fontSize: 12 }}>
-            {t("log.lines", { n: lines.length })}
-          </span>
-        </div>
-      </div>
-      <div className="log" ref={ref}>
-        {lines.map(renderLine)}
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
    Elapsed timer hook
    ============================================================ */
 function useElapsed(job: JobSummary | undefined): string {
@@ -287,7 +230,11 @@ export function LiveView({ jobId, onCompleted }: LiveViewProps) {
   }
 
   const hasPostscale = !!(job.request && job.request.postscale_enabled);
-  const cancelled = job.status === "terminated";
+  // Cancel only makes sense while the job is still in flight. A failed /
+  // Cancel only makes sense while the job is still in flight. A terminal job is
+  // already stopped — no button, and no redundant status pill either (the
+  // full-width banner below already conveys the failed / terminated state).
+  const inFlight = job.status === "running" || job.status === "queued";
 
   return (
     <div className="canvas wide">
@@ -301,11 +248,7 @@ export function LiveView({ jobId, onCompleted }: LiveViewProps) {
           {t("pipe.elapsed") + " "}
           <b>{elapsed}</b>
         </span>
-        {cancelled ? (
-          <Chip tone="warn" icon="ban">
-            {t("title.terminated")}
-          </Chip>
-        ) : (
+        {inFlight ? (
           <button
             className="btn btn-danger"
             onClick={onCancel}
@@ -314,7 +257,7 @@ export function LiveView({ jobId, onCompleted }: LiveViewProps) {
             <Icon n="stop" size={15} />
             {cancelling ? t("act.cancelling") : t("act.cancel")}
           </button>
-        )}
+        ) : null}
       </div>
 
       <div className="panel panel-pad reveal-2" style={{ marginBottom: 18 }}>
@@ -346,7 +289,13 @@ export function LiveView({ jobId, onCompleted }: LiveViewProps) {
         </div>
       ) : null}
 
-      <LogConsole lines={lines} live={job.status === "running"} />
+      <LogConsole lines={lines} live={job.status === "running" || job.status === "queued"} />
+
+      {/* Uploaded inputs — shown under the log during generation too, not just
+          after finishing. Self-fetches the photo+mask. */}
+      <div style={{ marginTop: 18 }}>
+        <InputImagesPanel jobId={jobId} />
+      </div>
     </div>
   );
 }

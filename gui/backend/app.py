@@ -7,6 +7,7 @@ import shlex
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -41,7 +42,7 @@ DEFAULT_SIMPLE_CADRILLE_MODE = "pc"
 DEFAULT_SIMPLE_CADRILLE_N_SAMPLES = 5
 DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE = 64
 DEFAULT_SIMPLE_CADRILLE_RUNTIME: Literal["auto", "docker", "host"] = "docker"
-DEFAULT_SIMPLE_CADRILLE_DOCKER_GPUS = "device=0"
+DEFAULT_SIMPLE_CADRILLE_DOCKER_GPUS = "device=2"
 DEFAULT_SIMPLE_CADRILLE_CHECKPOINT = "ckpt/cadrille_rl"
 DEFAULT_SIMPLE_CADRILLE_CHECKPOINT_PRESET: Literal["SFT", "RL"] = "RL"
 SIMPLE_CADRILLE_CHECKPOINT_PRESETS = {
@@ -96,7 +97,7 @@ class E2ERunRequest(BaseModel):
     cadrille_runtime: Literal["auto", "docker", "host"] = "docker"
     cadrille_docker_image: str = DEFAULT_REMOTE_CADRILLE_IMAGE
     cadrille_docker_extra_args: str = DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS
-    cadrille_docker_gpus: str = "device=0"
+    cadrille_docker_gpus: str = "device=2"
     cadrille_checkpoint: str = DEFAULT_CADRILLE_CHECKPOINT
     cadrille_processor_path: str = DEFAULT_CADRILLE_PROCESSOR_PATH
     cadrille_mode: Literal["pc", "img"] = "pc"
@@ -136,6 +137,45 @@ class JobSummary(BaseModel):
 @app.on_event("startup")
 def _startup() -> None:
     JOBS_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def _probe_gpus() -> list[dict[str, Any]]:
+    """Best-effort GPU inventory via nvidia-smi. Empty list on any failure."""
+    gpus: list[dict[str, Any]] = []
+    try:
+        r = subprocess.run(
+            ["nvidia-smi",
+             "--query-gpu=index,name,memory.total,memory.free,utilization.gpu",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=4)
+        if r.returncode == 0:
+            for line in r.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 5:
+                    continue
+                try:
+                    gpus.append({
+                        "index": int(parts[0]),
+                        "name": parts[1],
+                        "memory_total_mb": float(parts[2]),
+                        "memory_free_mb": float(parts[3]),
+                        "utilization": float(parts[4]),
+                    })
+                except ValueError:
+                    continue
+    except Exception:
+        pass
+    return gpus
+
+
+def _pick_least_busy_gpu() -> int:
+    """Index of the GPU with the most free memory (tie-broken by lower
+    utilization). Falls back to 0 when nvidia-smi is unavailable."""
+    gpus = _probe_gpus()
+    if not gpus:
+        return 0
+    best = max(gpus, key=lambda g: (g["memory_free_mb"], -g["utilization"]))
+    return int(best["index"])
 
 
 def _probe_docker() -> dict[str, Any]:
@@ -185,6 +225,7 @@ def health() -> dict[str, Any]:
             "cadrille_batch_size": DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE,
         },
         "runtime": _probe_docker(),
+        "gpus": _probe_gpus(),
         "catalog_path": DEFAULT_CATALOG_PATH,
     }
 
@@ -267,14 +308,29 @@ def get_job_inputs(job_id: str) -> dict[str, Any]:
 
 @app.get("/jobs", response_model=list[JobSummary])
 def list_jobs() -> list[JobSummary]:
-    jobs = [refresh_job(load_job(path)) for path in sorted(JOBS_ROOT.glob("*.json"), reverse=True)]
-    return [JobSummary(**job) for job in jobs]
+    # Resilient: one corrupt/empty job file (e.g. a status.json truncated by a
+    # killed worker) must not 500 the entire history list — skip and log it.
+    summaries: list[JobSummary] = []
+    for path in sorted(JOBS_ROOT.glob("*.json"), reverse=True):
+        try:
+            summaries.append(JobSummary(**refresh_job(load_job(path))))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[list_jobs] skipping unreadable job file {path.name}: {exc!r}", flush=True)
+    return summaries
 
 
 @app.get("/jobs/{job_id}", response_model=JobSummary)
 def get_job(job_id: str) -> JobSummary:
-    job = refresh_job(load_job(job_path(job_id)))
-    return JobSummary(**job)
+    try:
+        job = refresh_job(load_job(job_path(job_id)))
+        return JobSummary(**job)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        # A corrupt/truncated tracking file must not 500 the endpoint; surface a
+        # clean 422 so the UI shows "unreadable job" instead of a server error.
+        print(f"[get_job] unreadable job {job_id}: {exc!r}", flush=True)
+        raise HTTPException(status_code=422, detail=f"Job record unreadable: {job_id}")
 
 
 @app.post("/jobs/full-run", response_model=JobSummary)
@@ -313,6 +369,7 @@ async def create_simple_reconstruct(
     cadrille_mode: Literal["PC", "IMG"] = Form(DEFAULT_SIMPLE_CADRILLE_MODE.upper()),
     workpiece_class: Optional[str] = Form(None),
     model_code: Optional[str] = Form(None),
+    gpu_index: Optional[int] = Form(None),
 ) -> JobSummary:
     image_name = sanitize_upload_name(image.filename or "input.png")
     mask_name = sanitize_upload_name(mask.filename or "mask.png")
@@ -351,6 +408,9 @@ async def create_simple_reconstruct(
 
     selected_checkpoint = SIMPLE_CADRILLE_CHECKPOINT_PRESETS[cadrille_checkpoint_preset]
     selected_mode = cadrille_mode.lower()
+    # GPU selection: explicit pick, else least-busy auto. Drives both SAM3D
+    # (CUDA_VISIBLE_DEVICES in the job runner) and the Cadrille docker --gpus.
+    chosen_gpu = gpu_index if gpu_index is not None else _pick_least_busy_gpu()
 
     command = [
         DEFAULT_REMOTE_PYTHON,
@@ -372,7 +432,9 @@ async def create_simple_reconstruct(
         "--cadrille-docker-extra-args",
         DEFAULT_CADRILLE_DOCKER_EXTRA_ARGS,
         "--cadrille-docker-gpus",
-        DEFAULT_SIMPLE_CADRILLE_DOCKER_GPUS,
+        f"device={chosen_gpu}",
+        "--gpu-index",
+        str(chosen_gpu),
         "--cadrille-checkpoint",
         selected_checkpoint,
         "--cadrille-processor-path",
@@ -432,6 +494,7 @@ async def create_simple_reconstruct(
             "workpiece_class": workpiece_class,
             "model_code": model_code,
             "postscale_enabled": bool(workpiece_class),
+            "gpu_index": chosen_gpu,
         },
     }
     save_job(job)
@@ -590,6 +653,49 @@ def terminate_job(job_id: str) -> dict[str, Any]:
     return {"ok": True, "job_id": job_id, "status": job["status"]}
 
 
+@app.delete("/jobs/{job_id}")
+def delete_job(job_id: str) -> dict[str, Any]:
+    """Delete a reconstruction from history: remove its output dir and the
+    job-metadata file. Best-effort on the output dir (an old Docker-written
+    dir may contain root-owned files we can't unlink); the metadata is always
+    removed so the job leaves the history list regardless."""
+    jpath = job_path(job_id)
+    if not jpath.exists():
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    job = load_job(jpath)
+
+    output_root = job.get("output_root")
+    removed_dir = False
+    dir_error: str | None = None
+    if output_root:
+        try:
+            root = Path(output_root).resolve()
+            # Safety: only delete dirs that live under the known job output roots.
+            allowed = (str(JOBS_ROOT.resolve()),
+                       f"{DEFAULT_REMOTE_WORKDIR}/outputs/gui-simple",
+                       f"{DEFAULT_REMOTE_WORKDIR}/outputs/gui-jobs")
+            if any(str(root).startswith(a) for a in allowed):
+                ssh_host = job.get("ssh_host", "local")
+                if ssh_host in (None, "", "local"):
+                    if root.is_dir():
+                        shutil.rmtree(root, ignore_errors=True)
+                        removed_dir = not root.exists()
+                else:
+                    run_ssh_command(ssh_host, f"rm -rf {shlex.quote(str(root))}", check=False)
+                    removed_dir = True
+            else:
+                dir_error = f"output_root outside allowed roots: {root}"
+        except Exception as exc:  # noqa: BLE001
+            dir_error = f"{type(exc).__name__}: {exc}"
+
+    try:
+        jpath.unlink()
+    except FileNotFoundError:
+        pass
+
+    return {"ok": True, "job_id": job_id, "removed_dir": removed_dir, "dir_error": dir_error}
+
+
 @app.get("/jobs/{job_id}/summary")
 def get_job_summary(job_id: str) -> dict[str, Any]:
     job = refresh_job(load_job(job_path(job_id)))
@@ -654,7 +760,22 @@ def load_job(path: Path) -> dict[str, Any]:
 
 def save_job(job: dict[str, Any]) -> None:
     job["updated_at"] = now_ts()
-    job_path(job["job_id"]).write_text(json.dumps(job, indent=2, ensure_ascii=False), encoding="utf-8")
+    p = job_path(job["job_id"])
+    # Atomic write: serialize to a unique temp file in the same dir, then
+    # os.replace() (atomic on one filesystem). Prevents the 0-byte truncation and
+    # "extra data" corruption a bare write_text() suffers under concurrent
+    # refreshes or a full disk.
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=f"{p.stem}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(job, indent=2, ensure_ascii=False))
+        os.replace(tmp, p)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def build_full_run_command(request: FullRunRequest) -> list[str]:
@@ -822,6 +943,7 @@ cat > "$RUNNER_PATH" <<'BASH'
 #!/usr/bin/env bash
 set -uo pipefail
 cd {shlex.quote(remote_workdir)}
+unset LD_PRELOAD  # strip base-conda MKL preload that breaks SAM3D MoGe FFT
 {command_text}
 rc=$?
 python3 - {shlex.quote(status_path)} "$rc" <<'PY'
@@ -1203,7 +1325,21 @@ print(json.dumps(result))
 # --- serve the built React SPA (same-origin; no CORS). Guarded so dev still runs without a build. ---
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pathlib import Path as _Path  # noqa: E402
+from starlette.responses import Response as _Response  # noqa: E402
+
+
+class _SPAStaticFiles(StaticFiles):
+    """StaticFiles that marks index.html as non-cacheable so a redeploy is
+    picked up immediately, while letting content-hashed assets cache normally."""
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        response = await super().get_response(path, scope)
+        if path in ("", ".", "index.html") or path.endswith("/index.html"):
+            if isinstance(response, _Response):
+                response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
 
 _FRONTEND_DIST = _Path(__file__).resolve().parents[1] / "frontend" / "dist"
 if _FRONTEND_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")
+    app.mount("/", _SPAStaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")

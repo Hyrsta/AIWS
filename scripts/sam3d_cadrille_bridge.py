@@ -114,8 +114,13 @@ def normalize_stl_to_unit_cube(src: Path, dst: Path) -> dict[str, Any]:
     if not math.isfinite(scale) or scale <= 1e-12:
         raise RuntimeError(f"Invalid mesh scale for {src}: {scale}")
 
-    mesh.apply_translation(-mins)
+    # Center at the unit-box centre [0.5, 0.5, 0.5] — matches Cadrille's
+    # prediction normalization (evaluate.py) and the dataset render/input
+    # convention, so GT and candidates share one frame (no GT/pred mismatch).
+    center = (mins + maxs) / 2.0
+    mesh.apply_translation(-center)
     mesh.apply_scale(1.0 / scale)
+    mesh.apply_transform(trimesh.transformations.translation_matrix([0.5, 0.5, 0.5]))
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     mesh.export(str(dst))

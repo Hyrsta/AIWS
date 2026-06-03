@@ -4,9 +4,8 @@
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
-import type { JobSummary } from "@/api/types";
+import type { JobSummary, Health } from "@/api/types";
 import { Icon } from "@/components/Icon";
-import { Chip } from "@/components/Icon";
 
 type View = "configure" | "live" | "result";
 
@@ -32,34 +31,45 @@ export function TopBar({
 }) {
   const { t } = useTranslation();
 
-  // Device name from metrics when a completed job is active
+  // Device name from metrics. Fetched for any active job (incl. failed /
+  // terminated) so the device pill still shows when a run errors out — the
+  // Cadrille metrics record the GPU even on failure.
   const metricsQ = useQuery({
     queryKey: ["metrics", job?.job_id],
     queryFn: () => api.getMetrics(job!.job_id),
-    enabled: !!job?.job_id && job?.status === "completed",
+    enabled: !!job?.job_id && view !== "configure",
   });
-  const device = metricsQ.data?.cadrille?.device_name ?? null;
+
+  // /health carries the GPU inventory; lets us name the device DURING generation
+  // (before Cadrille metrics exist) via the job's selected gpu_index.
+  const healthQ = useQuery<Health>({ queryKey: ["health"], queryFn: api.health });
 
   const r = job?.request ?? null;
   const active = job !== null && (view === "live" || view === "result");
 
-  // Left side: status chip + job id OR screen title
+  // Device label, only for an active run (never on the Configure page — no run
+  // has happened yet). Fallback chain so it appears immediately during
+  // generation, before Cadrille metrics exist:
+  //   1. metrics device name (once Cadrille has run)
+  //   2. the selected GPU's name from /health (by request.gpu_index)
+  //   3. the common GPU model if every GPU is the same
+  const gpus = healthQ.data?.gpus ?? [];
+  const selectedGpu =
+    r?.gpu_index != null ? gpus.find((g) => g.index === r.gpu_index) : undefined;
+  const commonName =
+    gpus.length > 0 && gpus.every((g) => g.name === gpus[0].name) ? gpus[0].name : null;
+  const deviceName = active
+    ? metricsQ.data?.cadrille?.device_name ?? selectedGpu?.name ?? commonName ?? null
+    : null;
+  // Pair the GPU model with its cuda index, shown together.
+  const cudaTag = r?.gpu_index != null ? `cuda:${r.gpu_index}` : null;
+
+  // Left side: job id OR screen title. No status pill — run state is conveyed
+  // by the pipeline stepper / banner in the main content area.
   let left: React.ReactNode;
   if (active && job) {
-    type StInfo = { tone: "info" | "warn" | "bad"; icon?: import("@/components/Icon").IconName; dot?: boolean; label: string };
-    const stMap: Record<string, StInfo> = {
-      running: { tone: "info", dot: true, label: t("st.running") },
-      terminated: { tone: "warn", icon: "ban", label: t("st.stopped") },
-      failed: { tone: "bad", icon: "alert", label: t("st.failed") },
-    };
-    const s = stMap[job.status];
     left = (
       <div className="bar-id">
-        {s ? (
-          <Chip tone={s.tone} icon={s.icon} dot={s.dot}>
-            {s.label}
-          </Chip>
-        ) : null}
         <span className="bar-name mono">{job.job_id}</span>
       </div>
     );
@@ -90,10 +100,11 @@ export function TopBar({
       {left}
       {chips}
       <div className="bar-spacer" />
-      {device ? (
+      {deviceName || cudaTag ? (
         <div className="health device">
           <Icon n="gauge" size={14} style={{ color: "var(--tx-lo)" }} />
-          <b>{device}</b>
+          {deviceName ? <b>{deviceName}</b> : null}
+          {cudaTag ? <span className="health-gpu mono">{cudaTag}</span> : null}
         </div>
       ) : null}
       <div className="seg lang-seg">
