@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 def parse_args() -> argparse.Namespace:
@@ -214,6 +214,119 @@ def resolve_cadrille_input_points(cadrille_output_root: Path, selected_py: str |
     return None
 
 
+def resolve_bridge_stl(job_root: Path) -> Path | None:
+    manifest = job_root / "bridge" / "input_manifest.jsonl"
+    if manifest.exists():
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            raw = row.get("cadrille_stl_path")
+            if raw and Path(raw).exists():
+                return Path(raw)
+    candidates = sorted((job_root / "bridge").glob("data/**/*.stl"))
+    return candidates[0] if candidates else None
+
+
+def mesh_to_cadrille_input_image(
+    mesh: Any,
+    *,
+    camera_distance: float = -0.9,
+    front: tuple[int, int, int] = (1, 1, 1),
+    width: int = 500,
+    height: int = 500,
+    img_size: int = 128,
+) -> Image.Image:
+    import open3d as o3d
+    import skimage.transform
+
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(width=width, height=height, visible=False)
+    vis.add_geometry(mesh)
+
+    lookat = np.array([0.5, 0.5, 0.5], dtype=np.float32)
+    front_array = np.array(front, dtype=np.float32)
+    up = np.array([0, 1, 0], dtype=np.float32)
+
+    eye = lookat + front_array * camera_distance
+    right = np.cross(up, front_array)
+    right /= np.linalg.norm(right)
+    true_up = np.cross(front_array, right)
+    rotation_matrix = np.column_stack((right, true_up, front_array)).T
+    extrinsic = np.eye(4)
+    extrinsic[:3, :3] = rotation_matrix
+    extrinsic[:3, 3] = -rotation_matrix @ eye
+
+    view_control = vis.get_view_control()
+    camera_params = view_control.convert_to_pinhole_camera_parameters()
+    camera_params.extrinsic = extrinsic
+    view_control.convert_from_pinhole_camera_parameters(camera_params, allow_arbitrary=True)
+
+    vis.poll_events()
+    vis.update_renderer()
+    image = vis.capture_screen_float_buffer(do_render=True)
+    vis.destroy_window()
+
+    arr = np.asarray(image)
+    arr = (arr * 255).astype(np.uint8)
+    arr = skimage.transform.resize(
+        arr,
+        output_shape=(img_size, img_size),
+        order=2,
+        anti_aliasing=True,
+        preserve_range=True,
+    ).astype(np.uint8)
+    return Image.fromarray(arr)
+
+
+def render_cadrille_input_grid(bridge_stl: Path, out_path: Path) -> None:
+    if not os.environ.get("DISPLAY") and shutil.which("xvfb-run"):
+        module_path = Path(__file__).resolve()
+        code = """
+import importlib.util
+import pathlib
+import sys
+
+spec = importlib.util.spec_from_file_location("simple_reconstruct_job_render", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+module.render_cadrille_input_grid(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
+"""
+        subprocess.run(
+            ["xvfb-run", "-a", sys.executable, "-c", code, str(module_path), str(bridge_stl), str(out_path)],
+            check=True,
+            timeout=120,
+        )
+        return
+
+    import open3d as o3d
+    import trimesh
+
+    mesh_tm = trimesh.load(str(bridge_stl), force="mesh")
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(np.asarray(mesh_tm.vertices))
+    mesh.triangles = o3d.utility.Vector3iVector(np.asarray(mesh_tm.faces))
+    mesh.paint_uniform_color(np.array([255, 255, 136]) / 255.0)
+    mesh.compute_vertex_normals()
+
+    fronts = [(1, 1, 1), (-1, -1, -1), (-1, 1, -1), (1, -1, 1)]
+    images = [mesh_to_cadrille_input_image(mesh, front=front) for front in fronts]
+    images = [ImageOps.expand(image, border=3, fill="black") for image in images]
+    grid = Image.fromarray(
+        np.vstack((
+            np.hstack((np.array(images[0]), np.array(images[1]))),
+            np.hstack((np.array(images[2]), np.array(images[3]))),
+        ))
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    grid.save(out_path)
+
+
 SAM3D_PREVIEW_MAX_FACES = 60000
 
 
@@ -266,6 +379,7 @@ def build_simple_result_paths(
     selected_mesh: str | None,
     selected_py: str | None,
     selected_brep: str | None,
+    cadrille_mode: str | None = None,
 ) -> dict[str, Any]:
     results_root = job_root / "results"
     results_root.mkdir(parents=True, exist_ok=True)
@@ -319,10 +433,21 @@ def build_simple_result_paths(
     result_paths["selected_py"] = copy_result_file(selected_py, results_root / "cadrille_selected.py")
     result_paths["selected_brep"] = copy_result_file(selected_brep, results_root / f"cadrille_selected.{Path(selected_brep).suffix.lstrip('.')}" if selected_brep else results_root / "cadrille_selected.step")
     result_paths["cadrille_reselect"] = copy_result_file(cadrille_output_root / "reselect.json", results_root / "cadrille_reselect.json")
-    result_paths["cadrille_input_points"] = copy_result_file(
-        resolve_cadrille_input_points(cadrille_output_root, selected_py),
-        results_root / "cadrille_input_points.json",
-    )
+    if cadrille_mode == "img":
+        bridge_stl = resolve_bridge_stl(job_root)
+        if bridge_stl:
+            render_grid = results_root / "cadrille_input_render_grid.png"
+            try:
+                render_cadrille_input_grid(bridge_stl, render_grid)
+                if render_grid.exists():
+                    result_paths["cadrille_input_render_grid"] = str(render_grid)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[cadrille-input-preview] render grid skipped: {exc!r}", flush=True)
+    else:
+        result_paths["cadrille_input_points"] = copy_result_file(
+            resolve_cadrille_input_points(cadrille_output_root, selected_py),
+            results_root / "cadrille_input_points.json",
+        )
     return result_paths
 
 
@@ -814,6 +939,7 @@ def main() -> None:
             selected_mesh=selected_mesh,
             selected_py=selected_py,
             selected_brep=selected_brep,
+            cadrille_mode=args.cadrille_mode,
         )
 
         # ─── Body cleanup stage (always-on when a BRep exists) ───
