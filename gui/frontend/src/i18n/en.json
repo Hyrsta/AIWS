@@ -52,8 +52,6 @@
   "upl.dimMatch": "Photo and mask dimensions match",
   "upl.dimMismatch": "Size mismatch. SAM3D requires identical dimensions",
   "upl.usePair": "Use a sample pair",
-  "upl.pickFolder": "Pick containing folder",
-  "upl.pickFile": "Pick a single file",
   "upl.remove": "Remove",
   "set.cadrille": "Cadrille settings",
   "set.checkpoint": "Checkpoint",

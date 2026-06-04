@@ -52,8 +52,6 @@
   "upl.dimMatch": "照片与掩膜尺寸一致",
   "upl.dimMismatch": "尺寸不匹配。SAM3D 要求尺寸完全一致",
   "upl.usePair": "使用示例图对",
-  "upl.pickFolder": "选择所在文件夹",
-  "upl.pickFile": "选择单个文件",
   "upl.remove": "移除",
   "set.cadrille": "Cadrille 设置",
   "set.checkpoint": "检查点",

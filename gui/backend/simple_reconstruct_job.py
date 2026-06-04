@@ -156,6 +156,10 @@ def _as_trimesh_mesh(src: Path) -> Any:
         if not geoms:
             raise RuntimeError(f"No geometry found in uploaded mesh: {src}")
         loaded = trimesh.util.concatenate(geoms)
+    # Reject point clouds / empty loads early with a clear error rather than
+    # exporting a degenerate (face-less) STL that fails opaquely in Cadrille.
+    if not isinstance(loaded, trimesh.Trimesh) or len(loaded.faces) == 0:
+        raise RuntimeError(f"Uploaded mesh has no usable surface geometry: {src}")
     return loaded
 
 

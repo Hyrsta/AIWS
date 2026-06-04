@@ -142,6 +142,56 @@ def test_render_grid_uses_xvfb_without_display():
     assert timeout == 120
 
 
+def test_parse_args_supports_mesh_mode():
+    argv = sys.argv
+    try:
+        sys.argv = [
+            "prog", "--input-mode", "mesh", "--input-mesh", "/tmp/x.stl",
+            "--job-root", "/tmp/j", "--status-path", "/tmp/s.json",
+        ]
+        ns = srj.parse_args()
+    finally:
+        sys.argv = argv
+    assert ns.input_mode == "mesh"
+    assert str(ns.input_mesh) == "/tmp/x.stl"
+    # image/mask are optional now (validated per-mode in main(), not by argparse)
+    assert ns.input_image is None and ns.input_mask is None
+
+
+def test_materialize_uploaded_mesh_produces_glb_and_stl():
+    try:
+        import trimesh  # present in CI via gui/requirements.txt
+    except Exception:
+        return  # skip locally if trimesh isn't installed
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        src = root / "upload.stl"
+        trimesh.creation.box(extents=(1.0, 1.0, 1.0)).export(str(src))
+        out_dir = root / "sam3d" / "GUI" / "user_upload" / "upload__obj01"
+        mesh_path, stl_path, meta = srj.materialize_uploaded_mesh(src, out_dir)
+        assert mesh_path.exists() and mesh_path.name == "mesh.glb"
+        assert stl_path.exists() and stl_path.name == "mesh.stl"
+        assert meta["input_mesh_ext"] == ".stl"
+        assert meta["mesh_size_bytes"] and meta["stl_size_bytes"]
+
+
+def test_as_trimesh_mesh_rejects_non_surface_geometry():
+    try:
+        import numpy as np
+        import trimesh
+    except Exception:
+        return  # skip locally if trimesh isn't installed
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "points.ply"
+        trimesh.PointCloud(np.random.rand(32, 3)).export(str(src))
+        try:
+            srj._as_trimesh_mesh(src)
+        except RuntimeError as exc:
+            assert "no usable surface geometry" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError for point-cloud input")
+
+
 def _run_all():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

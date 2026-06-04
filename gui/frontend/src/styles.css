@@ -488,14 +488,6 @@ input, select, textarea, button { font-family: inherit; }
 .drop:hover .di, .drop.over .di { color: var(--sig); }
 .drop b { color: var(--tx-hi); font-size: 14px; font-weight: 600; }
 .drop small { font-size: 12px; }
-.drop-file {
-  position: absolute; top: 9px; right: 9px;
-  width: 30px; height: 30px; display: grid; place-items: center;
-  border-radius: var(--r-sm); border: 1px solid var(--line);
-  background: var(--ink-100); color: var(--tx-lo);
-  transition: color var(--ease) .14s, border-color var(--ease) .14s, background var(--ease) .14s;
-}
-.drop-file:hover { color: var(--sig); border-color: var(--sig-line); background: var(--sig-ink); }
 
 .upload-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .thumb {
