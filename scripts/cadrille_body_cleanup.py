@@ -6,7 +6,7 @@ surface gap normalized by the overall bbox diagonal), keeps the largest-volume
 cluster, removes the rest, and writes a cleaned .step (+ optional .stl) and
 cleanup_metadata.json. Runs inside cadrille:latest (CadQuery 2.5 + OCP).
 
-See docs/superpowers/specs/2026-05-29-cad-body-cleanup-design.md
+See the 2026-05-29 cad-body-cleanup design spec (local dev notes, not tracked in this repo).
 """
 from __future__ import annotations
 
