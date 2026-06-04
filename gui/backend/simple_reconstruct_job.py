@@ -372,7 +372,7 @@ def run_postscale_stage(
     ]
     if model_code and model_code not in ("(default)", "default", ""):
         docker_cmd.extend(["--model-code", model_code])
-    run_cmd(docker_cmd)
+    run_cmd(docker_cmd, timeout=DOCKER_STEP_TIMEOUT_SEC)
 
     py_stem = input_host.stem
     src_scaled_py = postscale_work / f"{py_stem}__scaled.py"
@@ -421,7 +421,7 @@ def run_body_cleanup_stage(
         "--out-dir", "/job/cleanup",
         "--export-stl",
     ]
-    run_cmd(docker_cmd)
+    run_cmd(docker_cmd, timeout=DOCKER_STEP_TIMEOUT_SEC)
 
     stem = selected_brep_host.stem  # e.g. "cadrille_selected"
     src_step = cleanup_work / f"{stem}__cleaned.step"
@@ -485,7 +485,7 @@ def run_reselect_stage(
         "--py-dir", "/job/" + str(py_dir.resolve().relative_to(job_root)),
         "--mesh-dir", "/job/" + str(mesh_dir.resolve().relative_to(job_root)),
     ]
-    run_cmd(docker_cmd)
+    run_cmd(docker_cmd, timeout=DOCKER_STEP_TIMEOUT_SEC)
     if not out_host.exists():
         return None
     best = (json.loads(out_host.read_text(encoding="utf-8")) or {}).get("best")
@@ -545,13 +545,21 @@ def run_stage_metrics_stage(
     reselect_json = job_root / "cadrille" / "reselect.json"
     if reselect_json.exists():
         docker_cmd += ["--reselect-json", "/job/cadrille/reselect.json"]
-    run_cmd(docker_cmd)
+    run_cmd(docker_cmd, timeout=DOCKER_STEP_TIMEOUT_SEC)
     return {"stage_metrics": str(out_host)} if out_host.exists() else {}
 
 
-def run_cmd(cmd: list[str], cwd: Path | None = None) -> None:
+# Bound the CPU-bound post-processing docker steps (postscale / body-cleanup /
+# reselect / stage-metrics) so a hung OCC/CAD op fails the job cleanly instead of
+# blocking it forever. Generous vs. any real single-job duration. The long GPU
+# inference call is intentionally left unbounded (timeout=None) to avoid false
+# kills under GPU contention.
+DOCKER_STEP_TIMEOUT_SEC = 1800
+
+
+def run_cmd(cmd: list[str], cwd: Path | None = None, timeout: float | None = None) -> None:
     print("[RUN]", " ".join(str(x) for x in cmd), flush=True)
-    subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+    subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True, timeout=timeout)
 
 
 def main() -> None:
