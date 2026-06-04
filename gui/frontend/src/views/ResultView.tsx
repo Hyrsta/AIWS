@@ -5,6 +5,7 @@
 import { useState, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
+import { useNow } from "@/hooks/useNow";
 import { api } from "@/api/client";
 import { fmtIoU } from "@/lib/format";
 import { Icon, Chip } from "@/components/Icon";
@@ -172,7 +173,8 @@ function ProcessTimeline({ job, metrics, postscale }: ProcessTimelineProps) {
   const sam = metrics.sam3d?.available ? metrics.sam3d : null;
   const cad = metrics.cadrille?.available ? metrics.cadrille : null;
   const timings = job.stage_timings ?? {};
-  const nowSec = Date.now() / 1000;
+  // ticks only while running; only read for the live stage's in-progress duration
+  const nowSec = useNow(job.status === "running");
   const allStarts = Object.values(timings)
     .map((tm) => tm?.started_at)
     .filter((s): s is number => s != null)
@@ -938,7 +940,7 @@ function OutputFolder({ job }: OutputFolderProps) {
   const copy = () => {
     try {
       void navigator.clipboard?.writeText(root);
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   };
@@ -1270,7 +1272,9 @@ function RunRecap({ job, metrics, postscale }: RunRecapProps) {
   const t0 = job.started_at ?? job.created_at;
   // Use ended_at (the true end) — NOT updated_at, which the backend bumps on
   // every read, making a finished job's elapsed grow to "now - start".
-  const t1 = job.ended_at ?? Date.now() / 1000;
+  // now-fallback ticks only while the job is still running.
+  const nowSec = useNow(job.status === "running");
+  const t1 = job.ended_at ?? nowSec;
   const totalSec = Math.max(0, t1 - t0);
   const term = job.status === "terminated" || job.status === "failed";
 
