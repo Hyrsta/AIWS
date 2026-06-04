@@ -2,7 +2,7 @@
    ConfigureView — unit tests
    ============================================================ */
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConfigureView } from "./ConfigureView";
 
@@ -24,6 +24,7 @@ vi.mock("@/api/client", () => ({
         },
       },
     }),
+    health: vi.fn().mockResolvedValue({ ok: true, gpus: [] }),
   },
 }));
 
@@ -39,6 +40,21 @@ beforeAll(() => {
       writable: true,
     });
   }
+
+  class MockImage {
+    naturalWidth = 1024;
+    naturalHeight = 768;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+
+    set src(_value: string) {
+      queueMicrotask(() => {
+        this.onload?.();
+      });
+    }
+  }
+
+  vi.stubGlobal("Image", MockImage);
 });
 
 function renderConfigureView() {
@@ -59,5 +75,75 @@ describe("ConfigureView", () => {
     renderConfigureView();
     const btn = screen.getByRole("button", { name: /start/i });
     expect(btn).toBeDisabled();
+  });
+
+  it("marks the configuration panels with stable layout hooks", () => {
+    renderConfigureView();
+
+    expect(screen.getByRole("heading", { name: "Inputs" }).closest(".panel")).toHaveClass(
+      "cfg-input-panel",
+      "has-sample-action",
+    );
+    expect(screen.getByRole("heading", { name: "Cadrille settings" }).closest(".panel")).toHaveClass(
+      "cfg-settings-panel",
+    );
+    expect(screen.getByRole("heading", { name: "Metric post-scaling" }).closest(".panel")).toHaveClass(
+      "cfg-post-panel",
+    );
+    expect(document.querySelector(".cfg-settings-hint")).not.toBeNull();
+  });
+
+  it("shows only the filename (not parent folders) for uploaded inputs", async () => {
+    renderConfigureView();
+
+    const [photoInput, maskInput] = document.querySelectorAll<HTMLInputElement>("input[type=file]");
+    const photoFile = new File(["photo"], "input.png", { type: "image/png" });
+    const maskFile = new File(["mask"], "mask.png", { type: "image/png" });
+    // Even if the browser exposes a directory-relative path, the caption must
+    // show the bare filename only (parent folders are intentionally not shown).
+    Object.defineProperty(photoFile, "webkitRelativePath", {
+      value: "Best Results/RL_IMG/rank_01/Input Data/input.png",
+    });
+
+    fireEvent.change(photoInput, { target: { files: [photoFile] } });
+    fireEvent.change(maskInput, { target: { files: [maskFile] } });
+
+    expect(await screen.findByText("input.png")).toBeInTheDocument();
+    expect(await screen.findByText("mask.png")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Best Results/RL_IMG/rank_01/Input Data/input.png"),
+    ).toBeNull();
+  });
+
+  it("opens the single-file picker from the visible image drop area", async () => {
+    renderConfigureView();
+
+    const photoFileInput = document.querySelector<HTMLInputElement>('input[data-upload-kind="photo-file"]');
+    expect(photoFileInput).not.toBeNull();
+    const fileClick = vi.fn();
+    photoFileInput!.click = fileClick;
+
+    fireEvent.click(screen.getByText("Drop a photo or click to browse"));
+
+    expect(fileClick).toHaveBeenCalledOnce();
+  });
+
+  it("starts reconstruction from an uploaded mesh without requiring photo or mask", async () => {
+    const { onStart } = renderConfigureView();
+
+    fireEvent.click(await screen.findByRole("button", { name: /mesh input/i }));
+    const meshInput = document.querySelector<HTMLInputElement>('input[type="file"][accept=".stl,.glb,.obj,.ply"]');
+    expect(meshInput).not.toBeNull();
+    const meshDropText = await screen.findByText("Drop a mesh or click to browse");
+    const fillArea = meshDropText.closest(".mesh-fill-area");
+    expect(fillArea).not.toBeNull();
+    expect(fillArea?.querySelector(".drop")).not.toBeNull();
+
+    const meshFile = new File(["solid"], "favorite.stl", { type: "model/stl" });
+    fireEvent.change(meshInput!, { target: { files: [meshFile] } });
+    expect(await screen.findByText("favorite.stl")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /start/i }));
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ input_mode: "mesh", mesh: meshFile }));
   });
 });

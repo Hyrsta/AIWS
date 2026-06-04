@@ -21,8 +21,10 @@ def parse_args() -> argparse.Namespace:
         description="Run one user-facing GUI reconstruction job: image + mask -> SAM3D -> Cadrille."
     )
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
-    parser.add_argument("--input-image", type=Path, required=True)
-    parser.add_argument("--input-mask", type=Path, required=True)
+    parser.add_argument("--input-mode", choices=("image_mask", "mesh"), default="image_mask")
+    parser.add_argument("--input-image", type=Path, default=None)
+    parser.add_argument("--input-mask", type=Path, default=None)
+    parser.add_argument("--input-mesh", type=Path, default=None)
     parser.add_argument("--job-root", type=Path, required=True)
     parser.add_argument("--status-path", type=Path, required=True)
 
@@ -143,6 +145,58 @@ def write_status(
         payload["result_paths"] = result_paths
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _as_trimesh_mesh(src: Path) -> Any:
+    import trimesh  # type: ignore
+
+    loaded = trimesh.load(str(src), process=False)
+    if isinstance(loaded, trimesh.Scene):
+        geoms = [g for g in loaded.geometry.values() if g is not None]
+        if not geoms:
+            raise RuntimeError(f"No geometry found in uploaded mesh: {src}")
+        loaded = trimesh.util.concatenate(geoms)
+    # Reject point clouds / empty loads early with a clear error rather than
+    # exporting a degenerate (face-less) STL that fails opaquely in Cadrille.
+    if not isinstance(loaded, trimesh.Trimesh) or len(loaded.faces) == 0:
+        raise RuntimeError(f"Uploaded mesh has no usable surface geometry: {src}")
+    return loaded
+
+
+def materialize_uploaded_mesh(input_mesh: Path, sample_out_dir: Path) -> tuple[Path, Path, dict[str, Any]]:
+    """Place an uploaded mesh into the SAM3D-like artifact layout.
+
+    Cadrille consumes the STL. The GLB copy keeps ResultView paths compatible
+    with normal image+mask jobs.
+    """
+    sample_out_dir.mkdir(parents=True, exist_ok=True)
+    mesh_path = sample_out_dir / "mesh.glb"
+    stl_path = sample_out_dir / "mesh.stl"
+    suffix = input_mesh.suffix.lower()
+    started_at = time.time()
+
+    if suffix == ".stl":
+        shutil.copy2(input_mesh, stl_path)
+        mesh = _as_trimesh_mesh(input_mesh)
+        mesh.export(str(mesh_path))
+    elif suffix == ".glb":
+        shutil.copy2(input_mesh, mesh_path)
+        mesh = _as_trimesh_mesh(input_mesh)
+        mesh.export(str(stl_path))
+    else:
+        mesh = _as_trimesh_mesh(input_mesh)
+        mesh.export(str(stl_path))
+        mesh.export(str(mesh_path))
+
+    return mesh_path, stl_path, {
+        "input_mesh_path": str(input_mesh),
+        "input_mesh_ext": suffix,
+        "uploaded_mesh_bytes": input_mesh.stat().st_size if input_mesh.exists() else None,
+        "mesh_size_bytes": mesh_path.stat().st_size if mesh_path.exists() else None,
+        "stl_size_bytes": stl_path.stat().st_size if stl_path.exists() else None,
+        "started_at_epoch": started_at,
+        "duration_sec": round(time.time() - started_at, 3),
+    }
 
 
 def patch_torch_hub_for_local_dinov2(torch: Any) -> None:
@@ -710,8 +764,13 @@ def main() -> None:
     cadrille_root = (args.cadrille_root or (repo_root / "repos" / "cadrille")).resolve()
     job_root = args.job_root.resolve()
     status_path = args.status_path.resolve()
-    input_image = args.input_image.resolve()
-    input_mask = args.input_mask.resolve()
+    input_image = args.input_image.resolve() if args.input_image else None
+    input_mask = args.input_mask.resolve() if args.input_mask else None
+    input_mesh = args.input_mesh.resolve() if args.input_mesh else None
+    if args.input_mode == "image_mask" and (input_image is None or input_mask is None):
+        raise RuntimeError("--input-image and --input-mask are required for --input-mode image_mask")
+    if args.input_mode == "mesh" and input_mesh is None:
+        raise RuntimeError("--input-mesh is required for --input-mode mesh")
 
     sam3d_output_root = job_root / "sam3d"
     bridge_root = job_root / "bridge"
@@ -739,107 +798,162 @@ def main() -> None:
         sys.path.insert(0, str(sam3d_repo_root))
         sys.path.insert(0, str(sam3d_repo_root / "notebook"))
 
-        from inference import Inference  # type: ignore
         from sam3d_cadrille_bridge import ensure_clean_dir, prepare_cadrille_split, write_manifest_jsonl  # type: ignore
-        import torch  # type: ignore
 
-        patch_torch_hub_for_local_dinov2(torch)
-
-        image = Image.open(input_image).convert("RGB")
-        mask_image = Image.open(input_mask).convert("L")
-        if image.size != mask_image.size:
-            raise RuntimeError(f"Image/mask size mismatch: {image.size} vs {mask_image.size}")
-
-        image_np = np.array(image)
-        mask_np = (np.array(mask_image) > 0).astype(np.uint8)
-        mask_pixels = int(mask_np.sum())
-        if mask_pixels <= 0:
-            raise RuntimeError("Uploaded mask is empty")
-
-        config_path = sam3d_repo_root / "checkpoints" / "hf" / "pipeline.yaml"
-        os.chdir(sam3d_repo_root)
-        model_init_started = time.time()
-        inference = Inference(str(config_path), compile=False)
-        model_init_sec = time.time() - model_init_started
-
-        sample_stem = input_image.stem or "upload"
-        sample_out_dir = sam3d_output_root / "GUI" / "user_upload" / f"{sample_stem}__obj01"
-        sample_out_dir.mkdir(parents=True, exist_ok=True)
-        mesh_path = sample_out_dir / "mesh.glb"
-        stl_path = sample_out_dir / "mesh.stl"
-        meta_path = sample_out_dir / "meta.json"
         results_path = sam3d_output_root / "results.jsonl"
-
-        write_status(status_path, status="running", stage="sam3d", stage_label="SAM3D: Generating mesh")
-
-        started_at = time.time()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.synchronize()
-        output = inference(image_np, mask_np, seed=args.seed)
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        mesh = output.get("glb")
-        if mesh is None:
-            raise RuntimeError("SAM3D output did not include a GLB mesh")
-        mesh.export(str(mesh_path))
-        mesh.export(str(stl_path))
-        duration = time.time() - started_at
         peak_allocated_mb = None
         peak_reserved_mb = None
-        if torch.cuda.is_available():
-            peak_allocated_mb = round(torch.cuda.max_memory_allocated() / (1024**2), 2)
-            peak_reserved_mb = round(torch.cuda.max_memory_reserved() / (1024**2), 2)
+        model_init_sec = None
 
-        record = {
-            "global_index": 0,
-            "task_index_in_shard": 1,
-            "total_tasks_in_shard": 1,
-            "total_tasks_global": 1,
-            "num_shards": 1,
-            "shard_index": 0,
-            "task_id": f"GUI/user_upload/{sample_stem}__obj01",
-            "split": "all",
-            "subset": "GUI",
-            "workpiece": "user_upload",
-            "stem": sample_stem,
-            "object_index": 1,
-            "object_count_in_image": 1,
-            "image_path": str(input_image),
-            "annotation_path": None,
-            "output_dir": str(sample_out_dir),
-            "mesh_path": str(mesh_path),
-            "stl_path": str(stl_path),
-            "artifact_formats": ["glb", "stl"],
-            "category": "user_upload",
-            "group": 1,
-            "bbox": [0.0, 0.0, float(image.width), float(image.height)],
-            "area": float(mask_pixels),
-            "width": int(image.width),
-            "height": int(image.height),
-            "image_pixels": int(image.width * image.height),
-            "seed": args.seed,
-            "dataset_layout": "gui_upload",
-            "exclude_stems_file": None,
-            "exclude_stems_count": 0,
-            "started_at_epoch": started_at,
-            "model_init_sec": round(model_init_sec, 3),
-            "status": "ok",
-            "hostname": os.uname().nodename,
-            "pid": os.getpid(),
-            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
-            "duration_sec": round(duration, 3),
-            "ended_at_epoch": round(time.time(), 3),
-            "mask_pixels": mask_pixels,
-            "mask_fraction": round(mask_pixels / float(image.width * image.height), 6),
-            "sec_per_megapixel": round(duration / ((image.width * image.height) / 1_000_000), 6),
-            "instances_per_hour": round(3600.0 / duration, 3) if duration > 0 else None,
-            "peak_memory_allocated_mb": peak_allocated_mb,
-            "peak_memory_reserved_mb": peak_reserved_mb,
-            "mesh_size_bytes": mesh_path.stat().st_size if mesh_path.exists() else None,
-            "stl_size_bytes": stl_path.stat().st_size if stl_path.exists() else None,
-        }
+        if args.input_mode == "image_mask":
+            from inference import Inference  # type: ignore
+            import torch  # type: ignore
+
+            patch_torch_hub_for_local_dinov2(torch)
+
+            image = Image.open(input_image).convert("RGB")
+            mask_image = Image.open(input_mask).convert("L")
+            if image.size != mask_image.size:
+                raise RuntimeError(f"Image/mask size mismatch: {image.size} vs {mask_image.size}")
+
+            image_np = np.array(image)
+            mask_np = (np.array(mask_image) > 0).astype(np.uint8)
+            mask_pixels = int(mask_np.sum())
+            if mask_pixels <= 0:
+                raise RuntimeError("Uploaded mask is empty")
+
+            config_path = sam3d_repo_root / "checkpoints" / "hf" / "pipeline.yaml"
+            os.chdir(sam3d_repo_root)
+            model_init_started = time.time()
+            inference = Inference(str(config_path), compile=False)
+            model_init_sec = time.time() - model_init_started
+
+            sample_stem = input_image.stem or "upload"
+            sample_out_dir = sam3d_output_root / "GUI" / "user_upload" / f"{sample_stem}__obj01"
+            sample_out_dir.mkdir(parents=True, exist_ok=True)
+            mesh_path = sample_out_dir / "mesh.glb"
+            stl_path = sample_out_dir / "mesh.stl"
+            meta_path = sample_out_dir / "meta.json"
+
+            write_status(status_path, status="running", stage="sam3d", stage_label="SAM3D: Generating mesh")
+
+            started_at = time.time()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.synchronize()
+            output = inference(image_np, mask_np, seed=args.seed)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            mesh = output.get("glb")
+            if mesh is None:
+                raise RuntimeError("SAM3D output did not include a GLB mesh")
+            mesh.export(str(mesh_path))
+            mesh.export(str(stl_path))
+            duration = time.time() - started_at
+            if torch.cuda.is_available():
+                peak_allocated_mb = round(torch.cuda.max_memory_allocated() / (1024**2), 2)
+                peak_reserved_mb = round(torch.cuda.max_memory_reserved() / (1024**2), 2)
+
+            record = {
+                "global_index": 0,
+                "task_index_in_shard": 1,
+                "total_tasks_in_shard": 1,
+                "total_tasks_global": 1,
+                "num_shards": 1,
+                "shard_index": 0,
+                "task_id": f"GUI/user_upload/{sample_stem}__obj01",
+                "split": "all",
+                "subset": "GUI",
+                "workpiece": "user_upload",
+                "stem": sample_stem,
+                "object_index": 1,
+                "object_count_in_image": 1,
+                "image_path": str(input_image),
+                "annotation_path": None,
+                "output_dir": str(sample_out_dir),
+                "mesh_path": str(mesh_path),
+                "stl_path": str(stl_path),
+                "artifact_formats": ["glb", "stl"],
+                "category": "user_upload",
+                "group": 1,
+                "bbox": [0.0, 0.0, float(image.width), float(image.height)],
+                "area": float(mask_pixels),
+                "width": int(image.width),
+                "height": int(image.height),
+                "image_pixels": int(image.width * image.height),
+                "seed": args.seed,
+                "dataset_layout": "gui_upload",
+                "exclude_stems_file": None,
+                "exclude_stems_count": 0,
+                "started_at_epoch": started_at,
+                "model_init_sec": round(model_init_sec, 3),
+                "status": "ok",
+                "hostname": os.uname().nodename,
+                "pid": os.getpid(),
+                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "duration_sec": round(duration, 3),
+                "ended_at_epoch": round(time.time(), 3),
+                "mask_pixels": mask_pixels,
+                "mask_fraction": round(mask_pixels / float(image.width * image.height), 6),
+                "sec_per_megapixel": round(duration / ((image.width * image.height) / 1_000_000), 6),
+                "instances_per_hour": round(3600.0 / duration, 3) if duration > 0 else None,
+                "peak_memory_allocated_mb": peak_allocated_mb,
+                "peak_memory_reserved_mb": peak_reserved_mb,
+                "mesh_size_bytes": mesh_path.stat().st_size if mesh_path.exists() else None,
+                "stl_size_bytes": stl_path.stat().st_size if stl_path.exists() else None,
+            }
+        else:
+            write_status(status_path, status="running", stage="sam3d", stage_label="SAM3D: Generating mesh")
+            sample_stem = input_mesh.stem or "upload_mesh"
+            sample_out_dir = sam3d_output_root / "GUI" / "user_upload" / f"{sample_stem}__obj01"
+            meta_path = sample_out_dir / "meta.json"
+            mesh_path, stl_path, mesh_meta = materialize_uploaded_mesh(input_mesh, sample_out_dir)
+            record = {
+                "global_index": 0,
+                "task_index_in_shard": 1,
+                "total_tasks_in_shard": 1,
+                "total_tasks_global": 1,
+                "num_shards": 1,
+                "shard_index": 0,
+                "task_id": f"GUI/user_upload/{sample_stem}__obj01",
+                "split": "all",
+                "subset": "GUI",
+                "workpiece": "user_upload",
+                "stem": sample_stem,
+                "object_index": 1,
+                "object_count_in_image": 1,
+                "input_mode": "mesh",
+                "image_path": None,
+                "annotation_path": None,
+                "output_dir": str(sample_out_dir),
+                "mesh_path": str(mesh_path),
+                "stl_path": str(stl_path),
+                "artifact_formats": ["glb", "stl"],
+                "category": "user_upload",
+                "group": 1,
+                "bbox": None,
+                "area": None,
+                "width": None,
+                "height": None,
+                "image_pixels": None,
+                "seed": None,
+                "sam3d_skipped": True,
+                "provenance": "uploaded_mesh",
+                "dataset_layout": "gui_upload_mesh",
+                "exclude_stems_file": None,
+                "exclude_stems_count": 0,
+                "model_init_sec": 0.0,
+                "status": "ok",
+                "hostname": os.uname().nodename,
+                "pid": os.getpid(),
+                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "ended_at_epoch": round(time.time(), 3),
+                "peak_memory_allocated_mb": None,
+                "peak_memory_reserved_mb": None,
+                **mesh_meta,
+            }
+
         meta_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
         append_jsonl(results_path, record)
 

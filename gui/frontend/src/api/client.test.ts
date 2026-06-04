@@ -52,4 +52,14 @@ describe("api client", () => {
     expect(body.has("workpiece_class")).toBe(false);
     expect(body.has("model_code")).toBe(false);
   });
+  it("POST /jobs/simple-reconstruct transmits mesh uploads without image or mask fields", async () => {
+    const fetchMock = mockPostFetch();
+    const mesh = new File(["solid"], "favorite.stl", { type: "model/stl" });
+    await api.createSimpleReconstruct({ input_mode: "mesh", mesh, cadrille_checkpoint_preset: "RL", cadrille_mode: "PC" });
+    const body = fetchMock.mock.calls[0][1]?.body as FormData;
+    expect(body.get("input_mode")).toBe("mesh");
+    expect(body.get("mesh")).toBe(mesh);
+    expect(body.has("image")).toBe(false);
+    expect(body.has("mask")).toBe(false);
+  });
 });

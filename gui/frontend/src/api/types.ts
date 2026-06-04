@@ -35,7 +35,8 @@ export interface CatalogClass { models: string[]; entries: Record<string, Catalo
 export interface Catalog { source: string; classes: Record<string, CatalogClass>; }
 
 export interface JobRequest {
-  image_filename: string; mask_filename: string;
+  input_mode?: "image_mask" | "mesh";
+  image_filename: string | null; mask_filename: string | null; mesh_filename?: string | null;
   cadrille_checkpoint_preset: "RL" | "SFT"; cadrille_checkpoint: string;
   cadrille_mode: "pc" | "img"; cadrille_mode_label: "PC" | "IMG";
   workpiece_class: string | null; model_code: string | null; postscale_enabled: boolean;
@@ -90,18 +91,22 @@ export interface CleanupMetadata {
   n_bodies_before: number; n_bodies_after: number; n_bodies_removed: number;
   removed_volume_fraction?: number; confidence_flag: boolean; confidence_reasons: string[]; [k: string]: unknown;
 }
-// Reconstruct request payload (client → POST /jobs/simple-reconstruct)
-export interface ReconstructInput {
-  image: File; mask: File;
+interface ReconstructBaseInput {
   cadrille_checkpoint_preset: "RL" | "SFT"; cadrille_mode: "PC" | "IMG";
   workpiece_class?: string | null; model_code?: string | null;
   gpu_index?: number | null;
 }
 
+// Reconstruct request payload (client -> POST /jobs/simple-reconstruct)
+export type ReconstructInput =
+  | (ReconstructBaseInput & { input_mode?: "image_mask"; image: File; mask: File })
+  | (ReconstructBaseInput & { input_mode: "mesh"; mesh: File });
+
 export interface JobInputs {
   job_id: string;
   input_image: string | null;
   input_mask: string | null;
+  input_mesh?: string | null;
 }
 
 export interface ScaledMetadata {

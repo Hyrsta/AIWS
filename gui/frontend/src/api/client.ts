@@ -36,8 +36,14 @@ export const api = {
     `${BASE}/jobs/${id}/file?path=${encodeURIComponent(remotePath)}`,
   createSimpleReconstruct(input: ReconstructInput): Promise<JobSummary> {
     const fd = new FormData();
-    fd.append("image", input.image);
-    fd.append("mask", input.mask);
+    if (input.input_mode === "mesh") {
+      fd.append("input_mode", "mesh");
+      fd.append("mesh", input.mesh);
+    } else {
+      fd.append("input_mode", "image_mask");
+      fd.append("image", input.image);
+      fd.append("mask", input.mask);
+    }
     fd.append("cadrille_checkpoint_preset", input.cadrille_checkpoint_preset);
     fd.append("cadrille_mode", input.cadrille_mode);
     if (input.workpiece_class) fd.append("workpiece_class", input.workpiece_class);

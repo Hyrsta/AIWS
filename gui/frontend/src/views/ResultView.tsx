@@ -1452,6 +1452,7 @@ export function ResultView({ jobId }: ResultViewProps) {
           jobId={jobId}
           inputImage={inputsQ.data?.input_image ?? null}
           inputMask={inputsQ.data?.input_mask ?? null}
+          inputMesh={inputsQ.data?.input_mesh ?? null}
         />
       </div>
       <div style={{ marginTop: 18 }}>
