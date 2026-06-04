@@ -214,6 +214,26 @@ def resolve_cadrille_input_points(cadrille_output_root: Path, selected_py: str |
     return None
 
 
+def resolve_cadrille_input_render_grid(cadrille_output_root: Path, selected_py: str | None) -> Path | None:
+    input_renders_dir = cadrille_output_root / "input_renders"
+    selected_input_renders_dir = cadrille_output_root / "selected_input_renders"
+    if selected_py:
+        stem = Path(selected_py).stem
+        candidates = (
+            [input_renders_dir / f"{stem}.png"]
+            if "+" in stem
+            else [selected_input_renders_dir / f"{stem}.png"]
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+    selected = sorted(selected_input_renders_dir.glob("*.png"))
+    if selected:
+        return selected[0]
+    return None
+
+
 def resolve_bridge_stl(job_root: Path) -> Path | None:
     manifest = job_root / "bridge" / "input_manifest.jsonl"
     if manifest.exists():
@@ -434,15 +454,10 @@ def build_simple_result_paths(
     result_paths["selected_brep"] = copy_result_file(selected_brep, results_root / f"cadrille_selected.{Path(selected_brep).suffix.lstrip('.')}" if selected_brep else results_root / "cadrille_selected.step")
     result_paths["cadrille_reselect"] = copy_result_file(cadrille_output_root / "reselect.json", results_root / "cadrille_reselect.json")
     if cadrille_mode == "img":
-        bridge_stl = resolve_bridge_stl(job_root)
-        if bridge_stl:
-            render_grid = results_root / "cadrille_input_render_grid.png"
-            try:
-                render_cadrille_input_grid(bridge_stl, render_grid)
-                if render_grid.exists():
-                    result_paths["cadrille_input_render_grid"] = str(render_grid)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[cadrille-input-preview] render grid skipped: {exc!r}", flush=True)
+        result_paths["cadrille_input_render_grid"] = copy_result_file(
+            resolve_cadrille_input_render_grid(cadrille_output_root, selected_py),
+            results_root / "cadrille_input_render_grid.png",
+        )
     else:
         result_paths["cadrille_input_points"] = copy_result_file(
             resolve_cadrille_input_points(cadrille_output_root, selected_py),

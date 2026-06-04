@@ -180,6 +180,60 @@ def write_input_points_artifact(
     return str(out_path)
 
 
+def write_input_render_artifact(
+    output_root: Path,
+    *,
+    mode: str,
+    source_stem: str,
+    output_file_name: str,
+    generation_id: int,
+    video: Any,
+) -> str | None:
+    if mode != "img":
+        return None
+    if isinstance(video, (list, tuple)):
+        image = video[0] if video else None
+        n_frames = len(video)
+    else:
+        image = video
+        n_frames = 1 if video is not None else 0
+    if image is None or not hasattr(image, "save"):
+        return None
+
+    out_dir = output_root / "input_renders"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = Path(output_file_name).stem
+    out_path = out_dir / f"{stem}.png"
+    meta_path = out_dir / f"{stem}.json"
+    image.save(out_path)
+    artifact = {
+        "mode": mode,
+        "source_stem": source_stem,
+        "source_candidate": stem,
+        "output_file_name": output_file_name,
+        "generation_id": generation_id,
+        "n_frames": n_frames,
+        "image_size": list(getattr(image, "size", ())),
+        "image_mode": getattr(image, "mode", None),
+        "note": "Saved from batch['input_videos'] immediately before Cadrille generate().",
+    }
+    meta_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(out_path)
+
+
+def collate_with_input_artifacts(
+    batch: list[dict[str, Any]],
+    *,
+    upstream_collate: Any,
+    processor: Any,
+    n_points: int,
+    eval: bool = False,
+) -> Any:
+    inputs = upstream_collate(batch, processor=processor, n_points=n_points, eval=eval)
+    inputs["input_videos"] = [m.get("video") for m in batch]
+    return inputs
+
+
 def write_gpu_memory_report(
     output_root: Path,
     *,
@@ -353,13 +407,20 @@ def run(
             dataset=ConcatDataset([dataset] * n_samples),
             batch_size=batch_size,
             num_workers=num_workers,
-            collate_fn=partial(collate, processor=processor, n_points=256, eval=True),
+            collate_fn=partial(
+                collate_with_input_artifacts,
+                upstream_collate=collate,
+                processor=processor,
+                n_points=256,
+                eval=True,
+            ),
         )
 
         for batch_idx, batch in enumerate(tqdm(dataloader), start=1):
             batch_file_names = [str(v) for v in batch["file_name"]]
             batch_item_count = len(batch_file_names)
             batch_point_clouds = batch.get("point_clouds")
+            batch_input_videos = batch.get("input_videos") or []
             cuda_synchronize_all()
             reset_cuda_peak_stats()
             batch_started = time.perf_counter()
@@ -421,6 +482,7 @@ def run(
                 file_name = f"{stem}+{generation_id}.py"
                 (py_path / file_name).write_text(py_string, encoding="utf-8")
                 input_points_path = None
+                input_render_path = None
                 if torch.is_tensor(batch_point_clouds) and sample_idx < batch_point_clouds.shape[0]:
                     input_points_path = write_input_points_artifact(
                         output_root,
@@ -430,6 +492,15 @@ def run(
                         generation_id=generation_id,
                         points=batch_point_clouds[sample_idx],
                     )
+                if sample_idx < len(batch_input_videos):
+                    input_render_path = write_input_render_artifact(
+                        output_root,
+                        mode=mode,
+                        source_stem=stem,
+                        output_file_name=file_name,
+                        generation_id=generation_id,
+                        video=batch_input_videos[sample_idx],
+                    )
                 sample_trace_rows.append(
                     {
                         "batch_index": batch_idx,
@@ -437,6 +508,7 @@ def run(
                         "output_file_name": file_name,
                         "generation_id": generation_id,
                         "input_points_path": input_points_path,
+                        "input_render_path": input_render_path,
                         "estimated_runtime_sec": round(estimated_runtime_sec, 6) if estimated_runtime_sec is not None else None,
                         "batch_peak_memory_allocated_mb": batch_peak_allocated_mb,
                         "batch_peak_memory_reserved_mb": batch_peak_reserved_mb,

@@ -335,10 +335,12 @@ def main() -> None:
     tmp_mesh_dir = cadrille_output_root / "tmp_mesh"
     tmp_brep_dir = cadrille_output_root / "tmp_brep"
     input_points_dir = cadrille_output_root / "input_points"
+    input_renders_dir = cadrille_output_root / "input_renders"
     selected_py_dir = cadrille_output_root / "selected_py"
     selected_mesh_dir = cadrille_output_root / "selected_mesh"
     selected_brep_dir = cadrille_output_root / "selected_brep"
     selected_input_points_dir = cadrille_output_root / "selected_input_points"
+    selected_input_renders_dir = cadrille_output_root / "selected_input_renders"
 
     wrapper_scripts_root = Path(__file__).resolve().parent
     cadrille_infer_wrapper_script = wrapper_scripts_root / "cadrille_infer_wrapper.py"
@@ -529,11 +531,15 @@ def main() -> None:
             mesh_src = tmp_mesh_dir / f"{candidate_stem}.stl"
             brep_src = tmp_brep_dir / f"{candidate_stem}.{args.brep_ext}"
             input_points_src = input_points_dir / f"{candidate_stem}.json"
+            input_render_src = input_renders_dir / f"{candidate_stem}.png"
+            input_render_meta_src = input_renders_dir / f"{candidate_stem}.json"
 
             py_dst = selected_py_dir / f"{base}.py"
             mesh_dst = selected_mesh_dir / f"{base}.stl"
             brep_dst = selected_brep_dir / f"{base}.{args.brep_ext}"
             input_points_dst = selected_input_points_dir / f"{base}.json"
+            input_render_dst = selected_input_renders_dir / f"{base}.png"
+            input_render_meta_dst = selected_input_renders_dir / f"{base}.json"
 
             shutil.copy2(py_src, py_dst)
             if mesh_src.exists():
@@ -543,6 +549,11 @@ def main() -> None:
             if input_points_src.exists():
                 selected_input_points_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(input_points_src, input_points_dst)
+            if input_render_src.exists():
+                selected_input_renders_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(input_render_src, input_render_dst)
+                if input_render_meta_src.exists():
+                    shutil.copy2(input_render_meta_src, input_render_meta_dst)
 
             selected_rows.append(
                 {
@@ -553,6 +564,7 @@ def main() -> None:
                     "selected_mesh": str(mesh_dst) if mesh_src.exists() else None,
                     "selected_brep": str(brep_dst) if (args.export_brep and brep_src.exists()) else None,
                     "selected_input_points": str(input_points_dst) if input_points_src.exists() else None,
+                    "selected_input_render": str(input_render_dst) if input_render_src.exists() else None,
                     "status": "ok",
                 }
             )
@@ -593,6 +605,7 @@ def main() -> None:
             "tmp_mesh_dir": str(tmp_mesh_dir),
             "tmp_brep_dir": str(tmp_brep_dir) if args.export_brep else None,
             "input_points_dir": str(input_points_dir),
+            "input_renders_dir": str(input_renders_dir),
             "selected_candidate_index": args.selected_candidate_index,
             "gpu_memory_path": str(gpu_memory_path),
             "gpu_memory": gpu_memory_summary,
@@ -601,6 +614,7 @@ def main() -> None:
                 "selected_mesh_dir": str(selected_mesh_dir),
                 "selected_brep_dir": str(selected_brep_dir) if args.export_brep else None,
                 "selected_input_points_dir": str(selected_input_points_dir),
+                "selected_input_renders_dir": str(selected_input_renders_dir),
             },
         },
         "selection": {
