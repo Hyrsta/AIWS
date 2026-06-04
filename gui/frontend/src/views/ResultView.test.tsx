@@ -89,8 +89,33 @@ const fixtures = vi.hoisted(() => {
     backfilled: true,
     provenance: "regenerated_from_saved_bridge_stl",
   };
+  const scaledMeta = {
+    rewrite_mode: "axiswise",
+    catalog: {
+      workpiece_class: "cover_plate",
+      model_code: "G140",
+      bbox_m: [0.15, 0.404, 0.15],
+      bbox_mm: [150, 404, 150],
+    },
+    canonical_bbox: {
+      xlen: 90,
+      ylen: 200,
+      zlen: 103,
+      xmin: -45,
+      ymin: -100,
+      zmin: -51.5,
+      xmax: 45,
+      ymax: 100,
+      zmax: 51.5,
+    },
+    after_scale_bbox_mm: { xlen: 150, ylen: 404, zlen: 150 },
+    scale: {
+      mode: "axiswise",
+      matrix_3x3: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    },
+  };
 
-  return { job, metrics, pointCloud, backfilledPointCloud };
+  return { job, metrics, pointCloud, backfilledPointCloud, scaledMeta };
 });
 
 const job = fixtures.job as unknown as JobSummary;
@@ -98,6 +123,12 @@ const job = fixtures.job as unknown as JobSummary;
 vi.mock("@/components/PointCloudViewer", () => ({
   PointCloudViewer: ({ points }: { points: [number, number, number][] }) => (
     <div data-testid="point-cloud-viewer">{points.length} points</div>
+  ),
+}));
+
+vi.mock("@/components/MeshViewer", () => ({
+  MeshViewer: ({ label }: { label: string }) => (
+    <div data-testid="mesh-viewer">{label}</div>
   ),
 }));
 
@@ -112,6 +143,7 @@ vi.mock("@/api/client", () => ({
     }),
     getJsonFile: vi.fn().mockResolvedValue(fixtures.pointCloud),
     getLogs: vi.fn().mockResolvedValue({ job_id: fixtures.job.job_id, log: "" }),
+    fileUrl: vi.fn((_id: string, path: string) => `/file?path=${encodeURIComponent(path)}`),
   },
 }));
 
@@ -221,5 +253,38 @@ describe("ResultView timeline", () => {
     expect(await screen.findByText("Cadrille input preview")).toBeInTheDocument();
     expect(screen.getByText("Backfilled 256-point preview from the saved Cadrille bridge mesh")).toBeInTheDocument();
     expect(screen.getByText("Backfilled")).toBeInTheDocument();
+  });
+
+  it("shows body-count chips before range chips in generated CAD preview cards", async () => {
+    const jobWithPreviewPaths = {
+      ...fixtures.job,
+      result_paths: {
+        sam3d_mesh_stl: "/tmp/job/results/sam3d_mesh.stl",
+        selected_mesh: "/tmp/job/results/cadrille_selected_mesh.stl",
+        cleaned_mesh_stl: "/tmp/job/results/cadrille_cleaned.stl",
+        scaled_mesh_stl: "/tmp/job/results/cadrille_scaled.stl",
+        scaled_metadata: "/tmp/job/results/cadrille_scaled_metadata.json",
+      },
+    } as unknown as JobSummary;
+    vi.mocked(api.getJob).mockResolvedValueOnce(jobWithPreviewPaths);
+    vi.mocked(api.getJsonFile).mockResolvedValueOnce(fixtures.scaledMeta);
+
+    const { container } = renderResultView();
+
+    await screen.findByText("Mesh previews");
+    await screen.findByText("Target 150 × 404 × 150 mm");
+
+    const previewCells = Array.from(container.querySelectorAll<HTMLElement>(".preview-cell"));
+    const canonical = previewCells.find((cell) => cell.textContent?.includes("Cadrille canonical"));
+    const cleaned = previewCells.find((cell) => cell.textContent?.includes("Body cleanup"));
+    const scaled = previewCells.find((cell) => cell.textContent?.includes("Metric alignment"));
+
+    for (const cell of [canonical, cleaned, scaled]) {
+      expect(cell).toBeTruthy();
+      expect(cell).toHaveTextContent("1 body");
+    }
+    expect(canonical!.textContent!.indexOf("1 body")).toBeLessThan(canonical!.textContent!.indexOf("Canonical [-100, 100]"));
+    expect(cleaned!.textContent!.indexOf("1 body")).toBeLessThan(cleaned!.textContent!.indexOf("Canonical [-100, 100]"));
+    expect(scaled!.textContent!.indexOf("1 body")).toBeLessThan(scaled!.textContent!.indexOf("Target 150 × 404 × 150 mm"));
   });
 });

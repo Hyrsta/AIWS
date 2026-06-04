@@ -1002,8 +1002,11 @@ interface MeshPreviewsProps {
 function MeshPreviews({ jobId, rp, cleanup, scaledMeta, ps }: MeshPreviewsProps) {
   const { t } = useTranslation();
 
-  const bodyStr = (n: number | string) =>
-    `${n} ${n === 1 ? t("v.body") : t("v.bodies")}`;
+  const bodyStr = (n: number | string) => {
+    const count = Number(n);
+    return `${n} ${count === 1 ? t("v.body") : t("v.bodies")}`;
+  };
+  const bodyCountStr = (n: number | null | undefined) => bodyStr(n ?? 1);
 
   /* catalog target pill string for the scaled cell (prototype line 73) */
   const targetStr = scaledMeta
@@ -1048,13 +1051,13 @@ function MeshPreviews({ jobId, rp, cleanup, scaledMeta, ps }: MeshPreviewsProps)
       units: t("v.units.canon"),
       sw: "#9aa0a6",
       tone: "sig",
-      bodies: cleanup ? bodyStr(cleanup.n_bodies_before) : undefined,
+      bodies: bodyCountStr(cleanup?.n_bodies_before ?? rp.n_bodies_before),
       badgeN: cells.length + 1,
     });
   }
 
   if (rp.cleaned_mesh_stl) {
-    const nAfter = cleanup?.n_bodies_after;
+    const nAfter = cleanup?.n_bodies_after ?? rp.n_bodies_after;
     cells.push({
       id: "cleaned",
       path: rp.cleaned_mesh_stl as string,
@@ -1062,12 +1065,13 @@ function MeshPreviews({ jobId, rp, cleanup, scaledMeta, ps }: MeshPreviewsProps)
       units: t("v.units.canon"),
       sw: "#43a047",
       tone: "ok",
-      bodies: nAfter != null ? bodyStr(nAfter) : undefined,
+      bodies: bodyCountStr(nAfter),
       badgeN: cells.length + 1,
     });
   }
 
   if (ps && rp.scaled_mesh_stl) {
+    const nAfter = cleanup?.n_bodies_after ?? rp.n_bodies_after;
     cells.push({
       id: "scaled",
       path: rp.scaled_mesh_stl as string,
@@ -1077,6 +1081,7 @@ function MeshPreviews({ jobId, rp, cleanup, scaledMeta, ps }: MeshPreviewsProps)
       tone: "ok",
       pill: targetStr,
       pillIcon: "crosshair",
+      bodies: bodyCountStr(nAfter),
       badgeN: cells.length + 1,
     });
   }
@@ -1121,10 +1126,10 @@ function MeshPreviews({ jobId, rp, cleanup, scaledMeta, ps }: MeshPreviewsProps)
                       </span>
                     </span>
                   ) : null}
+                  {x.bodies ? <Chip icon="layers">{x.bodies}</Chip> : null}
                   <Chip tone={x.tone} icon={x.pillIcon ?? "cube3d"}>
                     {x.pill ?? x.units}
                   </Chip>
-                  {x.bodies ? <Chip icon="layers">{x.bodies}</Chip> : null}
                 </div>
               </div>
               <Suspense
