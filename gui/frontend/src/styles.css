@@ -447,6 +447,17 @@ input, select, textarea, button { font-family: inherit; }
 /* left inputs panel fills the column height so both sides bottom-align */
 .cfg-grid > .panel { display: flex; flex-direction: column; }
 .cfg-grid > .panel > .panel-pad { flex: 1; display: flex; flex-direction: column; }
+.cfg-grid .cfg-settings-panel { min-height: 482px; }
+.cfg-grid .cfg-post-panel { min-height: 276px; }
+.cfg-grid .cfg-post-panel .panel-head { min-height: 92px; }
+.cfg-grid .cfg-input-panel.has-sample-action .panel-head { min-height: 123px; }
+.cfg-grid .cfg-input-panel.has-sample-action .panel-head .btn {
+  width: 157px; height: 32px; padding-top: 0; padding-bottom: 0;
+}
+@media (min-width: 1081px) {
+  .cfg-grid .cfg-input-panel { min-width: 266px; }
+}
+.cfg-settings-hint { min-height: 36px; line-height: 1.45; }
 .cfg-grid > .panel .upload-pair { flex: 1; align-items: stretch; }
 .cfg-grid > .panel .upload-pair > div { display: flex; flex-direction: column; }
 .cfg-grid > .panel .upload-pair .drop { flex: 1; }
@@ -454,6 +465,16 @@ input, select, textarea, button { font-family: inherit; }
 @media (max-width: 1080px) {
   .cfg-grid > .panel .upload-pair .thumb { aspect-ratio: 4/3; flex: none; }
   .cfg-grid > .panel .upload-pair .drop { flex: none; }
+}
+
+.cfg-grid > .panel > .panel-pad.mesh-input-pad { min-height: 0; }
+.mesh-fill-area { flex: 1; min-height: 320px; display: flex; }
+.mesh-fill-area > .drop,
+.mesh-fill-area > .thumb { flex: 1; width: 100%; min-height: 0; }
+.mesh-fill-area > .thumb { aspect-ratio: auto; }
+.mesh-fill-area > .thumb .thumb-img { flex: 1; aspect-ratio: auto; }
+@media (max-width: 1080px) {
+  .mesh-fill-area { min-height: 240px; }
 }
 
 .drop {
@@ -467,6 +488,14 @@ input, select, textarea, button { font-family: inherit; }
 .drop:hover .di, .drop.over .di { color: var(--sig); }
 .drop b { color: var(--tx-hi); font-size: 14px; font-weight: 600; }
 .drop small { font-size: 12px; }
+.drop-file {
+  position: absolute; top: 9px; right: 9px;
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--ink-100); color: var(--tx-lo);
+  transition: color var(--ease) .14s, border-color var(--ease) .14s, background var(--ease) .14s;
+}
+.drop-file:hover { color: var(--sig); border-color: var(--sig-line); background: var(--sig-ink); }
 
 .upload-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .thumb {
@@ -508,7 +537,7 @@ input, select, textarea, button { font-family: inherit; }
 .opt small { font-size: 11.5px; color: var(--tx-lo); line-height: 1.3; }
 .opt.on small { color: var(--tx-md); }
 
-.gpu-label-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.gpu-label-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; }
 .gpu-device-name {
   font-size: 11px; font-weight: 600; color: var(--tx-md);
   padding: 2px 7px; border-radius: var(--r-pill, 999px);
@@ -538,8 +567,8 @@ input, select, textarea, button { font-family: inherit; }
 /* Two labelled meters per card: UTIL = compute (steady teal), VRAM = memory
    (ramps neutral→warm→hot). Distinct label + unit (% vs GB) + colour keep them
    from being confused. */
-.gpu-row { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 7px; }
-.gpu-rl { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--tx-dim); }
+.gpu-row { display: grid; grid-template-columns: 34px minmax(8px, 1fr) auto; align-items: center; gap: 5px; }
+.gpu-rl { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--tx-dim); white-space: nowrap; }
 .gpu-cell.on .gpu-rl { color: var(--tx-md); }
 .gpu-rv { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--tx-md); white-space: nowrap; }
 .gpu-rv.warm { color: var(--warn); }

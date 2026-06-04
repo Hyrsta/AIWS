@@ -54,6 +54,7 @@ DEFAULT_SIMPLE_SELECTION_MODE: Literal["evaluate", "index"] = "evaluate"
 DEFAULT_SIMPLE_SELECTED_CANDIDATE_INDEX = 0
 
 ALLOWED_UPLOAD_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+ALLOWED_MESH_UPLOAD_EXTS = {".stl", ".glb", ".obj", ".ply"}
 LOCAL_HOST_ALIASES = {"local", "localhost", "127.0.0.1", "::1", socket.gethostname(), os.uname().nodename}
 
 
@@ -296,6 +297,7 @@ def get_job_inputs(job_id: str) -> dict[str, Any]:
     input_dir = output_root / "input"
     image_path: str | None = None
     mask_path: str | None = None
+    mesh_path: str | None = None
     if input_dir.is_dir():
         for p in sorted(input_dir.iterdir()):
             stem = p.stem.lower()
@@ -303,7 +305,9 @@ def get_job_inputs(job_id: str) -> dict[str, Any]:
                 image_path = str(p)
             elif stem == "mask" and p.is_file() and mask_path is None:
                 mask_path = str(p)
-    return {"job_id": job_id, "input_image": image_path, "input_mask": mask_path}
+            elif stem == "mesh" and p.is_file() and mesh_path is None:
+                mesh_path = str(p)
+    return {"job_id": job_id, "input_image": image_path, "input_mask": mask_path, "input_mesh": mesh_path}
 
 
 @app.get("/jobs", response_model=list[JobSummary])
@@ -363,48 +367,82 @@ def create_e2e_run(request: E2ERunRequest) -> JobSummary:
 
 @app.post("/jobs/simple-reconstruct", response_model=JobSummary)
 async def create_simple_reconstruct(
-    image: UploadFile = File(...),
-    mask: UploadFile = File(...),
+    image: Optional[UploadFile] = File(None),
+    mask: Optional[UploadFile] = File(None),
+    mesh: Optional[UploadFile] = File(None),
+    input_mode: Literal["image_mask", "mesh"] = Form("image_mask"),
     cadrille_checkpoint_preset: Literal["SFT", "RL"] = Form(DEFAULT_SIMPLE_CADRILLE_CHECKPOINT_PRESET),
     cadrille_mode: Literal["PC", "IMG"] = Form(DEFAULT_SIMPLE_CADRILLE_MODE.upper()),
     workpiece_class: Optional[str] = Form(None),
     model_code: Optional[str] = Form(None),
     gpu_index: Optional[int] = Form(None),
 ) -> JobSummary:
-    image_name = sanitize_upload_name(image.filename or "input.png")
-    mask_name = sanitize_upload_name(mask.filename or "mask.png")
-    image_ext = Path(image_name).suffix.lower()
-    mask_ext = Path(mask_name).suffix.lower()
-    if image_ext not in ALLOWED_UPLOAD_EXTS:
-        raise HTTPException(status_code=400, detail=f"Unsupported image type: {image_ext}")
-    if mask_ext not in ALLOWED_UPLOAD_EXTS:
-        raise HTTPException(status_code=400, detail=f"Unsupported mask type: {mask_ext}")
+    image_name: str | None = None
+    mask_name: str | None = None
+    mesh_name: str | None = None
+    image_ext: str | None = None
+    mask_ext: str | None = None
+    mesh_ext: str | None = None
+
+    if input_mode == "mesh":
+        if mesh is None:
+            raise HTTPException(status_code=400, detail="Mesh upload is required for mesh input mode")
+        mesh_name = sanitize_upload_name(mesh.filename or "mesh.stl")
+        mesh_ext = Path(mesh_name).suffix.lower()
+        if mesh_ext not in ALLOWED_MESH_UPLOAD_EXTS:
+            raise HTTPException(status_code=400, detail=f"Unsupported mesh type: {mesh_ext}")
+    else:
+        if image is None or mask is None:
+            raise HTTPException(status_code=400, detail="Image and mask uploads are required for image/mask input mode")
+        image_name = sanitize_upload_name(image.filename or "input.png")
+        mask_name = sanitize_upload_name(mask.filename or "mask.png")
+        image_ext = Path(image_name).suffix.lower()
+        mask_ext = Path(mask_name).suffix.lower()
+        if image_ext not in ALLOWED_UPLOAD_EXTS:
+            raise HTTPException(status_code=400, detail=f"Unsupported image type: {image_ext}")
+        if mask_ext not in ALLOWED_UPLOAD_EXTS:
+            raise HTTPException(status_code=400, detail=f"Unsupported mask type: {mask_ext}")
 
     job_id = f"simple_reconstruct-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
     local_job_root = JOBS_ROOT / job_id
     local_input_root = local_job_root / "input"
     local_input_root.mkdir(parents=True, exist_ok=True)
 
-    local_image_path = local_input_root / f"input{image_ext}"
-    local_mask_path = local_input_root / f"mask{mask_ext}"
-    local_image_path.write_bytes(await image.read())
-    local_mask_path.write_bytes(await mask.read())
-
     ssh_host = "local"
     remote_workdir = DEFAULT_REMOTE_WORKDIR
     remote_job_root = f"{DEFAULT_SIMPLE_REMOTE_ROOT}/{job_id}"
     remote_input_root = f"{remote_job_root}/input"
-    remote_image_path = f"{remote_input_root}/input{image_ext}"
-    remote_mask_path = f"{remote_input_root}/mask{mask_ext}"
     status_path = f"{remote_job_root}/status.json"
     log_path = f"{remote_job_root}/job.log"
+
+    local_image_path: Path | None = None
+    local_mask_path: Path | None = None
+    local_mesh_path: Path | None = None
+    remote_image_path: str | None = None
+    remote_mask_path: str | None = None
+    remote_mesh_path: str | None = None
+
+    if input_mode == "mesh":
+        local_mesh_path = local_input_root / f"mesh{mesh_ext}"
+        local_mesh_path.write_bytes(await mesh.read())
+        remote_mesh_path = f"{remote_input_root}/mesh{mesh_ext}"
+    else:
+        local_image_path = local_input_root / f"input{image_ext}"
+        local_mask_path = local_input_root / f"mask{mask_ext}"
+        local_image_path.write_bytes(await image.read())
+        local_mask_path.write_bytes(await mask.read())
+        remote_image_path = f"{remote_input_root}/input{image_ext}"
+        remote_mask_path = f"{remote_input_root}/mask{mask_ext}"
 
     run_ssh_script(
         ssh_host,
         f"mkdir -p {shlex.quote(remote_job_root)} {shlex.quote(remote_input_root)}",
     )
-    upload_file_to_remote(ssh_host, local_image_path, remote_image_path)
-    upload_file_to_remote(ssh_host, local_mask_path, remote_mask_path)
+    if input_mode == "mesh":
+        upload_file_to_remote(ssh_host, local_mesh_path, remote_mesh_path)
+    else:
+        upload_file_to_remote(ssh_host, local_image_path, remote_image_path)
+        upload_file_to_remote(ssh_host, local_mask_path, remote_mask_path)
 
     selected_checkpoint = SIMPLE_CADRILLE_CHECKPOINT_PRESETS[cadrille_checkpoint_preset]
     selected_mode = cadrille_mode.lower()
@@ -417,10 +455,14 @@ async def create_simple_reconstruct(
         f"{DEFAULT_REMOTE_WORKDIR}/gui/backend/simple_reconstruct_job.py",
         "--repo-root",
         DEFAULT_REMOTE_WORKDIR,
-        "--input-image",
-        remote_image_path,
-        "--input-mask",
-        remote_mask_path,
+        "--input-mode",
+        input_mode,
+    ]
+    if input_mode == "mesh":
+        command.extend(["--input-mesh", remote_mesh_path])
+    else:
+        command.extend(["--input-image", remote_image_path, "--input-mask", remote_mask_path])
+    command.extend([
         "--job-root",
         remote_job_root,
         "--status-path",
@@ -449,7 +491,7 @@ async def create_simple_reconstruct(
         DEFAULT_SIMPLE_SELECTION_MODE,
         "--selected-candidate-index",
         str(DEFAULT_SIMPLE_SELECTED_CANDIDATE_INDEX),
-    ]
+    ])
     command.append("--export-brep" if DEFAULT_SIMPLE_EXPORT_BREP else "--no-export-brep")
     # Optional post-scaling args. The job runner only runs the stage when a
     # workpiece_class is provided; model_code is required for non-h_beam.
@@ -485,8 +527,10 @@ async def create_simple_reconstruct(
         "updated_at": now_ts(),
         "exit_code": None,
         "request": {
+            "input_mode": input_mode,
             "image_filename": image_name,
             "mask_filename": mask_name,
+            "mesh_filename": mesh_name,
             "cadrille_checkpoint_preset": cadrille_checkpoint_preset,
             "cadrille_checkpoint": selected_checkpoint,
             "cadrille_mode": selected_mode,

@@ -25,6 +25,12 @@ interface ImageSlot {
   name: string;
 }
 
+interface MeshSlot {
+  file: File;
+  name: string;
+  sizeBytes: number;
+}
+
 /* ---------- readImageFile ---------- */
 
 function readImageFile(file: File): Promise<ImageSlot> {
@@ -32,11 +38,38 @@ function readImageFile(file: File): Promise<ImageSlot> {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () =>
-      resolve({ file, url, w: img.naturalWidth, h: img.naturalHeight, name: file.name });
+      resolve({
+        file,
+        url,
+        w: img.naturalWidth,
+        h: img.naturalHeight,
+        name: file.name,
+      });
     img.onerror = () =>
-      resolve({ file, url, w: 0, h: 0, name: file.name });
+      resolve({
+        file,
+        url,
+        w: 0,
+        h: 0,
+        name: file.name,
+      });
     img.src = url;
   });
+}
+
+function readMeshFile(file: File): MeshSlot {
+  return {
+    file,
+    name: file.name,
+    sizeBytes: file.size,
+  };
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 /* ---------- Toggle ---------- */
@@ -149,6 +182,62 @@ function DropZone({ slot, value, onPick, onClear }: DropZoneProps) {
         ref={inputRef}
         type="file"
         accept="image/*"
+        data-upload-kind={`${slot}-file`}
+        style={{ display: "none" }}
+        onChange={(e) => handle(e.target.files)}
+      />
+    </div>
+  );
+}
+
+interface MeshDropZoneProps {
+  value: MeshSlot | null;
+  onPick: (file: File) => void;
+  onClear: () => void;
+}
+
+function MeshDropZone({ value, onPick, onClear }: MeshDropZoneProps) {
+  const { t } = useTranslation();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
+
+  const handle = (files: FileList | null) => {
+    if (files && files[0]) onPick(files[0]);
+  };
+
+  if (value) {
+    return (
+      <div className="thumb">
+        <div className="thumb-img" style={{ display: "grid", placeItems: "center" }}>
+          <Icon n="cube3d" size={58} style={{ color: "var(--sig)" }} />
+          <button className="x" title={t("upl.remove")} onClick={onClear}>
+            <Icon n="x" size={20} sw={2.6} />
+          </button>
+        </div>
+        <div className="thumb-cap">
+          <b className="thumb-name" title={value.name}>{value.name}</b>
+          <span className="dim">{formatBytes(value.sizeBytes)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={"drop" + (over ? " over" : "")}
+      onClick={() => inputRef.current?.click()}
+      onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { e.preventDefault(); setOver(false); handle(e.dataTransfer.files); }}
+    >
+      <Icon n="cube3d" className="di" />
+      <b>{t("upl.dropMesh")}</b>
+      <small>{t("upl.meshFormats")}</small>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".stl,.glb,.obj,.ply"
+        data-upload-kind="mesh-file"
         style={{ display: "none" }}
         onChange={(e) => handle(e.target.files)}
       />
@@ -198,8 +287,10 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
     return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   };
 
+  const [inputMode, setInputMode] = useState<"image_mask" | "mesh">("image_mask");
   const [photo, setPhoto] = useState<ImageSlot | null>(null);
   const [mask, setMask] = useState<ImageSlot | null>(null);
+  const [mesh, setMesh] = useState<MeshSlot | null>(null);
   const [ckpt, setCkpt] = useState<"RL" | "SFT">("RL");
   const [mode, setMode] = useState<"PC" | "IMG">("PC");
   const [gpu, setGpu] = useState<string>(""); // "" until a GPU is auto-selected
@@ -256,14 +347,15 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
     mask.w > 0 &&
     !(photo.w === mask.w && photo.h === mask.h);
 
+  const imageReady = photo !== null && mask !== null && !dimMismatch;
+  const meshReady = mesh !== null;
   const ready =
-    photo !== null &&
-    mask !== null &&
-    !dimMismatch &&
+    (inputMode === "mesh" ? meshReady : imageReady) &&
     (!psOn || (wclass !== "" && model !== ""));
 
   const pickPhoto = async (f: File) => setPhoto(await readImageFile(f));
   const pickMask = async (f: File) => setMask(await readImageFile(f));
+  const pickMesh = (f: File) => setMesh(readMeshFile(f));
 
   // Populate both slots with the bundled demo pair. Fetches the bundled assets
   // and rebuilds real File objects (onStart requires actual Files, not URLs),
@@ -300,6 +392,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
     revokeSlot(mask);
     setMask(null);
   };
+  const clearMesh = () => setMesh(null);
 
   const handleWclassChange = (v: string) => {
     setWclass(v);
@@ -307,15 +400,25 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
   };
 
   const onStartClick = () => {
-    if (!ready || !photo || !mask) return;
-    onStart({
-      image: photo.file,
-      mask: mask.file,
+    if (!ready) return;
+    const base = {
       cadrille_checkpoint_preset: ckpt,
       cadrille_mode: mode,
       workpiece_class: psOn ? wclass : null,
       model_code: psOn ? model : null,
       gpu_index: gpu === "" ? null : Number(gpu),
+    };
+    if (inputMode === "mesh") {
+      if (!mesh) return;
+      onStart({ input_mode: "mesh", mesh: mesh.file, ...base });
+      return;
+    }
+    if (!photo || !mask) return;
+    onStart({
+      input_mode: "image_mask",
+      image: photo.file,
+      mask: mask.file,
+      ...base,
     });
   };
 
@@ -346,77 +449,122 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
 
       <div className="cfg-grid">
         {/* ---- left: inputs ---- */}
-        <div className="panel reveal-2">
+        <div
+          className={
+            "panel reveal-2 cfg-input-panel" +
+            (inputMode === "image_mask" ? " has-sample-action" : "")
+          }
+        >
           <div className="panel-head">
             <div>
               <h3>{t("upl.inputs")}</h3>
-              <p>{t("upl.formats")}</p>
+              <p>{t(inputMode === "mesh" ? "upl.meshFormats" : "upl.formats")}</p>
             </div>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => { void useSample(); }}
-              disabled={sampleBusy}
-            >
-              <Icon
-                n={sampleBusy ? "refresh" : "image"}
-                size={14}
-                className={sampleBusy ? "spin-ico" : undefined}
-              />
-              {t("upl.usePair")}
-            </button>
+            {inputMode === "image_mask" ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => { void useSample(); }}
+                disabled={sampleBusy}
+              >
+                <Icon
+                  n={sampleBusy ? "refresh" : "image"}
+                  size={14}
+                  className={sampleBusy ? "spin-ico" : undefined}
+                />
+                {t("upl.usePair")}
+              </button>
+            ) : null}
           </div>
 
-          <div className="panel-pad">
-            <div className="upload-pair">
-              <div>
-                <div className="field" style={{ marginBottom: 8 }}>
-                  <label>
-                    <Icon n="image" size={14} />
-                    {t("upl.photo")}
-                  </label>
-                </div>
-                <DropZone
-                  slot="photo"
-                  value={photo}
-                  onPick={(f) => { void pickPhoto(f); }}
-                  onClear={clearPhoto}
+          <div className={"panel-pad" + (inputMode === "mesh" ? " mesh-input-pad" : "")}>
+            <div className="field">
+              <label>{t("upl.inputSource")}</label>
+              <div className="opt-row">
+                <Opt
+                  title={t("upl.imageMask")}
+                  desc={t("upl.imageMaskDesc")}
+                  on={inputMode === "image_mask"}
+                  onClick={() => setInputMode("image_mask")}
                 />
-              </div>
-              <div>
-                <div className="field" style={{ marginBottom: 8 }}>
-                  <label>
-                    <Icon n="scan" size={14} />
-                    {t("upl.mask")}
-                  </label>
-                </div>
-                <DropZone
-                  slot="mask"
-                  value={mask}
-                  onPick={(f) => { void pickMask(f); }}
-                  onClear={clearMask}
+                <Opt
+                  title={t("upl.meshInput")}
+                  desc={t("upl.meshInputDesc")}
+                  on={inputMode === "mesh"}
+                  onClick={() => setInputMode("mesh")}
                 />
               </div>
             </div>
 
-            {dimMatch ? (
-              <div className="validate ok mt-16">
-                <Icon n="checkCircle" size={16} />
-                {t("upl.dimMatch")}
-              </div>
-            ) : null}
-            {dimMismatch ? (
-              <div className="validate bad mt-16">
-                <Icon n="alert" size={16} />
-                {t("upl.dimMismatch")}
-              </div>
-            ) : null}
+            {inputMode === "image_mask" ? (
+              <>
+                <div className="upload-pair">
+                  <div>
+                    <div className="field" style={{ marginBottom: 8 }}>
+                      <label>
+                        <Icon n="image" size={14} />
+                        {t("upl.photo")}
+                      </label>
+                    </div>
+                    <DropZone
+                      slot="photo"
+                      value={photo}
+                      onPick={(f) => { void pickPhoto(f); }}
+                      onClear={clearPhoto}
+                    />
+                  </div>
+                  <div>
+                    <div className="field" style={{ marginBottom: 8 }}>
+                      <label>
+                        <Icon n="scan" size={14} />
+                        {t("upl.mask")}
+                      </label>
+                    </div>
+                    <DropZone
+                      slot="mask"
+                      value={mask}
+                      onPick={(f) => { void pickMask(f); }}
+                      onClear={clearMask}
+                    />
+                  </div>
+                </div>
+
+                {dimMatch ? (
+                  <div className="validate ok mt-16">
+                    <Icon n="checkCircle" size={16} />
+                    {t("upl.dimMatch")}
+                  </div>
+                ) : null}
+                {dimMismatch ? (
+                  <div className="validate bad mt-16">
+                    <Icon n="alert" size={16} />
+                    {t("upl.dimMismatch")}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="field" style={{ marginBottom: 8 }}>
+                  <label>
+                    <Icon n="cube3d" size={14} />
+                    {t("upl.mesh")}
+                  </label>
+                </div>
+                <div className="mesh-fill-area">
+                  <MeshDropZone
+                    value={mesh}
+                    onPick={pickMesh}
+                    onClear={clearMesh}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
 
         {/* ---- right: settings ---- */}
         <div className="stack gap-20">
-          <div className="panel reveal-2">
+          <div className="panel reveal-2 cfg-settings-panel">
             <div className="panel-head">
               <div>
                 <h3>{t("set.cadrille")}</h3>
@@ -456,7 +604,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
                     onClick={() => setMode("IMG")}
                   />
                 </div>
-                <p className="hint" style={{ margin: "8px 0 0" }}>
+                <p className="hint cfg-settings-hint" style={{ margin: "8px 0 0" }}>
                   {t(mode === "IMG" ? "md.hint.img" : "md.hint.pc")}
                 </p>
               </div>
@@ -553,7 +701,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
            * dimmed, non-interactive preview state so the layout is symmetric +
            * stable.
            */}
-          <div className="panel reveal-3">
+          <div className="panel reveal-3 cfg-post-panel">
             <div className="panel-head">
               <div>
                 <h3>
