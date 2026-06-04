@@ -2,9 +2,10 @@
    LiveView — pixel-accurate port of AIWS Design Reference aiws/live.jsx.
    Uses real data layer: useJobPolling, visibleStages/stageToStep, fmtElapsed.
    ============================================================ */
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useJobPolling } from "@/hooks/useJobPolling";
+import { useNow } from "@/hooks/useNow";
 import { visibleStages, stageToStep, failedStep } from "@/lib/stages";
 import { fmtElapsed } from "@/lib/format";
 import { api } from "@/api/client";
@@ -57,8 +58,9 @@ function PipelineStepper({ job, hasPostscale }: PipelineStepperProps) {
       ? failedIdx
       : stageToStep(job.stage_label, hasPostscale);
 
-  // Per-stage timing from backend
-  const nowSec = Date.now() / 1000;
+  // Per-stage timing from backend. nowSec ticks only while the job runs (it is
+  // only read for the live stage's in-progress duration below).
+  const nowSec = useNow(job.status === "running");
   const timings = job.stage_timings ?? {};
 
   // Backend stage labels aligned with STAGE_DEFS indices
@@ -171,35 +173,18 @@ function PipelineStepper({ job, hasPostscale }: PipelineStepperProps) {
    Elapsed timer hook
    ============================================================ */
 function useElapsed(job: JobSummary | undefined): string {
-  const [elapsed, setElapsed] = useState("0.0s");
-
-  useEffect(() => {
-    if (!job) return;
-    const isTerminal =
-      job.status === "completed" ||
+  const isTerminal =
+    !!job &&
+    (job.status === "completed" ||
       job.status === "failed" ||
-      job.status === "terminated";
-
-    const startSec = job.started_at ?? job.created_at;
-
-    function tick() {
-      const nowSec = Date.now() / 1000;
-      setElapsed(fmtElapsed(Math.max(0, nowSec - startSec)));
-    }
-
-    if (isTerminal) {
-      // Show final elapsed without a running interval
-      const endSec = job.ended_at ?? (Date.now() / 1000);
-      setElapsed(fmtElapsed(Math.max(0, endSec - startSec)));
-      return;
-    }
-
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [job, job?.status]);  // re-run when status becomes terminal
-
-  return elapsed;
+      job.status === "terminated");
+  // Tick once a second only while in flight; a terminal job uses its recorded
+  // end time (so elapsed freezes), matching the previous behavior.
+  const nowSec = useNow(!!job && !isTerminal);
+  if (!job) return "0.0s";
+  const startSec = job.started_at ?? job.created_at;
+  const endSec = isTerminal ? (job.ended_at ?? nowSec) : nowSec;
+  return fmtElapsed(Math.max(0, endSec - startSec));
 }
 
 /* ============================================================
