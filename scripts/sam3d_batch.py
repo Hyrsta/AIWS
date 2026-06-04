@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 import os
+import random
 import socket
 import sys
 import time
@@ -198,6 +199,57 @@ def append_jsonl(path: Path, row: dict[str, Any]) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def configure_sam3d_determinism(seed: int, *, inference: Any = None, torch_module: Any = None) -> None:
+    """Reset all known SAM3D RNG sources before model inference.
+
+    Mirrors the live GUI helper (gui/backend/simple_reconstruct_job.py). SAM3D's
+    public seed only calls torch.manual_seed() inside the pipeline run(); this also
+    pins Python/NumPy/CUDA RNGs, cuDNN determinism, and the model-local diffusion
+    generators so repeated batch runs reproduce the same stochastic sample where the
+    hardware permits. NOTE: residual nondeterminism remains (scatter/interpolate ops,
+    MoGe GPU FFT) because use_deterministic_algorithms is warn_only.
+    """
+    seed_int = int(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed_int)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    random.seed(seed_int)
+    np.random.seed(seed_int)
+
+    if torch_module is not None:
+        torch_module.manual_seed(seed_int)
+        cuda = getattr(torch_module, "cuda", None)
+        if cuda is not None and cuda.is_available():
+            cuda.manual_seed(seed_int)
+            cuda.manual_seed_all(seed_int)
+        cudnn = getattr(getattr(torch_module, "backends", None), "cudnn", None)
+        if cudnn is not None:
+            cudnn.benchmark = False
+            cudnn.deterministic = True
+        use_deterministic = getattr(torch_module, "use_deterministic_algorithms", None)
+        if use_deterministic is not None:
+            use_deterministic(True, warn_only=True)
+
+    pipeline = getattr(inference, "_pipeline", None)
+    models = getattr(pipeline, "models", None)
+    if models is None:
+        return
+    for name in ("ss_generator", "slat_generator"):
+        model = None
+        try:
+            if name in models:
+                model = models[name]
+        except Exception:
+            getter = getattr(models, "get", None)
+            if getter is not None:
+                model = getter(name)
+        if model is None:
+            continue
+        try:
+            model.seed = seed_int
+        except Exception as exc:  # noqa: BLE001
+            print(f"[sam3d-seed] could not reset {name} generator: {exc!r}", flush=True)
+
+
 def patch_torch_hub_for_local_dinov2(torch: Any) -> None:
     local_repo = Path(torch.hub.get_dir()) / "facebookresearch_dinov2_main"
     if not local_repo.exists():
@@ -251,6 +303,10 @@ def task_output_dir(output_root: Path, task: Task) -> Path:
 
 def main() -> None:
     args = parse_args()
+    # Determinism: pin RNG sources as early as possible (mirrors the GUI path), and
+    # drop any inherited base-conda sequential-MKL LD_PRELOAD that breaks MoGe's FFT.
+    os.environ.pop("LD_PRELOAD", None)
+    configure_sam3d_determinism(args.seed)
     if args.num_shards < 1:
         raise SystemExit("--num-shards must be >= 1")
     if args.shard_index < 0 or args.shard_index >= args.num_shards:
@@ -282,6 +338,7 @@ def main() -> None:
     import torch
 
     patch_torch_hub_for_local_dinov2(torch)
+    configure_sam3d_determinism(args.seed, torch_module=torch)
 
     config_path = repo_root / "checkpoints" / "hf" / "pipeline.yaml"
     model_init_started = time.time()
@@ -359,6 +416,7 @@ def main() -> None:
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.synchronize()
+            configure_sam3d_determinism(args.seed, inference=inference, torch_module=torch)
             output = inference(image_np, mask_np, seed=args.seed)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
