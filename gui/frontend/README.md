@@ -1,73 +1,58 @@
-# React + TypeScript + Vite
+# AIWS GUI Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The web UI for the AIWS reconstruction GUI: a React + TypeScript single-page app built with Vite. It talks to the FastAPI backend over a small JSON API and is compiled (`npm run build`) into a static bundle that the backend serves at `/`. For the full system (backend, execution model, deployment), see [`../README.md`](../README.md).
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 19 + TypeScript, bundled by Vite.
+- Tailwind CSS with shadcn/ui components (in `src/components/ui`).
+- TanStack Query for server state and job polling.
+- three.js via `@react-three/fiber` + `drei` for the result mesh and point-cloud viewers.
+- i18next for a bilingual UI (English / 中文).
+- Vitest + Testing Library for unit tests.
 
-## React Compiler
+## Structure
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+src/
+├── main.tsx              # app entry
+├── App.tsx               # top-level layout; switches between the step views
+├── views/                # ConfigureView, LiveView, ResultView (configure → live → result)
+├── components/           # feature components (3D viewers, stepper, log console, metric cards, ...)
+│   └── ui/               # shadcn/ui primitives
+├── api/                  # typed API client (client.ts) + response types (types.ts)
+├── hooks/                # custom hooks (e.g. useJobPolling for live job status)
+├── lib/                  # format, stages, validation, and utility helpers
+├── i18n/                 # i18next setup + en.json / zh.json
+└── assets/               # static images and sample inputs
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Develop
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+```bash
+npm install            # first time
+npm run dev            # Vite dev server on http://localhost:5173
+```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+The dev server proxies the API routes (`/health`, `/catalog`, `/jobs`, `/preview`, `/outputs`) to the backend at `http://127.0.0.1:18000`, so keep a backend running alongside it. Point at a different backend with `VITE_BACKEND_URL`:
+
+```bash
+VITE_BACKEND_URL=http://127.0.0.1:18000 npm run dev
+```
+
+## Build
+
+```bash
+npm run build          # type-checks (tsc -b), then writes the static bundle to dist/
+```
+
+The backend mounts `dist/` at `/`, so a build is required before the backend can serve the UI. Assets use relative URLs (`base: ""` in `vite.config.ts`), so the same bundle works at the server root and behind an SSH tunnel.
+
+## Test, type-check, lint
+
+```bash
+npm test               # unit tests (Vitest)
+npm run test:watch     # watch mode
+npm run typecheck      # tsc --noEmit -p tsconfig.app.json
+npm run lint           # eslint
 ```
