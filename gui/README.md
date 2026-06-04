@@ -1,88 +1,75 @@
-# AIWS End-to-End GUI (v1)
+# AIWS End-to-End GUI
 
-V1 uses:
-- **FastAPI** as a small orchestration backend
-- **Streamlit** as the interactive frontend
-- **SSH to `RXL`** as the default execution path, because the heavy SAM3D/Cadrille pipeline currently lives on the remote server
+The GUI is a **React (Vite) single-page app served by a small FastAPI backend**. The backend orchestrates the heavy SAM3D/Cadrille reconstruction pipeline on the remote GPU server (`RXL`) over SSH, tracks jobs, and serves results back to the browser.
 
-## What v1 supports
+There is no separate frontend server: `npm run build` compiles the React app to `gui/frontend/dist`, and the FastAPI app mounts that bundle at `/`, so the API and the UI are served together from **one port (18000)**.
 
-- Launch a **full multi-GPU Cadrille batch run** with `cadrille_batch.py`
-- Launch a **single e2e run** with `e2e_sam3d_to_cadrille.py`
-- Track background jobs by remote PID + status file
-- Tail job logs from the GUI
-- Summarize output roots and per-shard progress
-- Preview remote **STL meshes interactively** in the Outputs tab
+## What it supports
 
-## Current scope
+- Run a single end-to-end reconstruction from an image + mask through SAM3D and Cadrille (PC or IMG mode).
+- Track background jobs by remote PID + on-disk status file, with a live stage stepper and streamed logs.
+- A body-cleanup review banner and a visible cleanup stage that removes hallucinated bodies after Cadrille selection.
+- Cancel a running job (process-group + Docker container teardown).
+- Interactive browser viewers for the result mesh and point cloud (three.js / react-three-fiber), plus metric cards and downloads.
+- Bilingual UI (English / 中文).
 
-This first cut is still **orchestration-first**, but it now includes a practical
-STL viewer for remote results. The current preview path focuses on:
-
-- `selected_mesh/*.stl`
-- `tmp_mesh/*.stl`
-
-STEP preview is still a later step.
-
-## File layout
+## Architecture
 
 ```text
 gui/
 ├── backend/
 │   ├── __init__.py
-│   └── app.py
-├── README.md
-├── requirements.txt
-└── streamlit_app.py
+│   ├── app.py                   # FastAPI: orchestrates SSH jobs AND serves the built SPA at /
+│   └── simple_reconstruct_job.py
+├── frontend/                    # React + TypeScript + Vite SPA
+│   ├── src/                     # views/ (Configure, Live, Result), components/, api/ client, i18n/
+│   ├── package.json
+│   └── vite.config.ts
+├── requirements.txt             # backend Python deps
+└── README.md
 ```
 
-## Setup
+The backend exposes `/health`, `/catalog`, `/jobs`, `/preview`, and `/outputs`. The frontend calls them with relative URLs (`base: ""` in `vite.config.ts`), so the same build works in production and through an SSH tunnel.
+
+## Backend setup
 
 ```bash
-cd /Users/hyrsta/.openclaw/workspaces/welding-algorithm
+cd /path/to/AIWS
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r gui/requirements.txt
 ```
 
-## Start backend
+## Build the frontend (required before the backend can serve the UI)
 
 ```bash
-uvicorn gui.backend.app:app --reload --port 8000
+cd gui/frontend
+npm install        # first time only
+npm run build      # writes gui/frontend/dist that the backend serves at /
 ```
 
-## Start frontend
+## Run
 
 ```bash
-streamlit run gui/streamlit_app.py
+uvicorn gui.backend.app:app --host 127.0.0.1 --port 18000
 ```
 
-If your backend is not on `http://127.0.0.1:8000`, set:
+Then open `http://127.0.0.1:18000`.
+
+## Local frontend development (hot reload)
+
+To iterate on the UI without rebuilding each time, run the Vite dev server next to a running backend:
 
 ```bash
-export AIWS_GUI_BACKEND=http://127.0.0.1:8000
+cd gui/frontend
+npm run dev        # Vite dev server on port 5173
 ```
 
-## Assumptions
+It proxies `/health`, `/catalog`, `/jobs`, `/preview`, and `/outputs` to the backend at `http://127.0.0.1:18000` (override with `VITE_BACKEND_URL`).
 
-- `ssh RXL` works from the machine running the backend
-- Remote project root is `/ssd1/rxl/zhankaiming/AIWS`
-- Remote Python is `/home/rxl/anaconda3/envs/sam3d-objects/bin/python`
-- Current SAM3D output root defaults to:
-  `/ssd1/rxl/zhankaiming/AIWS/outputs/sam3d-aiws52-clean-mesh-stl-20260410-193527`
+## Execution model and assumptions
 
-## Current preview implementation
-
-- Backend lists remote mesh files over SSH
-- Backend reads the selected remote STL file and converts it to a JSON mesh payload
-- Streamlit renders it with `Plotly Mesh3d`
-
-Large meshes are reduced to a configurable preview face budget before rendering.
-
-## Next recommended step
-
-If we want a richer viewer after this, the next good upgrades are:
-- side-by-side input/output comparison
-- candidate switching (`tmp_mesh` vs `selected_mesh`)
-- STEP/BRep preview pathway
-- a browser-side Three.js viewer for richer interaction
+- The heavy SAM3D/Cadrille pipeline runs on the remote server `RXL`, so the backend shells out over SSH. `ssh RXL` must work from the machine running the backend.
+- Remote project root is `/ssd1/rxl/zhankaiming/AIWS`.
+- Reconstruction jobs run inside the `cadrille:latest` Docker image on RXL. The backend launches each job detached and tracks it from its on-disk `status.json`, so jobs survive a backend restart.
+- To reach a backend running on RXL from your local machine, forward the port over SSH (`ssh -N -L 18000:127.0.0.1:18000 RXL`) and open `http://127.0.0.1:18000`.
