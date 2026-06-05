@@ -46,4 +46,4 @@ jobs:
       - run: pip install pytest -r gui/requirements.txt
       # tests/test_body_cleanup.py needs CadQuery/OCP and the cadrille:latest image,
       # so it is excluded here and run inside Docker on RXL instead.
-      - run: pytest tests/test_body_cleanup_core.py tests/test_simple_job_cleanup_wiring.py -v
+      - run: pytest tests/test_body_cleanup_core.py tests/test_simple_job_cleanup_wiring.py tests/test_cadrille_pointcloud_seed.py -v

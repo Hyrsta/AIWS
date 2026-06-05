@@ -59,6 +59,7 @@ def parse_args() -> argparse.Namespace:
     cad.add_argument("--cadrille-input-source", choices=("mesh", "point_cloud", "multi_view"), default="mesh", help="Input representation expected by the prepared split")
     cad.add_argument("--cadrille-n-samples", type=int, default=None, help="Number of candidates per sample (defaults: pc=5, img=1)")
     cad.add_argument("--cadrille-batch-size", type=int, default=64, help="Batch size used during Cadrille inference")
+    cad.add_argument("--seed", type=int, default=42, help="Base seed for deterministic cadrille point-cloud sampling")
     cad.add_argument("--cadrille-output-root", type=Path, required=True, help="Output root for inference, evaluation, and selected CAD outputs")
     cad.add_argument("--mesh-ext", default="stl", help="Mesh extension used for prepared split files and mesh evaluation")
     cad.add_argument("--point-cloud-exts", default="ply,pcd,xyz,txt,npz,npy", help="Comma-separated point-cloud extensions for evaluation fallback")
@@ -435,6 +436,8 @@ def main() -> None:
         str(cadrille_n_samples),
         "--batch-size",
         str(args.cadrille_batch_size),
+        "--seed",
+        str(args.seed),
     ]
     if args.skip_cadrille_inference:
         if not args.dry_run and not tmp_py_dir.exists():
