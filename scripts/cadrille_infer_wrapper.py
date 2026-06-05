@@ -16,6 +16,8 @@ from torch.utils.data import ConcatDataset, DataLoader
 from tqdm import tqdm
 from transformers import AutoProcessor
 
+from cadrille_seeding import SeededDataset  # sibling module in scripts/
+
 
 def cuda_synchronize_all() -> None:
     if not torch.cuda.is_available():
@@ -243,6 +245,7 @@ def write_gpu_memory_report(
     processor_path: str,
     batch_size: int | None,
     n_samples: int,
+    seed: int,
     num_workers: int | None,
     dataset_size: int | None,
     batches_processed: int,
@@ -275,6 +278,7 @@ def write_gpu_memory_report(
         "processor_path": processor_path,
         "batch_size": batch_size,
         "n_samples": n_samples,
+        "seed": seed,
         "num_workers": num_workers,
         "dataset_size": dataset_size,
         "batches_processed": batches_processed,
@@ -330,6 +334,7 @@ def run(
     py_path: Path,
     n_samples: int,
     batch_size_override: int | None,
+    seed: int,
 ) -> None:
     if mode not in {"pc", "img"}:
         raise ValueError("AIWS Cadrille wrapper supports only mode=pc or mode=img")
@@ -404,7 +409,7 @@ def run(
 
         num_workers = 16
         dataloader = DataLoader(
-            dataset=ConcatDataset([dataset] * n_samples),
+            dataset=SeededDataset(ConcatDataset([dataset] * n_samples), seed=seed),
             batch_size=batch_size,
             num_workers=num_workers,
             collate_fn=partial(
@@ -528,6 +533,7 @@ def run(
             processor_path=processor_path,
             batch_size=batch_size,
             n_samples=n_samples,
+            seed=seed,
             num_workers=num_workers,
             dataset_size=(len(dataset) if dataset is not None else None),
             batches_processed=batches_processed,
@@ -551,6 +557,7 @@ if __name__ == "__main__":
     parser.add_argument("--py-path", type=Path, default=Path("./work_dirs/tmp_py"))
     parser.add_argument("--n-samples", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=42, help="Base seed for deterministic point-cloud sampling")
     args = parser.parse_args()
 
     run(
@@ -563,4 +570,5 @@ if __name__ == "__main__":
         py_path=args.py_path,
         n_samples=args.n_samples,
         batch_size_override=args.batch_size,
+        seed=args.seed,
     )
