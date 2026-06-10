@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -145,6 +146,64 @@ def write_status(
         payload["result_paths"] = result_paths
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def configure_sam3d_determinism(
+    seed: int,
+    *,
+    inference: Any | None = None,
+    torch_module: Any | None = None,
+    np_module: Any = np,
+    random_module: Any = random,
+) -> None:
+    """Reset all known SAM3D RNG sources before model inference.
+
+    SAM3D's public seed only calls torch.manual_seed(). The GUI path also
+    resets Python/NumPy/CUDA RNGs and the model-local generators so repeated
+    jobs use the same stochastic sample when the environment permits it.
+    Mirrors scripts/sam3d_batch.py.
+    """
+    # np.random.seed and PYTHONHASHSEED only accept [0, 2**32); normalize so any
+    # integer seed keeps working, with every RNG here fed the same value.
+    seed_int = int(seed) % (2**32)
+    os.environ["PYTHONHASHSEED"] = str(seed_int)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    random_module.seed(seed_int)
+    np_module.random.seed(seed_int)
+
+    if torch_module is not None:
+        torch_module.manual_seed(seed_int)
+        cuda = getattr(torch_module, "cuda", None)
+        if cuda is not None and cuda.is_available():
+            cuda.manual_seed(seed_int)
+            cuda.manual_seed_all(seed_int)
+        cudnn = getattr(getattr(torch_module, "backends", None), "cudnn", None)
+        if cudnn is not None:
+            cudnn.benchmark = False
+            cudnn.deterministic = True
+        use_deterministic = getattr(torch_module, "use_deterministic_algorithms", None)
+        if use_deterministic is not None:
+            use_deterministic(True, warn_only=True)
+
+    pipeline = getattr(inference, "_pipeline", None)
+    models = getattr(pipeline, "models", None)
+    if models is None:
+        return
+    for name in ("ss_generator", "slat_generator"):
+        model = None
+        try:
+            if name in models:
+                model = models[name]
+        except Exception:
+            getter = getattr(models, "get", None)
+            if getter is not None:
+                model = getter(name)
+        if model is None:
+            continue
+        try:
+            model.seed = seed_int
+        except Exception as exc:  # noqa: BLE001
+            print(f"[sam3d-seed] could not reset {name} generator: {exc!r}", flush=True)
 
 
 def _as_trimesh_mesh(src: Path) -> Any:
@@ -792,6 +851,10 @@ def main() -> None:
             import torch  # type: ignore
 
             patch_torch_hub_for_local_dinov2(torch)
+            # Seed env + Python/NumPy/torch/CUDA BEFORE model construction so
+            # CUBLAS_WORKSPACE_CONFIG, cudnn flags, and any RNG consumed during
+            # checkpoint load are already pinned (mirrors scripts/sam3d_batch.py).
+            configure_sam3d_determinism(args.seed, torch_module=torch)
 
             image = Image.open(input_image).convert("RGB")
             mask_image = Image.open(input_mask).convert("L")
@@ -819,6 +882,9 @@ def main() -> None:
 
             write_status(status_path, status="running", stage="sam3d", stage_label="SAM3D: Generating mesh")
 
+            # Re-seed and reset the pipeline-local diffusion generators now that
+            # the model exists.
+            configure_sam3d_determinism(args.seed, inference=inference, torch_module=torch)
             started_at = time.time()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
