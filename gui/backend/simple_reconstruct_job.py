@@ -851,6 +851,10 @@ def main() -> None:
             import torch  # type: ignore
 
             patch_torch_hub_for_local_dinov2(torch)
+            # Seed env + Python/NumPy/torch/CUDA BEFORE model construction so
+            # CUBLAS_WORKSPACE_CONFIG, cudnn flags, and any RNG consumed during
+            # checkpoint load are already pinned (mirrors scripts/sam3d_batch.py).
+            configure_sam3d_determinism(args.seed, torch_module=torch)
 
             image = Image.open(input_image).convert("RGB")
             mask_image = Image.open(input_mask).convert("L")
@@ -878,6 +882,8 @@ def main() -> None:
 
             write_status(status_path, status="running", stage="sam3d", stage_label="SAM3D: Generating mesh")
 
+            # Re-seed and reset the pipeline-local diffusion generators now that
+            # the model exists.
             configure_sam3d_determinism(args.seed, inference=inference, torch_module=torch)
             started_at = time.time()
             if torch.cuda.is_available():
