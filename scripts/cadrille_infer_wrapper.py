@@ -442,6 +442,15 @@ def run(
                 if batch.get("video_grid_thw") is not None
                 else None,
                 max_new_tokens=768,
+                # Pin the canonical decode config explicitly instead of relying on
+                # the checkpoint's generation_config staying unchanged. NOTE: this
+                # is NOT replaceable by do_sample=False -- greedy argmax breaks
+                # fp16 logit ties differently from sampling over the top-1 token
+                # and produces different code (verified on the 25-stem smoke).
+                do_sample=True,
+                temperature=0.01,
+                top_k=1,
+                top_p=0.001,
             )
             cuda_synchronize_all()
             batch_finished = time.perf_counter()
