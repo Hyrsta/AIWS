@@ -288,24 +288,6 @@ def resolve_cadrille_input_render_grid(cadrille_output_root: Path, selected_py: 
     return None
 
 
-def resolve_bridge_stl(job_root: Path) -> Path | None:
-    manifest = job_root / "bridge" / "input_manifest.jsonl"
-    if manifest.exists():
-        for line in manifest.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            raw = row.get("cadrille_stl_path")
-            if raw and Path(raw).exists():
-                return Path(raw)
-    candidates = sorted((job_root / "bridge").glob("data/**/*.stl"))
-    return candidates[0] if candidates else None
-
-
 def mesh_to_cadrille_input_image(
     mesh: Any,
     *,
