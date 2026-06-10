@@ -209,7 +209,9 @@ def configure_sam3d_determinism(seed: int, *, inference: Any = None, torch_modul
     hardware permits. NOTE: residual nondeterminism remains (scatter/interpolate ops,
     MoGe GPU FFT) because use_deterministic_algorithms is warn_only.
     """
-    seed_int = int(seed)
+    # np.random.seed and PYTHONHASHSEED only accept [0, 2**32); normalize so any
+    # CLI integer keeps working, with every RNG here fed the same value.
+    seed_int = int(seed) % (2**32)
     os.environ["PYTHONHASHSEED"] = str(seed_int)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     random.seed(seed_int)
