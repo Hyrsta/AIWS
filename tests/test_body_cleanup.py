@@ -51,12 +51,20 @@ def test_main_plus_far_small_speck_removed():
     assert meta["noop"] is False
 
 
-def test_main_plus_far_large_body_removed():
+def test_main_plus_far_large_body_guarded():
     main = cq.Solid.makeBox(2, 2, 2)                                              # vol 8
     big = cq.Solid.makeBox(1.8, 1.8, 1.8).moved(cq.Location(cq.Vector(9, 0, 0)))  # vol ~5.8, far
+    # Default: the runner-up guard refuses to blind-delete a comparable-volume
+    # cluster (the dominant amputation failure in the 2026-06-10 epsilon study).
     meta, _ = _run([main, big])
-    assert meta["n_bodies_after"] == 1            # far ⇒ removed despite size
-    assert meta["confidence_flag"] is True        # large runner-up should warn
+    assert meta["n_bodies_after"] == 2
+    assert meta["selection_mode"] == "epsilon_guarded"
+    assert meta["confidence_flag"] is False       # nothing removed, nothing to warn about
+    # Legacy epsilon-only behavior, preserved behind guard_runnerup_ratio=0.
+    meta0, _ = _run([main, big], guard_runnerup_ratio=0.0)
+    assert meta0["n_bodies_after"] == 1           # far ⇒ removed despite size
+    assert meta0["selection_mode"] == "epsilon"
+    assert meta0["confidence_flag"] is True       # large runner-up should warn
 
 
 def test_three_near_boxes_all_kept():

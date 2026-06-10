@@ -135,3 +135,101 @@ def assess_confidence(
                 f"runner-up cluster {runnerup / kept_vol:.2f}x kept (>= {runnerup_ratio_thresh:.2f})"
             )
     return (len(reasons) > 0, reasons)
+
+
+def merge_heights(gap_matrix: list[list[float]]) -> list[float]:
+    """Single-linkage merge heights = MST edge weights over the complete gap
+    graph (Prim, O(n^2)), sorted ascending. The components of the
+    "gap <= t" graph change only at these heights, so cutting at each height
+    (plus below the smallest) enumerates EVERY partition any threshold yields."""
+    n = len(gap_matrix)
+    if n <= 1:
+        return []
+    in_tree = [False] * n
+    cost = [float("inf")] * n
+    cost[0] = 0.0
+    heights: list[float] = []
+    for step in range(n):
+        u = -1
+        for i in range(n):
+            if not in_tree[i] and (u == -1 or cost[i] < cost[u]):
+                u = i
+        in_tree[u] = True
+        if step > 0:
+            heights.append(cost[u])
+        for v in range(n):
+            if not in_tree[v] and gap_matrix[u][v] < cost[v]:
+                cost[v] = gap_matrix[u][v]
+    return sorted(heights)
+
+
+def keep_set_at_threshold(volumes: list[float], gap_matrix: list[list[float]], threshold: float) -> list[int]:
+    """Max-total-volume connected component of the "gap <= threshold" graph
+    (ties -> smallest member index, matching cluster_bodies)."""
+    n = len(volumes)
+    edges = [
+        (i, j)
+        for i in range(n)
+        for j in range(i + 1, n)
+        if gap_matrix[i][j] <= threshold
+    ]
+    comps = connected_components(n, edges)
+    if not comps:
+        return []
+    best = max(range(len(comps)), key=lambda c: (sum(volumes[b] for b in comps[c]), -c))
+    return sorted(comps[best])
+
+
+def cleanup_hypotheses(
+    volumes: list[float],
+    gap_matrix: list[list[float]],
+    bbox_diagonal: float,
+    *,
+    epsilon_rel: float = 0.07,
+) -> list[dict[str, Any]]:
+    """Enumerate every distinct cleanup outcome any gap threshold could produce,
+    plus keep-all / largest-single-solid baselines and the production
+    epsilon_rel cut. Deduplicated by kept-set; ordered most-conservative first
+    (fewest removed), so a downstream max() over equal scores keeps more bodies.
+
+    Each hypothesis: {"kept_body_indices", "n_removed", "sources"}."""
+    n = len(volumes)
+    if n == 0:
+        return []
+    candidates: list[tuple[list[int], str]] = [(list(range(n)), "keep_all")]
+    largest = max(range(n), key=lambda i: (volumes[i], -i))
+    candidates.append(([largest], "largest_solid"))
+    candidates.append((keep_set_at_threshold(volumes, gap_matrix, -1.0), "cut@singletons"))
+    for h in merge_heights(gap_matrix):
+        candidates.append((keep_set_at_threshold(volumes, gap_matrix, h), f"cut@{h:.6g}"))
+    prod = cluster_bodies(volumes, gap_matrix, bbox_diagonal, epsilon_rel)
+    candidates.append((prod["kept_body_indices"], f"production_eps{epsilon_rel:g}"))
+
+    by_sig: dict[tuple[int, ...], dict[str, Any]] = {}
+    for kept, src in candidates:
+        sig = tuple(sorted(kept))
+        if sig not in by_sig:
+            by_sig[sig] = {"kept_body_indices": list(sig), "n_removed": n - len(sig), "sources": []}
+        by_sig[sig]["sources"].append(src)
+    hyps = list(by_sig.values())
+    hyps.sort(key=lambda h: (h["n_removed"], h["kept_body_indices"]))
+    return hyps
+
+
+def apply_runnerup_guard(clustering: dict[str, Any], *, guard_ratio: float = 0.30) -> list[int]:
+    """Reference-free guard: extend the kept set with every cluster whose volume
+    is >= guard_ratio * the kept cluster's volume. Motivated by the 2026-06-10
+    epsilon study: the dominant cleanup failure is deleting one of two
+    comparable-volume true parts; never delete a comparable cluster blind."""
+    clusters = clustering.get("clusters") or []
+    kept = set(clustering.get("kept_body_indices") or [])
+    if not clusters:
+        return sorted(kept)
+    kept_idx = clustering["kept_cluster_index"]
+    kept_vol = clusters[kept_idx]["volume"]
+    for c in clusters:
+        if c["index"] == kept_idx:
+            continue
+        if kept_vol > 0 and c["volume"] >= guard_ratio * kept_vol:
+            kept.update(c["bodies"])
+    return sorted(kept)

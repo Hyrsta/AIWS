@@ -24,10 +24,14 @@ import cadrille_body_cleanup as bc          # noqa: E402
 import cadrille_stage_metrics as sm          # decimate / normalize(centered) / compute_iou(whole) / compute_cd
 
 
-def clean(step, od):
+def clean(step, od, reference_mesh=None):
+    # reference_mesh enables multi-hypothesis cleanup reranked by centered IoU
+    # vs the SAM3D mesh (the same reference this script selects candidates by).
     a = SimpleNamespace(in_step=step, out_dir=od, out_stem="c", epsilon_rel=0.07,
                         export_stl=True, stl_linear_deflection=0.001, stl_angular_deflection=0.1,
-                        confidence_removed_vol_frac=0.05, confidence_runnerup_ratio=0.30)
+                        confidence_removed_vol_frac=0.05, confidence_runnerup_ratio=0.30,
+                        reference_mesh=reference_mesh, reference_n_points=8192,
+                        guard_runnerup_ratio=0.30)
     bc.run_cleanup(a)
     return trimesh.load_mesh(os.path.join(od, "c__cleaned.stl"))
 
@@ -124,7 +128,7 @@ def main():
             continue
         try:
             with tempfile.TemporaryDirectory() as td:
-                m = sm.normalize(clean(cand["step"], td))
+                m = sm.normalize(clean(cand["step"], td, a.gt_mesh))
         except Exception as e:  # noqa: BLE001
             print(f"[reselect] {name} cleanup failed: {e!r}", flush=True)
             scores.append({
@@ -165,6 +169,7 @@ def main():
     best = max(selectable, key=selection_key) if selectable else None
     summary = {
         "selection_protocol": "valid_code_then_cleaned_centered_iou",
+        "cleanup": "reference_reranked_hypotheses",
         "candidate_count": len(scores),
         "code_valid_count": sum(1 for s in scores if s.get("code_valid")),
         "code_invalid_count": sum(1 for s in scores if s.get("invalidity") == "code_invalid"),
