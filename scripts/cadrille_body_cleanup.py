@@ -100,26 +100,39 @@ def _reference_context(path: str, n_points: int):
     return ctx
 
 
+_CD_SAMPLING_SEED = 20260610  # fixed: identical sampling noise for every hypothesis
+
+
 def _score_hypotheses(solids: list, hyps: list, ctx: dict, lin_defl: float, ang_defl: float) -> list:
-    """Mesh + score each hypothesis's kept set vs the normalized reference."""
+    """Mesh + score each hypothesis's kept set vs the normalized reference.
+
+    CD relies on random surface sampling; we seed it identically per hypothesis
+    so comparisons are fair and the chosen hypothesis is deterministic across
+    runs. The caller's global NumPy RNG state is saved and restored."""
+    import numpy as _np
     sm, gtn, n_points = ctx["sm"], ctx["gtn"], ctx["n_points"]
     scored = []
-    for h in hyps:
-        iou = cd = None
-        try:
-            comp = cq.Compound.makeCompound([solids[i] for i in h["kept_body_indices"]])
-            m = sm.normalize(compound_to_mesh(comp, lin_defl, ang_defl))
+    rng_state = _np.random.get_state()
+    try:
+        for h in hyps:
+            iou = cd = None
             try:
-                cd = sm.compute_cd(gtn, m, n_points)
+                comp = cq.Compound.makeCompound([solids[i] for i in h["kept_body_indices"]])
+                m = sm.normalize(compound_to_mesh(comp, lin_defl, ang_defl))
+                _np.random.seed(_CD_SAMPLING_SEED)
+                try:
+                    cd = sm.compute_cd(gtn, m, n_points)
+                except Exception:  # noqa: BLE001
+                    cd = None
+                try:
+                    iou = sm.compute_iou(gtn, m)
+                except Exception:  # noqa: BLE001
+                    iou = None
             except Exception:  # noqa: BLE001
-                cd = None
-            try:
-                iou = sm.compute_iou(gtn, m)
-            except Exception:  # noqa: BLE001
-                iou = None
-        except Exception:  # noqa: BLE001
-            pass
-        scored.append(dict(h, iou=iou, cd=cd))
+                pass
+            scored.append(dict(h, iou=iou, cd=cd))
+    finally:
+        _np.random.set_state(rng_state)
     return scored
 
 
@@ -160,6 +173,7 @@ def run_cleanup(args) -> dict:
         volumes = volumes_all
         n_degenerate = 0
     n = len(solids)
+    n_total_before = len(solids_all)
     diag = overall_bbox_diagonal(solids)
 
     gap = [[0.0] * n for _ in range(n)]
@@ -260,10 +274,10 @@ def run_cleanup(args) -> dict:
         "input_step": str(args.in_step),
         "epsilon_rel": args.epsilon_rel,
         "bbox_diagonal": diag,
-        "n_bodies_before": n,
+        "n_bodies_before": n_total_before,
         "n_clusters": clustering["n_clusters"],
         "n_bodies_after": len(chosen),
-        "n_bodies_removed": n - len(chosen),
+        "n_bodies_removed": n_total_before - len(chosen),
         "removed_volume_fraction": removed_vf,
         "kept_cluster_index": clustering["kept_cluster_index"],
         "noop": clustering["noop"] and len(chosen) == n,
