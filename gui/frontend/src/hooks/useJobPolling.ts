@@ -17,7 +17,7 @@ export function useJobPolling(jobId: string, onCompleted: () => void) {
   const logs = useQuery({
     queryKey: ["logs", jobId],
     queryFn: () => api.getLogs(jobId),
-    refetchInterval: (_q) => {
+    refetchInterval: () => {
       const s = qc.getQueryData<JobSummary>(["job", jobId])?.status;
       return s && s !== "running" && s !== "queued" ? false : 1200;
     },

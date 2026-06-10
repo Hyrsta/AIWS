@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   frontend:
-    name: Frontend (types, test, build; lint advisory)
+    name: Frontend (lint, types, test, build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,12 +24,7 @@ jobs:
           cache: npm
           cache-dependency-path: gui/frontend/package-lock.json
       - run: npm ci
-      # Lint is advisory for now: LiveView/ResultView carry pre-existing react-hooks
-      # violations (Date.now() in render, setState-in-effect) plus an unused var.
-      # Tracked as tech debt; flip this to blocking once they are cleaned up.
-      - name: Lint (advisory)
-        run: npm run lint
-        continue-on-error: true
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

@@ -2,7 +2,7 @@
    App — root state machine. Ported from AIWS Design Reference aiws/app.jsx.
    Data layer: real FastAPI backend via src/api/client.ts.
    ============================================================ */
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { ReconstructInput } from "@/api/types";
@@ -200,7 +200,8 @@ export default function App() {
     queryFn: api.listJobs,
     refetchInterval: 5000,
   });
-  const jobs: JobSummary[] = jobsQ.data ?? [];
+  // Memoized so its identity is stable for the useCallback deps below.
+  const jobs: JobSummary[] = useMemo(() => jobsQ.data ?? [], [jobsQ.data]);
 
   // Active job data (for TopBar)
   const activeJobQ = useQuery({

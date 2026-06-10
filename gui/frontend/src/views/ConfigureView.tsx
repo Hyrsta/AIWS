@@ -2,7 +2,7 @@
    Configure view — pixel-accurate port of AIWS Design Reference
    configure.jsx. Wired to real backend via useQuery + onStart.
    ============================================================ */
-import { useState, useRef, useEffect, useCallback, Fragment } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from "react";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -267,7 +267,9 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
     queryFn: api.health,
     refetchInterval: 15000,
   });
-  const gpus = healthQ.data?.gpus ?? [];
+  // Memoized so its identity is stable across renders (it feeds a useEffect dep
+  // and several useMemo/render paths); a fresh `?? []` each render would churn them.
+  const gpus = useMemo(() => healthQ.data?.gpus ?? [], [healthQ.data]);
   const gpuLoading = healthQ.isFetching;
   const gpuTs = healthQ.dataUpdatedAt || null;
   // Device name + total VRAM for the section-header pill (all GPUs share a model here).
@@ -306,6 +308,9 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
   useEffect(() => {
     if (gpuTouched || gpus.length === 0) return;
     const best = [...gpus].sort((a, b) => b.memory_free_mb - a.memory_free_mb)[0];
+    // Seeding the default selection once the async GPU list arrives is a
+    // legitimate effect; the set-state-in-effect check flags it conservatively.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setGpu(String(best.index));
   }, [gpus, gpuTouched]);
   const pickGpu = (idx: string) => { setGpuTouched(true); setGpu(idx); };
@@ -361,7 +366,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
   // and rebuilds real File objects (onStart requires actual Files, not URLs),
   // then loads them like a normal upload. The pair is dimension-matched, so the
   // green "dimensions match" validation lights up automatically.
-  const useSample = async () => {
+  const loadSamplePair = async () => {
     if (sampleBusy) return;
     setSampleBusy(true);
     try {
@@ -378,7 +383,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
       setPhoto(pSlot);
       setMask(mSlot);
     } catch (err) {
-      console.error("[useSample] failed to load sample pair", err);
+      console.error("[loadSamplePair] failed to load sample pair", err);
     } finally {
       setSampleBusy(false);
     }
@@ -464,7 +469,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => { void useSample(); }}
+                onClick={() => { void loadSamplePair(); }}
                 disabled={sampleBusy}
               >
                 <Icon

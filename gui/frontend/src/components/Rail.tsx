@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { JobSummary } from "@/api/types";
 import { Icon } from "@/components/Icon";
 import { StatusDot } from "@/components/Icon";
+import { useNow } from "@/hooks/useNow";
 import { relTime } from "@/lib/format";
 
 function wpLabel(job: JobSummary): string {
@@ -30,7 +31,9 @@ export function Rail({
   onDelete: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const nowSec = Date.now() / 1000;
+  // Ticking clock from an effect (never Date.now() in render) so relative
+  // timestamps stay fresh while keeping the component pure.
+  const nowSec = useNow(true);
 
   return (
     <aside className="rail">
