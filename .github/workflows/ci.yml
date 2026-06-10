@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   frontend:
-    name: Frontend (types, test, build; lint advisory)
+    name: Frontend (lint, types, test, build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,12 +24,7 @@ jobs:
           cache: npm
           cache-dependency-path: gui/frontend/package-lock.json
       - run: npm ci
-      # Lint is advisory for now: LiveView/ResultView carry pre-existing react-hooks
-      # violations (Date.now() in render, setState-in-effect) plus an unused var.
-      # Tracked as tech debt; flip this to blocking once they are cleaned up.
-      - name: Lint (advisory)
-        run: npm run lint
-        continue-on-error: true
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -44,6 +39,9 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
       - run: pip install pytest -r gui/requirements.txt
-      # tests/test_body_cleanup.py needs CadQuery/OCP and the cadrille:latest image,
-      # so it is excluded here and run inside Docker on RXL instead.
-      - run: pytest tests/test_body_cleanup_core.py tests/test_simple_job_cleanup_wiring.py tests/test_cadrille_pointcloud_seed.py -v
+      # Discovery (not a hand-maintained file list) so new test files run
+      # automatically. tests/conftest.py puts the repo root + scripts/ on the
+      # path. tests/test_body_cleanup.py needs CadQuery/OCP and the
+      # cadrille:latest image, so it is the one file excluded here and run
+      # inside Docker on RXL instead.
+      - run: pytest tests/ --ignore=tests/test_body_cleanup.py -v

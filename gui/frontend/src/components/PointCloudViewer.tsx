@@ -33,10 +33,14 @@ function SpinRig({ synced, dist }: { synced: boolean; dist: number }) {
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
   const controls = useThree((s) => s.controls) as unknown as OrbitControlsImpl | null;
 
+  // Mutating the three.js camera in an effect is the idiomatic r3f pattern; the
+  // react-hooks/immutability compiler check flags it conservatively here.
   useEffect(() => {
+    /* eslint-disable react-hooks/immutability */
     camera.near = Math.max(dist / 100, 0.001);
     camera.far = dist * 100;
     camera.updateProjectionMatrix();
+    /* eslint-enable react-hooks/immutability */
   }, [camera, dist]);
 
   useFrame(() => {

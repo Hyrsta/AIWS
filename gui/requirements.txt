@@ -1,4 +1,8 @@
 fastapi>=0.115,<1
+# Imported directly by app.py (BaseModel/Field, starlette.responses.Response).
+# Declared explicitly rather than relying on fastapi's transitive pins.
+pydantic>=2,<3
+starlette>=0.40,<2
 uvicorn>=0.30,<1
 trimesh>=4.5,<5
 pillow>=10,<12

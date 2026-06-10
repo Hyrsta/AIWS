@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { Icon } from "@/components/Icon";
 import { api } from "@/api/client";
 
 export interface DownloadItem {
@@ -55,7 +55,7 @@ export function DownloadGroup({ jobId, title, items }: DownloadGroupProps) {
                 <div className="font-medium truncate">{item.label}</div>
                 <div className="text-xs text-muted-foreground truncate font-mono">{filename}</div>
               </div>
-              <Download className="size-4 shrink-0 text-muted-foreground" />
+              <Icon n="download" size={16} className="shrink-0 text-muted-foreground" />
             </a>
           );
         })}

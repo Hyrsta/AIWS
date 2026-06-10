@@ -28,17 +28,26 @@ graph TD
 
 ## Repository layout
 
+Tracked in this repository:
+
 ```text
 AIWS/
 ├── repos/               # upstream model repos tracked as submodules
 │   ├── sam-3d-objects/   # upstream SAM3D repo
 │   └── cadrille/         # upstream Cadrille repo
-├── runtime/             # AIWS-owned runtime assets (checkpoints, caches, prepared data)
 ├── scripts/             # AIWS orchestration, wrappers, and experiment runners
-├── docs/                # reports, SOPs, technical records, and outlines
-├── gui/                 # local GUI for launching and inspecting runs
-├── outputs/             # local generated artifacts and previews
-└── aiws5.2-usable*/     # local dataset views used in experiments
+├── gui/                 # React SPA + FastAPI backend for launching and inspecting runs
+├── tests/               # pure-python + frontend unit tests (run by .github/workflows/ci.yml)
+├── docs/                # workpiece-dimensions.md, the catalog GET /catalog parses at runtime
+└── .github/            # CI workflows
+```
+
+Created at runtime on the deployment box (not tracked; see `.gitignore`):
+
+```text
+runtime/                 # AIWS-owned checkpoints, caches, prepared data
+outputs/                 # generated job artifacts and previews
+data/, aiws5.2-usable*/  # dataset views used in experiments
 ```
 
 ## Upstream repos used by AIWS
