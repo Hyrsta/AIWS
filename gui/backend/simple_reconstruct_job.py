@@ -630,12 +630,23 @@ def run_postscale_stage(
     return {k: v for k, v in populated.items() if v is not None}
 
 
+def find_bridge_gt_stl(job_root: Path) -> Path | None:
+    """The SAM3D bridge mesh inside the job tree (reference for reselect/cleanup)."""
+    import glob as _glob
+    hits = (
+        _glob.glob(str(job_root / "bridge" / "data" / "*" / "*input*obj01.stl"))
+        or _glob.glob(str(job_root / "bridge" / "data" / "*" / "*.stl"))
+    )
+    return Path(hits[0]) if hits else None
+
+
 def run_body_cleanup_stage(
     *,
     repo_root: Path,
     job_root: Path,
     selected_brep_host: Path,
     docker_image: str,
+    reference_mesh_host: Path | None = None,
 ) -> dict[str, Any]:
     """Run scripts/cadrille_body_cleanup.py in docker on the selected .step and
     copy cleaned outputs into <job_root>/results/. Returns result_paths keys to
@@ -656,6 +667,11 @@ def run_body_cleanup_stage(
         "--out-dir", "/job/cleanup",
         "--export-stl",
     ]
+    if reference_mesh_host is not None and reference_mesh_host.exists():
+        # Rerank cleanup hypotheses against the SAM3D mesh so the kept bodies
+        # match what the reselect stage scored (same reference, same metric).
+        ref_in_ctr = "/job/" + str(reference_mesh_host.resolve().relative_to(job_root))
+        docker_cmd.extend(["--reference-mesh", ref_in_ctr])
     run_cmd(docker_cmd, timeout=DOCKER_STEP_TIMEOUT_SEC)
 
     stem = selected_brep_host.stem  # e.g. "cadrille_selected"
@@ -699,12 +715,10 @@ def run_reselect_stage(
     cands = sorted(_glob.glob(str(cand_dir / f"*.{brep_ext}")))
     if len(cands) <= 1:
         return None
-    gt_candidates = (
-        _glob.glob(str(job_root / "bridge" / "data" / "*" / "*input*obj01.stl"))
-        or _glob.glob(str(job_root / "bridge" / "data" / "*" / "*.stl"))
-    )
-    if not gt_candidates:
+    gt_stl = find_bridge_gt_stl(job_root)
+    if gt_stl is None:
         return None
+    gt_candidates = [str(gt_stl)]
     out_host = cadrille_output_root / "reselect.json"
     docker_cmd = [
         "docker", "run", "--rm",
@@ -1135,6 +1149,7 @@ def main() -> None:
                     job_root=job_root,
                     selected_brep_host=Path(result_paths["selected_brep"]),
                     docker_image=args.cadrille_docker_image,
+                    reference_mesh_host=find_bridge_gt_stl(job_root),
                 )
                 result_paths.update(cleanup_results)
             except Exception as exc:  # noqa: BLE001

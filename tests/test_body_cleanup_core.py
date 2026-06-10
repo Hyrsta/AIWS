@@ -114,3 +114,71 @@ def _run_all():
 
 if __name__ == "__main__":
     _run_all()
+
+
+# ── multi-hypothesis cleanup + guard (2026-06 reference-rerank design) ──
+from body_cleanup_core import (  # noqa: E402
+    apply_runnerup_guard,
+    cleanup_hypotheses,
+    keep_set_at_threshold,
+    merge_heights,
+)
+
+
+def test_merge_heights_triangle():
+    # MST of gaps {01: 0.1, 02: 0.5, 12: 0.3} is edges 0-1 (0.1) and 1-2 (0.3).
+    m = _gap(3, {(0, 1): 0.1, (0, 2): 0.5, (1, 2): 0.3})
+    assert merge_heights(m) == [0.1, 0.3]
+    assert merge_heights([[0.0]]) == []
+    assert merge_heights([]) == []
+
+
+def test_keep_set_at_threshold():
+    vols = [5.0, 4.0, 1.0]
+    m = _gap(3, {(0, 1): 0.1, (0, 2): 0.5, (1, 2): 0.3})
+    assert keep_set_at_threshold(vols, m, -1.0) == [0]      # singletons -> largest solid
+    assert keep_set_at_threshold(vols, m, 0.1) == [0, 1]    # 0-1 merged
+    assert keep_set_at_threshold(vols, m, 0.3) == [0, 1, 2]  # all merged
+
+
+def test_cleanup_hypotheses_distinct_and_conservative_first():
+    vols = [5.0, 4.0, 1.0]
+    m = _gap(3, {(0, 1): 0.1, (0, 2): 0.5, (1, 2): 0.3})
+    hyps = cleanup_hypotheses(vols, m, D, epsilon_rel=EPS)
+    sigs = [tuple(h["kept_body_indices"]) for h in hyps]
+    assert sigs == sorted(sigs, key=lambda s: (3 - len(s), list(s)))  # fewest removed first
+    assert set(sigs) == {(0, 1, 2), (0, 1), (0,)}
+    assert len(sigs) == len(set(sigs))  # deduplicated
+    # production eps=0.07 cut: gap 0.1 > 0.07*D, so nothing merges -> keeps [0]
+    prod = [h for h in hyps if any(s.startswith("production_eps") for s in h["sources"])]
+    assert prod and prod[0]["kept_body_indices"] == [0]
+
+
+def test_cleanup_hypotheses_cover_every_epsilon():
+    # Completeness: for ANY eps, cluster_bodies' keep-set is already a hypothesis.
+    vols = [5.0, 1.0, 3.0, 0.5, 2.0]
+    m = _gap(5, {(0, 1): 0.02, (1, 2): 0.09, (2, 3): 0.15, (3, 4): 0.31, (0, 4): 0.27})
+    sigs = {tuple(h["kept_body_indices"]) for h in cleanup_hypotheses(vols, m, D)}
+    for k in range(0, 101):
+        eps = k / 100.0
+        kept = tuple(cluster_bodies(vols, m, D, eps)["kept_body_indices"])
+        assert kept in sigs, f"eps={eps} keep-set {kept} not enumerated"
+
+
+def test_cleanup_hypotheses_empty_and_single():
+    assert cleanup_hypotheses([], [], D) == []
+    one = cleanup_hypotheses([2.0], [[0.0]], D)
+    assert len(one) == 1 and one[0]["kept_body_indices"] == [0]
+
+
+def test_runnerup_guard_keeps_comparable_cluster():
+    # Two comparable far-apart bodies: the dominant amputation failure mode.
+    cl = cluster_bodies([0.6, 0.4], _gap(2, {(0, 1): 0.2}), D, EPS)
+    assert cl["kept_body_indices"] == [0]
+    assert apply_runnerup_guard(cl, guard_ratio=0.30) == [0, 1]
+    # A tiny speck stays removed.
+    cl2 = cluster_bodies([0.95, 0.05], _gap(2, {(0, 1): 0.2}), D, EPS)
+    assert apply_runnerup_guard(cl2, guard_ratio=0.30) == [0]
+    # Guard is a no-op when everything is already kept.
+    cl3 = cluster_bodies([0.6, 0.4], _gap(2, {(0, 1): 0.0}), D, EPS)
+    assert apply_runnerup_guard(cl3, guard_ratio=0.30) == [0, 1]
