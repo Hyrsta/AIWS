@@ -758,15 +758,15 @@ def delete_job(job_id: str) -> dict[str, Any]:
             allowed = (str(JOBS_ROOT.resolve()),
                        f"{DEFAULT_REMOTE_WORKDIR}/outputs/gui-simple",
                        f"{DEFAULT_REMOTE_WORKDIR}/outputs/gui-jobs")
-            if any(str(root).startswith(a) for a in allowed):
+            if is_under_allowed_root(root, allowed):
                 ssh_host = job.get("ssh_host", "local")
                 if ssh_host in (None, "", "local"):
                     if root.is_dir():
                         shutil.rmtree(root, ignore_errors=True)
                         removed_dir = not root.exists()
                 else:
-                    run_ssh_command(ssh_host, f"rm -rf {shlex.quote(str(root))}", check=False)
-                    removed_dir = True
+                    rm = run_ssh_command(ssh_host, f"rm -rf {shlex.quote(str(root))}", check=False)
+                    removed_dir = rm.returncode == 0
             else:
                 dir_error = f"output_root outside allowed roots: {root}"
         except Exception as exc:  # noqa: BLE001
@@ -832,8 +832,41 @@ def sanitize_upload_name(name: str) -> str:
     return clean or "upload.bin"
 
 
+JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def validate_job_id(job_id: str) -> str:
+    """Reject any job_id that is not a plain identifier.
+
+    Every ``/jobs/{job_id}/*`` route maps job_id straight onto the filesystem
+    via ``job_path``; this guard keeps that mapping from depending on router
+    quirks (e.g. ``..`` segments or a leading ``-``) for its safety.
+    """
+    if not JOB_ID_RE.fullmatch(job_id or ""):
+        raise HTTPException(status_code=400, detail=f"Invalid job id: {job_id!r}")
+    return job_id
+
+
 def job_path(job_id: str) -> Path:
-    return JOBS_ROOT / f"{job_id}.json"
+    return JOBS_ROOT / f"{validate_job_id(job_id)}.json"
+
+
+def is_under_allowed_root(root: Path, allowed_roots: tuple[str, ...]) -> bool:
+    """True only when ``root`` is one of, or nested inside, an allowed root.
+
+    Uses path-component containment (``os.path.commonpath``) rather than a bare
+    string prefix, so a sibling like ``.../outputs/gui-simple-backup`` does NOT
+    match the ``.../outputs/gui-simple`` root.
+    """
+    root_str = str(root)
+    for allowed in allowed_roots:
+        try:
+            if os.path.commonpath([root_str, allowed]) == allowed:
+                return True
+        except ValueError:
+            # Different drives / one relative and one absolute: not contained.
+            continue
+    return False
 
 
 def load_job(path: Path) -> dict[str, Any]:
@@ -1073,6 +1106,22 @@ def is_local_host(host: str) -> bool:
     return (host or "").strip() in LOCAL_HOST_ALIASES
 
 
+def ssh_argv(ssh_host: str, *args: str) -> list[str]:
+    """Build an ``ssh`` argv with a ``--`` separator before the host.
+
+    Without ``--`` OpenSSH parses any token starting with ``-`` as an option,
+    so a host value like ``-oProxyCommand=...`` would be executed as an ssh
+    option (argument injection). The ``--`` makes such a value be treated as a
+    hostname (and rejected), while leaving every legitimate host unchanged.
+    """
+    return ["ssh", "--", ssh_host, *args]
+
+
+def scp_argv(*args: str) -> list[str]:
+    """Build an ``scp`` argv with a ``--`` separator before its operands."""
+    return ["scp", "--", *args]
+
+
 def run_local_script(script: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(["bash", "-s"], input=script, text=True, capture_output=True)
     if check and result.returncode != 0:
@@ -1092,7 +1141,7 @@ def run_ssh_script(ssh_host: str, script: str, check: bool = True) -> subprocess
     if is_local_host(ssh_host):
         return run_local_script(script, check=check)
     result = subprocess.run(
-        ["ssh", ssh_host, "bash", "-s"],
+        ssh_argv(ssh_host, "bash", "-s"),
         input=script,
         text=True,
         capture_output=True,
@@ -1116,7 +1165,7 @@ def run_ssh_command(ssh_host: str, command: str, check: bool = True) -> subproce
         result = subprocess.run(command, shell=True, text=True, capture_output=True)
     else:
         result = subprocess.run(
-            ["ssh", ssh_host, command],
+            ssh_argv(ssh_host, command),
             text=True,
             capture_output=True,
         )
@@ -1141,7 +1190,7 @@ def upload_file_to_remote(ssh_host: str, local_path: Path, remote_path: str) -> 
         shutil.copy2(local_path, remote)
         return
     result = subprocess.run(
-        ["scp", str(local_path), f"{ssh_host}:{remote_path}"],
+        scp_argv(str(local_path), f"{ssh_host}:{remote_path}"),
         text=True,
         capture_output=True,
     )
@@ -1169,7 +1218,7 @@ def read_remote_file_bytes(ssh_host: str, path: str) -> bytes:
                 detail={"message": "Failed to read local file", "path": path, "error": str(exc)},
             ) from exc
     result = subprocess.run(
-        ["ssh", ssh_host, f"cat {shlex.quote(path)}"],
+        ssh_argv(ssh_host, f"cat {shlex.quote(path)}"),
         capture_output=True,
     )
     if result.returncode != 0:
@@ -1203,7 +1252,7 @@ else:
     if is_local_host(ssh_host):
         result = subprocess.run(["python3", "-"], input=source, text=True, capture_output=True)
     else:
-        result = subprocess.run(["ssh", ssh_host, "python3", "-"], input=source, text=True, capture_output=True)
+        result = subprocess.run(ssh_argv(ssh_host, "python3", "-"), input=source, text=True, capture_output=True)
     if result.returncode != 0:
         raise HTTPException(
             status_code=500,
@@ -1391,7 +1440,7 @@ print(json.dumps(result))
     if is_local_host(ssh_host):
         result = subprocess.run(["python3", "-"], input=source, text=True, capture_output=True)
     else:
-        result = subprocess.run(["ssh", ssh_host, "python3", "-"], input=source, text=True, capture_output=True)
+        result = subprocess.run(ssh_argv(ssh_host, "python3", "-"), input=source, text=True, capture_output=True)
     if result.returncode != 0:
         raise HTTPException(
             status_code=500,
