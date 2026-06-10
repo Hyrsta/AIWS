@@ -105,17 +105,6 @@ def test_all_zero_volume_no_division_error():
     assert r["per_body"][0]["volume_fraction"] == 0.0
 
 
-def _run_all():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
-    for fn in fns:
-        fn(); print(f"PASS {fn.__name__}")
-    print(f"\nAll {len(fns)} core tests passed.")
-
-
-if __name__ == "__main__":
-    _run_all()
-
-
 # ── multi-hypothesis cleanup + guard (2026-06 reference-rerank design) ──
 from body_cleanup_core import (  # noqa: E402
     apply_runnerup_guard,
@@ -182,3 +171,14 @@ def test_runnerup_guard_keeps_comparable_cluster():
     # Guard is a no-op when everything is already kept.
     cl3 = cluster_bodies([0.6, 0.4], _gap(2, {(0, 1): 0.0}), D, EPS)
     assert apply_runnerup_guard(cl3, guard_ratio=0.30) == [0, 1]
+
+
+def _run_all():
+    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
+    for fn in fns:
+        fn(); print(f"PASS {fn.__name__}")
+    print(f"\nAll {len(fns)} core tests passed.")
+
+
+if __name__ == "__main__":
+    _run_all()
