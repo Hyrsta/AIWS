@@ -1,6 +1,6 @@
 # AIWS End-to-End GUI
 
-The GUI is a **React (Vite) single-page app served by a small FastAPI backend**. The backend orchestrates the heavy SAM3D/Cadrille reconstruction pipeline on the remote GPU server (`RXL`) over SSH, tracks jobs, and serves results back to the browser.
+The GUI is a **React (Vite) single-page app served by a small FastAPI backend**. The backend runs on the GPU server (`RXL`), where it spawns the heavy SAM3D/Cadrille reconstruction pipeline as local detached subprocesses, tracks jobs, and serves results back to the browser.
 
 There is no separate frontend server: `npm run build` compiles the React app to `gui/frontend/dist`, and the FastAPI app mounts that bundle at `/`, so the API and the UI are served together from **one port (18000)**.
 
@@ -29,7 +29,7 @@ gui/
 └── README.md
 ```
 
-The backend exposes `/health`, `/catalog`, `/jobs`, `/preview`, and `/outputs`. The frontend calls them with relative URLs (`base: ""` in `vite.config.ts`), so the same build works in production and through an SSH tunnel.
+The frontend calls the backend with relative URLs (`base: ""` in `vite.config.ts`), so the same build works served directly or through an SSH tunnel. The SPA uses `/health`, `/catalog`, and the `/jobs` family (`/jobs`, `/jobs/simple-reconstruct`, `/jobs/{id}` and its `logs`/`metrics`/`inputs`/`file`/`terminate` sub-routes). The `/preview/*`, `/outputs/*`, `/jobs/full-run`, and `/jobs/e2e` endpoints are legacy remote-dispatch helpers the SPA does not call.
 
 ## Backend setup
 
@@ -69,7 +69,8 @@ It proxies `/health`, `/catalog`, `/jobs`, `/preview`, and `/outputs` to the bac
 
 ## Execution model and assumptions
 
-- The heavy SAM3D/Cadrille pipeline runs on the remote server `RXL`, so the backend shells out over SSH. `ssh RXL` must work from the machine running the backend.
-- Remote project root is `/ssd1/rxl/zhankaiming/AIWS`.
-- Reconstruction jobs run inside the `cadrille:latest` Docker image on RXL. The backend launches each job detached and tracks it from its on-disk `status.json`, so jobs survive a backend restart.
-- To reach a backend running on RXL from your local machine, forward the port over SSH (`ssh -N -L 18000:127.0.0.1:18000 RXL`) and open `http://127.0.0.1:18000`.
+- The backend runs **on `RXL` itself** (project root `/ssd1/rxl/zhankaiming/AIWS`). The production path (`POST /jobs/simple-reconstruct`, the only job endpoint the SPA calls) spawns the SAM3D/Cadrille pipeline as **local detached subprocesses** (`ssh_host="local"`), not over SSH. Each job is tracked from its on-disk `status.json`, so jobs survive a backend restart.
+- SAM3D runs in the `sam3d-objects` conda env; only the Cadrille stage runs inside the `cadrille:latest` Docker image. Jobs are spawned with `LD_PRELOAD` unset, because a base-conda MKL preload otherwise breaks SAM3D's MoGe FFT.
+- `GET /catalog` reads the workpiece-dimension catalog from `docs/workpiece-dimensions.md` in the deployment checkout, so that file must exist on the box running the backend.
+- The legacy `/jobs/full-run` and `/jobs/e2e` endpoints (not used by the SPA) dispatch to a remote host over SSH; only those require `ssh <host>` to work from the backend.
+- To reach the backend from your local machine, forward the port over SSH (`ssh -N -L 18000:127.0.0.1:18000 RXL`) and open `http://127.0.0.1:18000`.
