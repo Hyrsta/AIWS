@@ -2,16 +2,23 @@
 """Select the top-N Cadrille eval results by IoU for each (model, modality) config.
 
 The batched SAM3D->Cadrille evaluation (1418 samples) lives under:
-    outputs/cadrille-{rl,sft}-gpu-mem-rerun-*/{img,pc}/shard-{0..3}/
+    PC:  outputs/cadrille-pc-seeded-rerun-20260610/{rl,sft}/pc/shard-{0..7}/
+    IMG: outputs/img-fullrerun-20260604/{rl,sft}/  (flat, no shard level)
 Each shard's metrics.json (cadrille evaluate.py format) holds:
     {"summary": {...}, "best_names": [...],
      "metrics": {"<subset>__<class>__<stem>__obj01": {"cd":[...], "iou":[...], "id":[...]}}}
 Predicted candidates: shard-*/tmp_{py,mesh,brep}/<fn>+<id>.{py,stl,step}
-Source mesh (IoU comparison target, = SAM3D bridge mesh): shared_splits/*/<fn>.stl
+Source mesh (IoU comparison target, = SAM3D bridge mesh): split1418/<fn>.stl
 Post-scaled CAD: {img,pc}/postscale-axiswise/<fn>__scaled.{step,py}, <fn>__metadata.json
 Input photo + mask (to upload into the GUI):
     data/aiws5.2-usable/<subset>/<class>/images/<stem>.<ext>
     data/aiws5.2-usable/<subset>/<class>/masks/<stem>.<ext>
+
+NOTE: this is a quick raw-IoU triage tool. It ranks by the highest per-shard
+raw IoU from metrics.json. The canonical published "Best Results" deliverables
+use the reselection protocol instead (valid generated code first, then max
+body-cleaned centered IoU; see the reselect_*_pc_seeded_20260610.json /
+reselect_*_img_fullrerun20260604.json scoring archives).
 
 For each of the 4 configs (RL/SFT x IMG/PC) it ranks samples by their best IoU
 (highest = best), takes the top-N, and writes INDEPENDENT file copies of:
@@ -27,8 +34,10 @@ from pathlib import Path
 
 AIWS = Path("/ssd1/rxl/zhankaiming/AIWS")
 RUNS = {
-    "rl":  AIWS / "outputs/cadrille-rl-gpu-mem-rerun-20260412-211348",
-    "sft": AIWS / "outputs/cadrille-sft-gpu-mem-rerun-20260412-172238",
+    ("rl", "pc"):  AIWS / "outputs/cadrille-pc-seeded-rerun-20260610/rl",
+    ("sft", "pc"): AIWS / "outputs/cadrille-pc-seeded-rerun-20260610/sft",
+    ("rl", "img"):  AIWS / "outputs/img-fullrerun-20260604/rl",
+    ("sft", "img"): AIWS / "outputs/img-fullrerun-20260604/sft",
 }
 CONFIGS = [("rl", "img"), ("rl", "pc"), ("sft", "img"), ("sft", "pc")]
 DATASET = AIWS / "data/aiws5.2-usable"
@@ -38,7 +47,10 @@ IMG_EXTS = ("png", "jpg", "jpeg", "bmp", "webp")
 def gather(run_dir: Path, mod: str):
     """Best-IoU candidate per file_name across all shards of a config."""
     best = {}
-    for mj in sorted((run_dir / mod).glob("shard-*/metrics.json")):
+    metrics_files = sorted((run_dir / mod).glob("shard-*/metrics.json"))
+    if not metrics_files and (run_dir / "metrics.json").is_file():
+        metrics_files = [run_dir / "metrics.json"]  # flat layout (img-fullrerun)
+    for mj in metrics_files:
         shard = str(mj.parent)
         try:
             data = json.load(open(mj))
@@ -76,7 +88,8 @@ def find_pred(shard: str, sub: str, fn: str, cid, ext: str):
 
 
 def find_source_mesh(run_dir: Path, mod: str, fn: str):
-    return first(os.path.join(str(run_dir), "shared_splits", "*", fn + ".stl"),
+    return first(os.path.join(str(run_dir.parent), "split1418", fn + ".stl"),
+                 os.path.join(str(run_dir), "shared_splits", "*", fn + ".stl"),
                  os.path.join(str(AIWS), "repos/cadrille/data", f"sam3d_bridge_*_{mod}_*", fn + ".stl"),
                  os.path.join(str(AIWS), "repos/cadrille/data", "sam3d_bridge_*", fn + ".stl"))
 
@@ -135,7 +148,7 @@ def main(argv=None) -> int:
     grand = 0
     for model, mod in CONFIGS:
         cfg = f"{model}_{mod}"
-        run_dir = RUNS[model]
+        run_dir = RUNS[(model, mod)]
         recs = gather(run_dir, mod)
         recs.sort(key=lambda r: r["iou"], reverse=True)
         top = recs[: args.top]
