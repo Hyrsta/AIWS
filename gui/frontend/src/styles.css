@@ -454,10 +454,11 @@ input, select, textarea, button { font-family: inherit; }
 .cfg-grid .cfg-input-panel { min-height: 482px; }
 .cfg-grid .cfg-post-panel { min-height: 276px; }
 .cfg-grid .cfg-post-panel .panel-head { min-height: 92px; }
-/* Same header height in both input-source modes so the panel-head divider
-   line (and the title/format/sample-pair row above it) does not shift when
-   toggling. The button-sizing rule below stays scoped to the mode that has it. */
-.cfg-grid .cfg-input-panel .panel-head { min-height: 123px; }
+/* Both input-source modes share the identical title+subtitle block height, so
+   the panel-head divider line stays put across the toggle while staying compact
+   (no header min-height padding). The button-sizing rule below is scoped to the
+   mode with the sample-pair button. */
+.cfg-grid .cfg-input-panel .panel-head { min-height: 0; }
 .cfg-grid .cfg-input-panel.has-sample-action .panel-head .btn {
   width: 157px; height: 32px; padding-top: 0; padding-bottom: 0;
 }
