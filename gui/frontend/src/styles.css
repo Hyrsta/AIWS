@@ -448,9 +448,16 @@ input, select, textarea, button { font-family: inherit; }
 .cfg-grid > .panel { display: flex; flex-direction: column; }
 .cfg-grid > .panel > .panel-pad { flex: 1; display: flex; flex-direction: column; }
 .cfg-grid .cfg-settings-panel { min-height: 482px; }
+/* Pin the input panel to the settings-panel height so toggling input
+   source (image+mask vs mesh) never changes the grid row height, which
+   would otherwise shift the action bar below it. */
+.cfg-grid .cfg-input-panel { min-height: 482px; }
 .cfg-grid .cfg-post-panel { min-height: 276px; }
 .cfg-grid .cfg-post-panel .panel-head { min-height: 92px; }
-.cfg-grid .cfg-input-panel.has-sample-action .panel-head { min-height: 123px; }
+/* Same header height in both input-source modes so the panel-head divider
+   line (and the title/format/sample-pair row above it) does not shift when
+   toggling. The button-sizing rule below stays scoped to the mode that has it. */
+.cfg-grid .cfg-input-panel .panel-head { min-height: 123px; }
 .cfg-grid .cfg-input-panel.has-sample-action .panel-head .btn {
   width: 157px; height: 32px; padding-top: 0; padding-bottom: 0;
 }
@@ -468,7 +475,7 @@ input, select, textarea, button { font-family: inherit; }
 }
 
 .cfg-grid > .panel > .panel-pad.mesh-input-pad { min-height: 0; }
-.mesh-fill-area { flex: 1; min-height: 320px; display: flex; }
+.mesh-fill-area { flex: 1; min-height: 0; display: flex; }
 .mesh-fill-area > .drop,
 .mesh-fill-area > .thumb { flex: 1; width: 100%; min-height: 0; }
 .mesh-fill-area > .thumb { aspect-ratio: auto; }
