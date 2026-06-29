@@ -9,6 +9,9 @@ import socket
 import subprocess
 import tempfile
 import time
+import base64
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -51,6 +54,8 @@ SIMPLE_CADRILLE_CHECKPOINT_PRESETS = {
 DEFAULT_SIMPLE_EXPORT_BREP = True
 DEFAULT_SIMPLE_SELECTION_MODE: Literal["evaluate", "index"] = "evaluate"
 DEFAULT_SIMPLE_SELECTED_CANDIDATE_INDEX = 0
+
+GROUNDED_SAM_URL = os.environ.get("GROUNDED_SAM_URL", "http://127.0.0.1:18090")
 
 ALLOWED_UPLOAD_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 ALLOWED_MESH_UPLOAD_EXTS = {".stl", ".glb", ".obj", ".ply"}
@@ -196,6 +201,19 @@ def _probe_docker() -> dict[str, Any]:
     return out
 
 
+def _probe_grounded_sam() -> bool:
+    """Best-effort reachability check for grounded-sam-svc."""
+    try:
+        req = urllib.request.Request(
+            f"{GROUNDED_SAM_URL}/health",
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=2):
+            return True
+    except Exception:
+        return False
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
@@ -224,6 +242,8 @@ def health() -> dict[str, Any]:
             "cadrille_n_samples": DEFAULT_SIMPLE_CADRILLE_N_SAMPLES,
             "cadrille_batch_size": DEFAULT_SIMPLE_CADRILLE_BATCH_SIZE,
         },
+        "grounded_sam_url": GROUNDED_SAM_URL,
+        "grounded_sam_reachable": _probe_grounded_sam(),
         "runtime": _probe_docker(),
         "gpus": _probe_gpus(),
         "catalog_path": DEFAULT_CATALOG_PATH,
@@ -369,7 +389,8 @@ async def create_simple_reconstruct(
     image: Optional[UploadFile] = File(None),
     mask: Optional[UploadFile] = File(None),
     mesh: Optional[UploadFile] = File(None),
-    input_mode: Literal["image_mask", "mesh"] = Form("image_mask"),
+    input_mode: Literal["image_mask", "image", "mesh"] = Form("image_mask"),
+    detect_prompt: Optional[str] = Form(None),
     cadrille_checkpoint_preset: Literal["SFT", "RL"] = Form(DEFAULT_SIMPLE_CADRILLE_CHECKPOINT_PRESET),
     cadrille_mode: Literal["PC", "IMG"] = Form(DEFAULT_SIMPLE_CADRILLE_MODE.upper()),
     workpiece_class: Optional[str] = Form(None),
@@ -390,6 +411,13 @@ async def create_simple_reconstruct(
         mesh_ext = Path(mesh_name).suffix.lower()
         if mesh_ext not in ALLOWED_MESH_UPLOAD_EXTS:
             raise HTTPException(status_code=400, detail=f"Unsupported mesh type: {mesh_ext}")
+    elif input_mode == "image":
+        if image is None:
+            raise HTTPException(status_code=400, detail="Image upload is required for RGB-only auto-segment mode")
+        image_name = sanitize_upload_name(image.filename or "input.png")
+        image_ext = Path(image_name).suffix.lower()
+        if image_ext not in ALLOWED_UPLOAD_EXTS:
+            raise HTTPException(status_code=400, detail=f"Unsupported image type: {image_ext}")
     else:
         if image is None or mask is None:
             raise HTTPException(status_code=400, detail="Image and mask uploads are required for image/mask input mode")
@@ -425,6 +453,69 @@ async def create_simple_reconstruct(
         local_mesh_path = local_input_root / f"mesh{mesh_ext}"
         local_mesh_path.write_bytes(await mesh.read())
         remote_mesh_path = f"{remote_input_root}/mesh{mesh_ext}"
+    elif input_mode == "image":
+        local_image_path = local_input_root / f"input{image_ext}"
+        local_image_path.write_bytes(await image.read())
+        remote_image_path = f"{remote_input_root}/input{image_ext}"
+        # Auto-segment: call grounded-sam-svc to obtain a mask PNG.
+        _img_bytes = local_image_path.read_bytes()
+        _boundary = b"AIWS_GSAM_BOUNDARY"
+        _parts: list[bytes] = []
+        _parts.append(
+            b"--" + _boundary + b"\r\n"
+            b'Content-Disposition: form-data; name="image"; filename="input.png"\r\n'
+            b"Content-Type: image/png\r\n\r\n"
+            + _img_bytes + b"\r\n"
+        )
+        if detect_prompt:
+            _parts.append(
+                b"--" + _boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="prompt"\r\n\r\n'
+                + detect_prompt.encode() + b"\r\n"
+            )
+        _parts.append(b"--" + _boundary + b"--\r\n")
+        _seg_body = b"".join(_parts)
+        _seg_req = urllib.request.Request(
+            f"{GROUNDED_SAM_URL}/segment",
+            data=_seg_body,
+            headers={"Content-Type": f"multipart/form-data; boundary={_boundary.decode()}"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(_seg_req, timeout=60) as _resp:
+                _seg_data = json.loads(_resp.read())
+        except urllib.error.HTTPError as _exc:
+            if _exc.code == 422:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "No object detected by auto-segmentation. "
+                        "Try a different detection prompt, or upload a mask manually."
+                    ),
+                ) from _exc
+            raise HTTPException(
+                status_code=502,
+                detail=f"grounded-sam-svc error: HTTP {_exc.code}",
+            ) from _exc
+        except Exception as _exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"grounded-sam-svc unreachable: {_exc}",
+            ) from _exc
+        _mask_b64 = _seg_data.get("mask_png_base64")
+        if not _mask_b64:
+            raise HTTPException(
+                status_code=502,
+                detail="grounded-sam-svc returned no mask_png_base64 field",
+            )
+        _mask_bytes = base64.b64decode(_mask_b64)
+        local_mask_path = local_input_root / "mask.png"
+        local_mask_path.write_bytes(_mask_bytes)
+        mask_name = "mask.png"
+        mask_ext = ".png"
+        remote_mask_path = f"{remote_input_root}/mask.png"
+        # Proceed as image_mask from here.
+        input_mode = "image_mask"
     else:
         local_image_path = local_input_root / f"input{image_ext}"
         local_mask_path = local_input_root / f"mask{mask_ext}"
@@ -529,6 +620,7 @@ async def create_simple_reconstruct(
             "input_mode": input_mode,
             "image_filename": image_name,
             "mask_filename": mask_name,
+            "detect_prompt": detect_prompt,
             "mesh_filename": mesh_name,
             "cadrille_checkpoint_preset": cadrille_checkpoint_preset,
             "cadrille_checkpoint": selected_checkpoint,
