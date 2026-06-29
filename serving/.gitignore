@@ -6,3 +6,6 @@
 
 # Keep the local test virtualenv out of git.
 .venv/
+
+# Local environment config (copy of .env.example); never commit it.
+.env
