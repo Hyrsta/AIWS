@@ -1,4 +1,5 @@
 import os
+import pytest
 from app.jobstore import JobStore
 from app.models import ReconstructOptions, JobState, Stage, Mode
 
@@ -53,3 +54,15 @@ def test_persists_across_reopen(tmp_path):
     path = os.path.join(tmp_path, "jobs.db")
     jid = JobStore(path).create(ReconstructOptions())
     assert JobStore(path).get(jid).job_id == jid
+
+
+def test_set_status_unknown_id_raises(tmp_path):
+    s = make_store(tmp_path)
+    with pytest.raises(KeyError):
+        s.set_status("ghost", JobState.failed)
+
+
+def test_options_unknown_id_raises(tmp_path):
+    s = make_store(tmp_path)
+    with pytest.raises(KeyError):
+        s.options("ghost")

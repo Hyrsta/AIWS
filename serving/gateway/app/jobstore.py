@@ -68,10 +68,12 @@ class JobStore:
     def set_status(self, job_id, status: JobState, stage: Optional[Stage] = None,
                    error: Optional[str] = None):
         with self._conn() as c:
-            c.execute(
+            cur = c.execute(
                 "UPDATE jobs SET status=?, stage=?, error=?, updated_at=? WHERE job_id=?",
                 (status.value, stage.value if stage else None, error, _now(), job_id),
             )
+            if cur.rowcount == 0:
+                raise KeyError(job_id)
 
     def next_queued(self) -> Optional[str]:
         with self._conn() as c:
@@ -84,4 +86,6 @@ class JobStore:
     def options(self, job_id) -> ReconstructOptions:
         with self._conn() as c:
             row = c.execute("SELECT options FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        if row is None:
+            raise KeyError(job_id)
         return ReconstructOptions.model_validate_json(row["options"])
