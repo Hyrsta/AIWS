@@ -61,8 +61,10 @@ def main() -> None:
     os.environ.setdefault("CUDA_HOME", os.environ["CONDA_PREFIX"])
 
     # SAM3D notebook/inference.py sets LIDRA_SKIP_INIT so we don't need to.
-    os.environ.setdefault("ATTN_BACKEND", "flash_attn")
-    os.environ.setdefault("SPARSE_ATTN_BACKEND", "flash_attn")
+    # Use xformers (not flash_attn) - flash_attn requires GLIBC_2.32 which RXL
+    # (Ubuntu 20.04, GLIBC 2.31) does not have. Matches commit 38ae602.
+    os.environ.setdefault("ATTN_BACKEND", "xformers")
+    os.environ.setdefault("SPARSE_ATTN_BACKEND", "xformers")
 
     if args.gpu_index is not None:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_index)
