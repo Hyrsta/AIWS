@@ -10,6 +10,13 @@ from app.models import JobState, Stage
 class StubWorker:
     def start(self): pass
     def stop(self): pass
+    def is_alive(self): return True
+
+
+class DeadWorker:
+    def start(self): pass
+    def stop(self): pass
+    def is_alive(self): return False
 
 
 class StubHealth:
@@ -108,3 +115,15 @@ def test_reconstruct_rejects_non_image_content_type(tmp_path):
                     files={"images": ("a.txt", io.BytesIO(b"hello"), "text/plain")},
                     data={"mode": "pc"})
     assert r.status_code == 400
+
+
+def test_healthz_503_when_worker_dead(tmp_path):
+    settings = Settings(
+        sam3d_url="http://sam3d", cadrille_url="http://cadrille",
+        artifacts_dir=str(tmp_path), db_path=os.path.join(tmp_path, "jobs.db"),
+        workers=1, stage_timeout_s=10, max_images=4,
+    )
+    store = JobStore(settings.db_path)
+    app = build_app(settings, store, StubHealth(True), StubHealth(True), DeadWorker())
+    client = TestClient(app)
+    assert client.get("/healthz").status_code == 503

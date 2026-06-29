@@ -30,7 +30,7 @@ def build_app(settings, store, sam3d, cadrille, worker) -> FastAPI:
 
     @app.get("/healthz")
     def healthz():
-        if not (sam3d.healthz() and cadrille.healthz()):
+        if not (worker.is_alive() and sam3d.healthz() and cadrille.healthz()):
             return JSONResponse(status_code=503, content={"status": "not_ready"})
         return {"status": "ok"}
 
@@ -42,6 +42,8 @@ def build_app(settings, store, sam3d, cadrille, worker) -> FastAPI:
         seed: int = Form(42),
         cleanup: bool = Form(True),
     ):
+        if not images:
+            raise HTTPException(status_code=400, detail="at least one image is required")
         if len(images) > settings.max_images:
             raise HTTPException(status_code=400,
                                 detail=f"too many images, max is {settings.max_images}")

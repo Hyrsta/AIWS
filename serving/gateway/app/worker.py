@@ -1,5 +1,8 @@
+import logging
 import threading
 import time
+
+logger = logging.getLogger(__name__)
 
 
 class Worker:
@@ -19,6 +22,9 @@ class Worker:
         if self._thread is not None:
             self._thread.join(timeout=5)
 
+    def is_alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
     def _loop(self):
         while not self._stop.is_set():
             job_id = self.store.next_queued()
@@ -28,4 +34,5 @@ class Worker:
             try:
                 self.orchestrator.run(job_id)
             except Exception:  # noqa: BLE001 - never let one job kill the worker
+                logger.exception("orchestrator.run failed for job %s", job_id)
                 time.sleep(self.poll_interval_s)
