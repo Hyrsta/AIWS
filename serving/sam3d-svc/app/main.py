@@ -9,6 +9,7 @@ from .inference import Runner
 class InferRequest(BaseModel):
     job_id: str
     input_dir: str
+    mask_path: str
 
 
 def build_app(settings, runner) -> FastAPI:

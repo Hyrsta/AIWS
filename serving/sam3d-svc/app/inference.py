@@ -1,3 +1,4 @@
+import glob
 import os
 import subprocess
 
@@ -13,17 +14,17 @@ class Runner:
 
     def run(self, settings, req: dict) -> dict:
         input_dir = req["input_dir"]
+        mask_path = req["mask_path"]
         job_dir = os.path.dirname(input_dir)
         mesh_dir = os.path.join(job_dir, "mesh")
         os.makedirs(mesh_dir, exist_ok=True)
         mesh_path = os.path.join(mesh_dir, "sam3d_mesh.ply")
-        # SAM3D_ENTRY is a thin CLI on the image that wraps sam3d_batch.py.
-        # Confirm flag names against the live script in repos/sam-3d-objects on RXL.
+        image_path = self._first_image(input_dir)
         cmd = [
             "python", settings.sam3d_entry,
-            "--input-dir", input_dir,
-            "--ckpt", settings.sam3d_ckpt,
-            "--device", settings.device,
+            "--input-image", image_path,
+            "--input-mask", mask_path,
+            "--seed", str(settings.__dict__.get("seed", 42)),
             "--out-mesh", mesh_path,
         ]
         try:
@@ -37,3 +38,12 @@ class Runner:
         if not os.path.exists(mesh_path):
             raise RuntimeError("sam3d produced no mesh")
         return {"mesh_path": mesh_path}
+
+    def _first_image(self, input_dir):
+        candidates = sorted(
+            p for p in glob.glob(os.path.join(input_dir, "*"))
+            if os.path.basename(p) != "mask.png"
+        )
+        if not candidates:
+            raise RuntimeError("no input image found")
+        return candidates[0]

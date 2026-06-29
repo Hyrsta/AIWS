@@ -9,6 +9,7 @@ class OkRunner:
     ready = True
     def run(self, settings, req):
         assert req["input_dir"].endswith("input")
+        assert req["mask_path"].endswith("mask.png")
         return {"mesh_path": "/artifacts/jobs/j/mesh/sam3d_mesh.ply"}
 
 
@@ -24,13 +25,13 @@ def settings():
 
 def test_infer_returns_mesh_path():
     client = TestClient(build_app(settings(), OkRunner()))
-    r = client.post("/infer", json={"job_id": "j", "input_dir": "/artifacts/jobs/j/input"})
+    r = client.post("/infer", json={"job_id": "j", "input_dir": "/artifacts/jobs/j/input", "mask_path": "/artifacts/jobs/j/input/mask.png"})
     assert r.status_code == 200
     assert r.json()["mesh_path"].endswith("sam3d_mesh.ply")
 
 
 def test_infer_failure_returns_500():
     client = TestClient(build_app(settings(), BoomRunner()))
-    r = client.post("/infer", json={"job_id": "j", "input_dir": "/artifacts/jobs/j/input"})
+    r = client.post("/infer", json={"job_id": "j", "input_dir": "/artifacts/jobs/j/input", "mask_path": "/artifacts/jobs/j/input/mask.png"})
     assert r.status_code == 500
     assert "timed out" in r.text
