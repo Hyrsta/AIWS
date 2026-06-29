@@ -73,8 +73,10 @@ def run_sam3d_inference(
     out_stl.parent.mkdir(parents=True, exist_ok=True)
 
     os.environ.setdefault("CONDA_PREFIX", str(Path(sys.executable).resolve().parents[1]))
-    os.environ.setdefault("ATTN_BACKEND", "flash_attn")
-    os.environ.setdefault("SPARSE_ATTN_BACKEND", "flash_attn")
+    # xformers is the reliable default on this host: the flash_attn wheel
+    # requires GLIBC_2.32 which is not available on the RXL system libc.
+    os.environ.setdefault("ATTN_BACKEND", "xformers")
+    os.environ.setdefault("SPARSE_ATTN_BACKEND", "xformers")
     if gpu_index is not None:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
     else:
