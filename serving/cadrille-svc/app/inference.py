@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 
 
 class Runner:
@@ -26,7 +27,7 @@ class Runner:
         # cad/, preview/, metrics.json layout. Confirm flag names against the live
         # wrappers in repos/cadrille on RXL before the integration smoke.
         cmd = [
-            "python", settings.cadrille_entry,
+            sys.executable, settings.cadrille_entry,
             "--mesh", mesh_path,
             "--mode", req["mode"],
             "--n-candidates", str(req["n_candidates"]),

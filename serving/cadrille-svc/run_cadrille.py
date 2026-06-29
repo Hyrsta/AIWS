@@ -11,9 +11,9 @@ Emits the canonical bundle layout under --out-dir:
 (render.png is not produced by this stage and is intentionally omitted; the
 gateway bundle skips missing artifacts.)
 
-cadrille-svc receives only the mesh path, so this adapter reconstructs the
-minimal SAM3D `record` and the sam3d_output_root layout the bridge expects.
-Runs only on the RXL host (needs cadrille:latest). Validate end to end on a GPU.
+This adapter shells out to scripts/run_cadrille_on_split.py which runs Cadrille
+inside the existing cadrille:latest Docker image. Docker must be available on
+the host. Validate end to end on a GPU.
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -45,23 +46,26 @@ def main() -> None:
     repo_root = args.repo_root.resolve()
     cadrille_root = (args.cadrille_root or (repo_root / "repos" / "cadrille")).resolve()
 
-    sys.path.insert(0, str(repo_root / "scripts"))
-    from aiws_pipeline_core import CadrilleOptions, run_cadrille_pipeline  # type: ignore
-
     out_dir = args.out_dir.resolve()
-    job_root = out_dir / "_job"
-    job_root.mkdir(parents=True, exist_ok=True)
-
     mesh = args.mesh.resolve()
     stem = mesh.stem or "upload"
+
+    # GPU selection: map cuda:N -> "device=N" for docker --gpus
+    gpus = args.docker_gpus or ("device=" + args.device.split(":")[-1])
+
+    # Build a SAM3D-style output layout that run_cadrille_on_split.py expects
+    job_root = out_dir / "_job"
     sam3d_out = job_root / "sam3d" / "GUI" / "user_upload" / f"{stem}__obj01"
     sam3d_out.mkdir(parents=True, exist_ok=True)
+
     stl_path = sam3d_out / "mesh.stl"
     glb_path = sam3d_out / "mesh.glb"
     shutil.copyfile(mesh, stl_path)
+    # cadrille also needs a .glb sidecar; use .stl if no .glb is present
     src_glb = mesh.parent / "sam3d_mesh.glb"
     shutil.copyfile(src_glb if src_glb.exists() else mesh, glb_path)
 
+    # Minimal SAM3D record needed by the bridge
     record = {
         "task_id": f"GUI/user_upload/{stem}__obj01",
         "split": "all",
@@ -79,24 +83,78 @@ def main() -> None:
         "seed": args.seed,
     }
 
-    gpus = args.docker_gpus or ("device=" + args.device.split(":")[-1])
-    opts = CadrilleOptions(
-        cadrille_root=cadrille_root,
-        cadrille_mode=args.mode,
-        cadrille_n_samples=args.n_candidates,
-        cadrille_docker_image=args.docker_image,
-        cadrille_docker_gpus=gpus,
-        cadrille_checkpoint=args.ckpt,
-        cleanup=args.cleanup,
+    # Write a results.jsonl so run_cadrille_on_split.py can find the record
+    results_jsonl = job_root / "sam3d" / "results.jsonl"
+    results_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    results_jsonl.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    # Prepare the bridge split (same as simple_reconstruct_job.py does)
+    bridge_root = job_root / "bridge"
+    split_name = "gui_single_upload"
+    split_dir = bridge_root / "data" / split_name
+    manifest_jsonl = bridge_root / "input_manifest.jsonl"
+
+    sys.path.insert(0, str(repo_root / "scripts"))
+    from sam3d_cadrille_bridge import (  # type: ignore
+        ensure_clean_dir, prepare_cadrille_split, write_manifest_jsonl,
     )
-    result_paths = run_cadrille_pipeline(
-        repo_root=repo_root,
-        job_root=job_root,
-        record=record,
-        sam3d_mesh_glb=glb_path,
-        sam3d_mesh_stl=stl_path,
-        opts=opts,
+
+    bridge_root.mkdir(parents=True, exist_ok=True)
+    ensure_clean_dir(split_dir, force=True, dry_run=False, label="bridge-split")
+    prepared_rows = prepare_cadrille_split(
+        [record],
+        split_dir=split_dir,
+        normalize_stl=True,
+        dry_run=False,
     )
+    write_manifest_jsonl(manifest_jsonl, prepared_rows, dry_run=False)
+
+    # Run Cadrille via run_cadrille_on_split.py
+    cadrille_output_root = job_root / "cadrille"
+    runner_script = repo_root / "scripts" / "run_cadrille_on_split.py"
+
+    cmd = [
+        sys.executable,
+        str(runner_script),
+        "--prepared-split-name", split_name,
+        "--prepared-split-dir", str(split_dir),
+        "--bridge-manifest-jsonl", str(manifest_jsonl),
+        "--cadrille-root", str(cadrille_root),
+        "--cadrille-output-root", str(cadrille_output_root),
+        "--cadrille-mode", args.mode,
+        "--cadrille-input-source", "mesh",
+        "--cadrille-runtime", "docker",
+        "--cadrille-docker-image", args.docker_image,
+        "--cadrille-docker-gpus", gpus,
+        "--cadrille-docker-extra-args=--ipc=host --shm-size=16g",
+        "--cadrille-checkpoint", args.ckpt,
+        "--cadrille-n-samples", str(1 if args.mode == "img" else args.n_candidates),
+        "--selection-mode", "evaluate",
+        "--allow-selection-fallback",
+        "--brep-ext", "step",
+        "--sam3d-output-root", str(job_root / "sam3d"),
+        "--records-found-ok", "1",
+        "--records-selected-for-bridge", "1",
+        "--export-brep",
+    ]
+
+    print(f"[run_cadrille] invoking: {' '.join(cmd[:6])} ...", flush=True)
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"run_cadrille_on_split.py failed with exit code {e.returncode}")
+
+    # Collect outputs from the Cadrille output root
+    def first_match(*patterns):
+        for pat in patterns:
+            hits = sorted(cadrille_output_root.glob(pat))
+            if hits:
+                return hits[0]
+        return None
+
+    selected_py = first_match("selected_py/*.py")
+    selected_step = first_match("selected_brep/*.step", "tmp_brep/*.step")
+    selected_stl = first_match("selected_mesh/*.stl", "tmp_mesh/*.stl")
 
     cad_dir = out_dir / "cad"
     preview_dir = out_dir / "preview"
@@ -104,32 +162,24 @@ def main() -> None:
     for d in (cad_dir, preview_dir, mesh_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    def pick(*keys):
-        for k in keys:
-            v = result_paths.get(k)
-            if v and Path(v).exists():
-                return Path(v)
-        return None
-
-    code = pick("scaled_py", "selected_py")
-    step = pick("scaled_brep_step", "cleaned_brep_step", "selected_brep")
-    prev = pick("scaled_mesh_stl", "cleaned_mesh_stl", "selected_mesh")
-    if code:
-        shutil.copyfile(code, cad_dir / "model.py")
-    if step:
-        shutil.copyfile(step, cad_dir / "model.step")
-    if prev:
-        shutil.copyfile(prev, preview_dir / "model.stl")
+    if selected_py and selected_py.exists():
+        shutil.copyfile(selected_py, cad_dir / "model.py")
+    if selected_step and selected_step.exists():
+        shutil.copyfile(selected_step, cad_dir / "model.step")
+    if selected_stl and selected_stl.exists():
+        shutil.copyfile(selected_stl, preview_dir / "model.stl")
     shutil.copyfile(stl_path, mesh_dir / "sam3d_mesh.stl")
 
+    # Read Cadrille metrics if present
     metrics: dict = {}
-    sm = result_paths.get("stage_metrics")
-    if sm and Path(sm).exists():
+    metrics_path = cadrille_output_root / "metrics.json"
+    if metrics_path.exists():
         try:
-            metrics = json.loads(Path(sm).read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        except Exception:
             metrics = {}
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
     print(f"[run_cadrille] bundle written to {out_dir}", flush=True)
 
 

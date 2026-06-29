@@ -1,6 +1,7 @@
 import glob
 import os
 import subprocess
+import sys
 
 
 class Runner:
@@ -20,8 +21,10 @@ class Runner:
         os.makedirs(mesh_dir, exist_ok=True)
         mesh_path = os.path.join(mesh_dir, "sam3d_mesh.ply")
         image_path = self._first_image(input_dir)
+        # Use sys.executable so the SAM3D env python (not bare system python)
+        # runs the adapter script - it has all the required torch/SAM3D deps.
         cmd = [
-            "python", settings.sam3d_entry,
+            sys.executable, settings.sam3d_entry,
             "--input-image", image_path,
             "--input-mask", mask_path,
             "--seed", str(settings.seed),
