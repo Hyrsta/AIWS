@@ -39,6 +39,10 @@ export const api = {
     if (input.input_mode === "mesh") {
       fd.append("input_mode", "mesh");
       fd.append("mesh", input.mesh);
+    } else if (input.input_mode === "image") {
+      fd.append("input_mode", "image");
+      fd.append("image", input.image);
+      if (input.detect_prompt) fd.append("detect_prompt", input.detect_prompt);
     } else {
       fd.append("input_mode", "image_mask");
       fd.append("image", input.image);

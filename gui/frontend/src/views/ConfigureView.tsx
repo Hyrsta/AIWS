@@ -289,7 +289,8 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
     return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   };
 
-  const [inputMode, setInputMode] = useState<"image_mask" | "mesh">("image_mask");
+  const [inputMode, setInputMode] = useState<"image_mask" | "image" | "mesh">("image_mask");
+  const [detectPrompt, setDetectPrompt] = useState<string>("");
   const [photo, setPhoto] = useState<ImageSlot | null>(null);
   const [mask, setMask] = useState<ImageSlot | null>(null);
   const [mesh, setMesh] = useState<MeshSlot | null>(null);
@@ -352,11 +353,15 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
     mask.w > 0 &&
     !(photo.w === mask.w && photo.h === mask.h);
 
-  const imageReady = photo !== null && mask !== null && !dimMismatch;
+  const imageReady =
+    inputMode === "image"
+      ? photo !== null
+      : photo !== null && mask !== null && !dimMismatch;
   const meshReady = mesh !== null;
   const ready =
     (inputMode === "mesh" ? meshReady : imageReady) &&
     (!psOn || (wclass !== "" && model !== ""));
+
 
   const pickPhoto = async (f: File) => setPhoto(await readImageFile(f));
   const pickMask = async (f: File) => setMask(await readImageFile(f));
@@ -416,6 +421,16 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
     if (inputMode === "mesh") {
       if (!mesh) return;
       onStart({ input_mode: "mesh", mesh: mesh.file, ...base });
+      return;
+    }
+    if (inputMode === "image") {
+      if (!photo) return;
+      onStart({
+        input_mode: "image",
+        image: photo.file,
+        detect_prompt: detectPrompt.trim() || null,
+        ...base,
+      });
       return;
     }
     if (!photo || !mask) return;
@@ -493,6 +508,12 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
                   onClick={() => setInputMode("image_mask")}
                 />
                 <Opt
+                  title={t("upl.rgbOnly")}
+                  desc={t("upl.rgbOnlyDesc")}
+                  on={inputMode === "image"}
+                  onClick={() => setInputMode("image")}
+                />
+                <Opt
                   title={t("upl.meshInput")}
                   desc={t("upl.meshInputDesc")}
                   on={inputMode === "mesh"}
@@ -546,6 +567,34 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
                     {t("upl.dimMismatch")}
                   </div>
                 ) : null}
+              </>
+            ) : inputMode === "image" ? (
+              <>
+                <div className="field" style={{ marginBottom: 8 }}>
+                  <label>
+                    <Icon n="image" size={14} />
+                    {t("upl.photo")}
+                  </label>
+                </div>
+                <DropZone
+                  slot="photo"
+                  value={photo}
+                  onPick={(f) => { void pickPhoto(f); }}
+                  onClear={clearPhoto}
+                />
+                <div className="field" style={{ marginTop: 16 }}>
+                  <label>{t("upl.detectPrompt")}</label>
+                  <input
+                    type="text"
+                    className="sel"
+                    placeholder={t("upl.detectPromptPlaceholder")}
+                    value={detectPrompt}
+                    onChange={(e) => setDetectPrompt(e.target.value)}
+                  />
+                  <p className="hint" style={{ margin: "6px 0 0" }}>
+                    {t("upl.detectPromptHint")}
+                  </p>
+                </div>
               </>
             ) : (
               <>

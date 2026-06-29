@@ -35,7 +35,8 @@ export interface CatalogClass { models: string[]; entries: Record<string, Catalo
 export interface Catalog { source: string; classes: Record<string, CatalogClass>; }
 
 export interface JobRequest {
-  input_mode?: "image_mask" | "mesh";
+  input_mode?: "image_mask" | "image" | "mesh";
+  detect_prompt?: string | null;
   image_filename: string | null; mask_filename: string | null; mesh_filename?: string | null;
   cadrille_checkpoint_preset: "RL" | "SFT"; cadrille_checkpoint: string;
   cadrille_mode: "pc" | "img"; cadrille_mode_label: "PC" | "IMG";
@@ -100,6 +101,7 @@ interface ReconstructBaseInput {
 // Reconstruct request payload (client -> POST /jobs/simple-reconstruct)
 export type ReconstructInput =
   | (ReconstructBaseInput & { input_mode?: "image_mask"; image: File; mask: File })
+  | (ReconstructBaseInput & { input_mode: "image"; image: File; detect_prompt?: string | null })
   | (ReconstructBaseInput & { input_mode: "mesh"; mesh: File });
 
 export interface JobInputs {
