@@ -1,0 +1,90 @@
+services:
+  gateway:
+    build: ./gateway
+    image: aiws-gateway:dev
+    ports:
+      - "${GATEWAY_PORT:-8080}:8000"
+    environment:
+      SAM3D_URL: http://sam3d-svc:8000
+      CADRILLE_URL: http://cadrille-svc:8000
+      GROUNDED_SAM_URL: http://grounded-sam-svc:8000
+      ARTIFACTS_DIR: /artifacts
+      DB_PATH: /artifacts/jobs.db
+      WORKERS: ${WORKERS:-1}
+      STAGE_TIMEOUT_S: ${STAGE_TIMEOUT_S:-1800}
+    volumes:
+      - artifacts:/artifacts
+    networks:
+      - aiws
+    depends_on:
+      - sam3d-svc
+      - cadrille-svc
+      - grounded-sam-svc
+
+  sam3d-svc:
+    build: ./sam3d-svc
+    image: aiws-sam3d-svc:dev
+    environment:
+      SAM3D_DEVICE: ${SAM3D_DEVICE:-cuda:0}
+      SAM3D_CKPT: /ckpt/sam3d
+      STAGE_TIMEOUT_S: ${STAGE_TIMEOUT_S:-1800}
+    volumes:
+      - artifacts:/artifacts
+      - ${SAM3D_CKPT_HOST}:/ckpt/sam3d:ro
+    networks:
+      - aiws
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: ["gpu"]
+
+  cadrille-svc:
+    build: ./cadrille-svc
+    image: aiws-cadrille-svc:dev
+    environment:
+      CADRILLE_DEVICE: ${CADRILLE_DEVICE:-cuda:0}
+      CADRILLE_CKPT: /ckpt/cadrille
+      STAGE_TIMEOUT_S: ${STAGE_TIMEOUT_S:-1800}
+    volumes:
+      - artifacts:/artifacts
+      - ${CADRILLE_CKPT_HOST}:/ckpt/cadrille:ro
+    networks:
+      - aiws
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: ["gpu"]
+
+  grounded-sam-svc:
+    build: ./grounded-sam-svc
+    image: aiws-grounded-sam-svc:dev
+    ports:
+      - "${SEG_PORT:-8081}:8000"
+    environment:
+      SEG_DEVICE: ${SEG_DEVICE:-cuda:0}
+      WORKPIECE_PROMPT: ${WORKPIECE_PROMPT:-workpiece. metal part.}
+      GROUNDING_DINO_CKPT: /ckpt/grounding_dino
+      SAM_CKPT: /ckpt/sam
+    volumes:
+      - artifacts:/artifacts
+      - ${GROUNDING_DINO_CKPT_HOST}:/ckpt/grounding_dino:ro
+      - ${SAM_CKPT_HOST}:/ckpt/sam:ro
+    networks:
+      - aiws
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: ["gpu"]
+
+volumes:
+  artifacts:
+
+networks:
+  aiws:
+    driver: bridge

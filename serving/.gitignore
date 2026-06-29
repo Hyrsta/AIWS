@@ -1,0 +1,11 @@
+# The repo-root .gitignore ignores tests/, scripts/, and gui/ to keep the
+# legacy AIWS code untracked in this local workspace. The serving/ tree is new
+# and is intentionally tracked, so re-include its test directories here.
+!**/tests/
+!**/tests/**
+
+# Keep the local test virtualenv out of git.
+.venv/
+
+# Local environment config (copy of .env.example); never commit it.
+.env
