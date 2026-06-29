@@ -1,0 +1,36 @@
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from fastapi.testclient import TestClient
+from app.main import build_app
+from app.config import Settings
+
+
+class OkRunner:
+    ready = True
+    def run(self, settings, req):
+        assert req["input_dir"].endswith("input")
+        return {"mesh_path": "/artifacts/jobs/j/mesh/sam3d_mesh.ply"}
+
+
+class BoomRunner:
+    ready = True
+    def run(self, settings, req):
+        raise RuntimeError("sam3d timed out")
+
+
+def settings():
+    return Settings(sam3d_entry="x", sam3d_ckpt="x", device="cuda:0", stage_timeout_s=10)
+
+
+def test_infer_returns_mesh_path():
+    client = TestClient(build_app(settings(), OkRunner()))
+    r = client.post("/infer", json={"job_id": "j", "input_dir": "/artifacts/jobs/j/input"})
+    assert r.status_code == 200
+    assert r.json()["mesh_path"].endswith("sam3d_mesh.ply")
+
+
+def test_infer_failure_returns_500():
+    client = TestClient(build_app(settings(), BoomRunner()))
+    r = client.post("/infer", json={"job_id": "j", "input_dir": "/artifacts/jobs/j/input"})
+    assert r.status_code == 500
+    assert "timed out" in r.text
