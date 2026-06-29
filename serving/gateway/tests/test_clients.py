@@ -98,3 +98,14 @@ def test_sam3d_infer_sends_mask_path():
     c = Sam3dClient("http://svc", 5, client=client_with(handler))
     c.infer("x", "/a/input", "/a/input/mask.png")
     assert "mask.png" in seen["body"]
+
+
+def test_grounded_sam_segment_raises_segment_stage_on_transport_error(tmp_path):
+    img = tmp_path / "a.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    def handler(request):
+        raise httpx.ConnectError("down")
+    c = GroundedSamClient("http://svc", 5, client=client_with(handler))
+    with pytest.raises(ServiceError) as ei:
+        c.segment(str(img), "workpiece")
+    assert ei.value.stage == "segment"
