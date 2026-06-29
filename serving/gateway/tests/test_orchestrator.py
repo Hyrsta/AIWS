@@ -138,3 +138,11 @@ def test_provided_mode_skips_segment(tmp_path):
         f.write(b"\x89PNG\r\n\x1a\n")
     orch.run(jid)
     assert store.get(jid).status == JobState.succeeded
+
+
+def test_provided_missing_mask_fails(tmp_path):
+    store, orch = build(tmp_path)
+    jid = store.create(ReconstructOptions(segment="provided"))
+    seed_input_image(orch, jid)  # seeds an input image but NO mask.png
+    orch.run(jid)
+    assert store.get(jid).status == JobState.failed

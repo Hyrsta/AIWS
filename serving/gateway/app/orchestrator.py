@@ -52,6 +52,9 @@ class Orchestrator:
                     "prompt": options.detect_prompt,
                     "box": result.get("box"),
                 }
+            else:
+                if not os.path.exists(mask_path):
+                    raise RuntimeError(f"provided mask not found: {mask_path}")
 
             self.store.set_status(job_id, JobState.running, stage=Stage.sam3d)
             mesh_path = self.sam3d.infer(job_id, input_dir, mask_path)

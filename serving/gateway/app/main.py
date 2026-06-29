@@ -55,6 +55,8 @@ def build_app(settings, store, grounded_sam, sam3d, cadrille, worker) -> FastAPI
             if up.content_type is None or not up.content_type.startswith("image/"):
                 raise HTTPException(status_code=400,
                                     detail=f"not an image: {up.filename}")
+        if mask is not None and (mask.content_type is None or not mask.content_type.startswith("image/")):
+            raise HTTPException(status_code=400, detail="mask must be an image")
         try:
             options = ReconstructOptions(mode=mode, n_candidates=n_candidates, seed=seed,
                                          cleanup=cleanup, segment=segment,

@@ -167,3 +167,12 @@ def test_reconstruct_provided_saves_mask(tmp_path):
 def test_healthz_503_when_grounded_sam_down(tmp_path):
     client, _ = make_client(tmp_path, gsam_ok=False)
     assert client.get("/healthz").status_code == 503
+
+
+def test_reconstruct_rejects_non_image_mask(tmp_path):
+    client, _ = make_client(tmp_path)
+    r = client.post("/v1/reconstruct",
+                    files={"images": ("a.png", png_bytes(), "image/png"),
+                           "mask": ("m.txt", io.BytesIO(b"hello"), "text/plain")},
+                    data={"mode": "pc", "segment": "provided"})
+    assert r.status_code == 400
