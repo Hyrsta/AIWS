@@ -1,5 +1,6 @@
 import os
 import shutil
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -14,15 +15,14 @@ from .worker import Worker
 
 
 def build_app(settings, store, sam3d, cadrille, worker) -> FastAPI:
-    app = FastAPI(title="AIWS CAD Reconstruction API")
 
-    @app.on_event("startup")
-    def _startup():
+    @asynccontextmanager
+    async def _lifespan(app):
         worker.start()
-
-    @app.on_event("shutdown")
-    def _shutdown():
+        yield
         worker.stop()
+
+    app = FastAPI(title="AIWS CAD Reconstruction API", lifespan=_lifespan)
 
     @app.get("/livez")
     def livez():

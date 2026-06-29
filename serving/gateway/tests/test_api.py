@@ -100,3 +100,11 @@ def test_result_returns_zip_when_succeeded(tmp_path):
 def test_healthz_503_when_downstream_down(tmp_path):
     client, _ = make_client(tmp_path, cad_ok=False)
     assert client.get("/healthz").status_code == 503
+
+
+def test_reconstruct_rejects_non_image_content_type(tmp_path):
+    client, _ = make_client(tmp_path)
+    r = client.post("/v1/reconstruct",
+                    files={"images": ("a.txt", io.BytesIO(b"hello"), "text/plain")},
+                    data={"mode": "pc"})
+    assert r.status_code == 400
