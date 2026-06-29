@@ -840,8 +840,8 @@ def main() -> None:
         job_root.mkdir(parents=True, exist_ok=True)
 
         os.environ.setdefault("CONDA_PREFIX", str(Path(sys.executable).resolve().parents[1]))
-        os.environ.setdefault("ATTN_BACKEND", "flash_attn")
-        os.environ.setdefault("SPARSE_ATTN_BACKEND", "flash_attn")
+        os.environ.setdefault("ATTN_BACKEND", "xformers")
+        os.environ.setdefault("SPARSE_ATTN_BACKEND", "xformers")
         # Pin SAM3D to the selected GPU (shared box). gpu_index is resolved by
         # the backend (explicit pick or least-busy auto); default 2 if unset.
         if args.gpu_index is not None:
