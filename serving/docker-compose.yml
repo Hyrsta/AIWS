@@ -7,6 +7,7 @@ services:
     environment:
       SAM3D_URL: http://sam3d-svc:8000
       CADRILLE_URL: http://cadrille-svc:8000
+      GROUNDED_SAM_URL: http://grounded-sam-svc:8000
       ARTIFACTS_DIR: /artifacts
       DB_PATH: /artifacts/jobs.db
       WORKERS: ${WORKERS:-1}
@@ -18,6 +19,7 @@ services:
     depends_on:
       - sam3d-svc
       - cadrille-svc
+      - grounded-sam-svc
 
   sam3d-svc:
     build: ./sam3d-svc
@@ -48,6 +50,29 @@ services:
     volumes:
       - artifacts:/artifacts
       - ${CADRILLE_CKPT_HOST}:/ckpt/cadrille:ro
+    networks:
+      - aiws
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: ["gpu"]
+
+  grounded-sam-svc:
+    build: ./grounded-sam-svc
+    image: aiws-grounded-sam-svc:dev
+    ports:
+      - "${SEG_PORT:-8081}:8000"
+    environment:
+      SEG_DEVICE: ${SEG_DEVICE:-cuda:0}
+      WORKPIECE_PROMPT: ${WORKPIECE_PROMPT:-workpiece. metal part.}
+      GROUNDING_DINO_CKPT: /ckpt/grounding_dino
+      SAM_CKPT: /ckpt/sam
+    volumes:
+      - artifacts:/artifacts
+      - ${GROUNDING_DINO_CKPT_HOST}:/ckpt/grounding_dino:ro
+      - ${SAM_CKPT_HOST}:/ckpt/sam:ro
     networks:
       - aiws
     deploy:
