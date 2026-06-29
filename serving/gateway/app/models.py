@@ -15,7 +15,13 @@ class JobState(str, Enum):
     failed = "failed"
 
 
+class SegmentMode(str, Enum):
+    auto = "auto"
+    provided = "provided"
+
+
 class Stage(str, Enum):
+    segment = "segment"
     sam3d = "sam3d"
     cadrille = "cadrille"
 
@@ -25,6 +31,8 @@ class ReconstructOptions(BaseModel):
     n_candidates: int = Field(default=20, ge=1, le=64)
     seed: int = 42
     cleanup: bool = True
+    segment: SegmentMode = SegmentMode.auto
+    detect_prompt: Optional[str] = None
 
 
 class JobView(BaseModel):
