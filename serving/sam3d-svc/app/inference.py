@@ -24,7 +24,7 @@ class Runner:
             "python", settings.sam3d_entry,
             "--input-image", image_path,
             "--input-mask", mask_path,
-            "--seed", str(settings.__dict__.get("seed", 42)),
+            "--seed", str(settings.seed),
             "--out-mesh", mesh_path,
         ]
         try:

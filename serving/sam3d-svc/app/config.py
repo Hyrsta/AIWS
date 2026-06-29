@@ -8,6 +8,7 @@ class Settings:
     sam3d_ckpt: str
     device: str
     stage_timeout_s: float
+    seed: int = 42
 
 
 def load_settings() -> Settings:
@@ -16,4 +17,5 @@ def load_settings() -> Settings:
         sam3d_ckpt=os.environ.get("SAM3D_CKPT", "/ckpt/sam3d"),
         device=os.environ.get("SAM3D_DEVICE", "cuda:0"),
         stage_timeout_s=float(os.environ.get("STAGE_TIMEOUT_S", "1800")),
+        seed=int(os.environ.get("SAM3D_SEED", "42")),
     )
