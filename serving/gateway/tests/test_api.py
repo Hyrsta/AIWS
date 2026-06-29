@@ -143,6 +143,16 @@ def test_reconstruct_defaults_segment_auto(tmp_path):
     assert store.options(jid).segment.value == "auto"
 
 
+def test_reconstruct_stores_detect_prompt(tmp_path):
+    client, store = make_client(tmp_path)
+    r = client.post("/v1/reconstruct",
+                    files={"images": ("a.png", png_bytes(), "image/png")},
+                    data={"mode": "pc", "detect_prompt": "bracket"})
+    assert r.status_code == 202
+    jid = r.json()["job_id"]
+    assert store.options(jid).detect_prompt == "bracket"
+
+
 def test_reconstruct_provided_saves_mask(tmp_path):
     client, store = make_client(tmp_path)
     r = client.post("/v1/reconstruct",
@@ -151,7 +161,6 @@ def test_reconstruct_provided_saves_mask(tmp_path):
                     data={"mode": "pc", "segment": "provided"})
     assert r.status_code == 202
     jid = r.json()["job_id"]
-    import os
     assert os.path.exists(os.path.join(str(tmp_path), "jobs", jid, "input", "mask.png"))
 
 
