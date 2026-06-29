@@ -30,6 +30,7 @@ memory/
 proactivity/
 self-improving/
 skills/
+docs/superpowers/
 
 # Local binaries / office exports / references
 *.docx
@@ -66,8 +67,3 @@ logs/
 tmp/
 .tmp/
 *.bak-*
-
-# AIWS code — kept on GitHub (origin) + RXL server; not tracked in this local workspace
-gui/
-scripts/
-tests/
