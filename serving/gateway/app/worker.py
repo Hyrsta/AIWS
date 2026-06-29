@@ -25,4 +25,7 @@ class Worker:
             if job_id is None:
                 time.sleep(self.poll_interval_s)
                 continue
-            self.orchestrator.run(job_id)
+            try:
+                self.orchestrator.run(job_id)
+            except Exception:  # noqa: BLE001 - never let one job kill the worker
+                time.sleep(self.poll_interval_s)

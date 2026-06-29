@@ -16,10 +16,11 @@ class Orchestrator:
         return os.path.join(self.artifacts_dir, "jobs", job_id)
 
     def run(self, job_id: str):
-        options = self.store.options(job_id)
-        jd = self.job_dir(job_id)
-        input_dir = os.path.join(jd, "input")
         try:
+            options = self.store.options(job_id)
+            jd = self.job_dir(job_id)
+            input_dir = os.path.join(jd, "input")
+
             self.store.set_status(job_id, JobState.running, stage=Stage.sam3d)
             mesh_path = self.sam3d.infer(job_id, input_dir)
 
