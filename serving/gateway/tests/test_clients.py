@@ -40,6 +40,24 @@ def test_cadrille_infer_passes_options_and_parses_result():
     assert out["metrics"]["iou"] == 0.22
 
 
+def test_sam3d_infer_raises_service_error_on_transport_error():
+    def handler(request):
+        raise httpx.ConnectError("down")
+    c = Sam3dClient("http://svc", 5, client=client_with(handler))
+    with pytest.raises(ServiceError) as ei:
+        c.infer("x", "/in")
+    assert ei.value.stage == "sam3d"
+
+
+def test_cadrille_infer_raises_service_error_on_transport_error():
+    def handler(request):
+        raise httpx.ConnectError("down")
+    c = CadrilleClient("http://svc", 5, client=client_with(handler))
+    with pytest.raises(ServiceError) as ei:
+        c.infer("x", "/mesh.ply", ReconstructOptions())
+    assert ei.value.stage == "cadrille"
+
+
 def test_healthz_false_on_transport_error():
     def handler(request):
         raise httpx.ConnectError("down")
