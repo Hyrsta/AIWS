@@ -57,3 +57,15 @@ def test_segment_no_detection_returns_422():
     client = TestClient(build_app(settings(), NoneSeg()))
     r = client.post("/segment", files={"image": ("a.png", png(), "image/png")})
     assert r.status_code == 422
+
+
+class ErrorSeg:
+    ready = True
+    def segment(self, image_bytes, prompt, box_threshold, text_threshold):
+        raise RuntimeError("boom")
+
+
+def test_segment_internal_error_returns_500():
+    client = TestClient(build_app(settings(), ErrorSeg()))
+    r = client.post("/segment", files={"image": ("a.png", png(), "image/png")})
+    assert r.status_code == 500
