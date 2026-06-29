@@ -1,5 +1,5 @@
 import base64
-import glob
+import json
 import os
 
 from app.jobstore import JobStore
@@ -113,6 +113,11 @@ def test_auto_segment_writes_mask_and_succeeds(tmp_path):
     assert job.status == JobState.succeeded
     assert os.path.exists(os.path.join(orch.job_dir(jid), "input", "mask.png"))
     assert os.path.exists(os.path.join(orch.job_dir(jid), "mesh", "auto_mask.png"))
+    manifest = json.load(open(os.path.join(orch.job_dir(jid), "manifest.json")))
+    seg = manifest["metrics"]["segment"]
+    assert seg["score"] == 0.7
+    assert seg["box"] == [0, 0, 1, 1]
+    assert "prompt" in seg
 
 
 def test_segment_failure_marks_segment_stage(tmp_path):
