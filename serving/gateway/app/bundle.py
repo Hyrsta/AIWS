@@ -10,6 +10,7 @@ ARTIFACT_NAMES = [
     "preview/model.stl",
     "preview/render.png",
     "mesh/sam3d_mesh.ply",
+    "mesh/auto_mask.png",
     "metrics.json",
 ]
 

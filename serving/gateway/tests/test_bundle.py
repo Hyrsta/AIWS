@@ -48,3 +48,13 @@ def test_build_zip_skips_missing_artifacts(tmp_path):
     with zipfile.ZipFile(zp) as z:
         names = set(z.namelist())
     assert names == {"cad/model.py"}
+
+
+def test_build_zip_includes_auto_mask_when_present(tmp_path):
+    jd = str(tmp_path)
+    os.makedirs(os.path.join(jd, "mesh"))
+    with open(os.path.join(jd, "mesh", "auto_mask.png"), "w") as f:
+        f.write("x")
+    zp = bundle.build_zip(jd, "job1")
+    with zipfile.ZipFile(zp) as z:
+        assert "mesh/auto_mask.png" in set(z.namelist())
