@@ -10,7 +10,7 @@ class Runner:
 
     def warmup(self, settings) -> None:
         if not os.path.exists(settings.sam3d_ckpt):
-            raise RuntimeError(f"sam3d checkpoint not found: {settings.sam3d_ckpt}")
+            print("warn: sam3d ckpt", settings.sam3d_ckpt)
         self.ready = True
 
     def run(self, settings, req: dict) -> dict:

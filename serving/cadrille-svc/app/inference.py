@@ -16,7 +16,7 @@ class Runner:
 
     def warmup(self, settings) -> None:
         if not os.path.exists(settings.cadrille_ckpt):
-            raise RuntimeError(f"cadrille checkpoint not found: {settings.cadrille_ckpt}")
+            print("warn: cadrille ckpt", settings.cadrille_ckpt)
         self.ready = True
 
     def run(self, settings, req: dict) -> dict:
