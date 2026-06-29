@@ -1,3 +1,4 @@
+import os
 import httpx
 
 from .models import ReconstructOptions
@@ -27,11 +28,11 @@ class Sam3dClient(_Base):
     def healthz(self) -> bool:
         return self._healthz()
 
-    def infer(self, job_id: str, input_dir: str) -> str:
+    def infer(self, job_id: str, input_dir: str, mask_path: str) -> str:
         try:
             r = self._client.post(
                 f"{self.base_url}/infer",
-                json={"job_id": job_id, "input_dir": input_dir},
+                json={"job_id": job_id, "input_dir": input_dir, "mask_path": mask_path},
                 timeout=self.timeout_s,
             )
         except httpx.HTTPError as e:
@@ -39,6 +40,28 @@ class Sam3dClient(_Base):
         if r.status_code != 200:
             raise ServiceError("sam3d", f"sam3d-svc returned {r.status_code}: {r.text}")
         return r.json()["mesh_path"]
+
+
+class GroundedSamClient(_Base):
+    def healthz(self) -> bool:
+        return self._healthz()
+
+    def segment(self, image_path: str, prompt) -> dict:
+        data = {}
+        if prompt:
+            data["prompt"] = prompt
+        try:
+            with open(image_path, "rb") as f:
+                files = {"image": (os.path.basename(image_path), f, "image/png")}
+                r = self._client.post(
+                    f"{self.base_url}/segment", data=data, files=files,
+                    timeout=self.timeout_s,
+                )
+        except httpx.HTTPError as e:
+            raise ServiceError("segment", f"grounded-sam-svc unreachable: {e}")
+        if r.status_code != 200:
+            raise ServiceError("segment", f"grounded-sam-svc returned {r.status_code}: {r.text}")
+        return r.json()
 
 
 class CadrilleClient(_Base):
