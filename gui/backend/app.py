@@ -656,7 +656,7 @@ async def segment_session(image: UploadFile = File(...), prompt: Optional[str] =
     payload = b"\r\n".join(parts)
     req = urllib.request.Request(
         f"{GROUNDED_SAM_URL}/segment/session", data=payload,
-        headers={"Content-Type": b"multipart/form-data; boundary=" + boundary})
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary.decode()}"})
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             return JSONResponse(status_code=resp.status, content=json.loads(resp.read()))
