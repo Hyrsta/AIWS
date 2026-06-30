@@ -2,7 +2,7 @@
    Configure view — pixel-accurate port of AIWS Design Reference
    configure.jsx. Wired to real backend via useQuery + onStart.
    ============================================================ */
-import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -444,29 +444,6 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
 
   return (
     <div className="canvas">
-      {/* step strip — anchors the page (replaces the orphaned floating subtitle) */}
-      <div className="cfg-steps reveal">
-        {([
-          { n: "01", icon: "image" as const, title: t("cfg.step1"), sub: t("cfg.step1sub") },
-          { n: "02", icon: "sliders" as const, title: t("cfg.step2"), sub: t("cfg.step2sub") },
-          { n: "03", icon: "play" as const, title: t("cfg.step3"), sub: t("cfg.step3sub") },
-        ]).map((s, i, arr) => (
-          <Fragment key={s.n}>
-            <div className="cfg-step">
-              <span className="sn">{s.n}</span>
-              <span className="si"><Icon n={s.icon} size={16} /></span>
-              <span className="st">
-                <b>{s.title}</b>
-                <span>{s.sub}</span>
-              </span>
-            </div>
-            {i < arr.length - 1 ? (
-              <span className="cfg-step-sep"><Icon n="chevR" size={15} /></span>
-            ) : null}
-          </Fragment>
-        ))}
-      </div>
-
       <div className="cfg-grid">
         {/* ---- left: inputs ---- */}
         <div
