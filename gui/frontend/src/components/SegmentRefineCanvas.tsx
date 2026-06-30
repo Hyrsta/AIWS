@@ -27,6 +27,7 @@ export function SegmentRefineCanvas({ image, defaultPrompt, onMaskChange }: Prop
   const imgSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x0: number; y0: number } | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   // Object URL for the uploaded image preview.
   useEffect(() => {
@@ -50,6 +51,7 @@ export function SegmentRefineCanvas({ image, defaultPrompt, onMaskChange }: Prop
     api.segmentSession(image, prompt).then((s) => {
       if (!alive) return;
       setSessionId(s.session_id);
+      sessionIdRef.current = s.session_id;
       setPoints([]);
       publishMask(s.mask_png_base64);
       if (!s.detected) setHint("No object detected. Try a different prompt or click a point.");
@@ -57,7 +59,7 @@ export function SegmentRefineCanvas({ image, defaultPrompt, onMaskChange }: Prop
       .finally(() => { if (alive) setBusy(false); });
     return () => {
       alive = false;
-      if (sessionId) api.segmentRelease(sessionId).catch(() => {});
+      if (sessionIdRef.current) api.segmentRelease(sessionIdRef.current).catch(() => {}); sessionIdRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [image]);
@@ -73,10 +75,15 @@ export function SegmentRefineCanvas({ image, defaultPrompt, onMaskChange }: Prop
       const status = (e as Error & { status?: number }).status;
       if (status === 409) {
         // session expired: re-create from the image we still hold, then retry once
-        const s = await api.segmentSession(image, prompt);
-        setSessionId(s.session_id);
-        const r = await api.segmentRefine(s.session_id, edit);
-        publishMask(r.mask_png_base64);
+        try {
+          const s = await api.segmentSession(image, prompt);
+          setSessionId(s.session_id);
+          sessionIdRef.current = s.session_id;
+          const r = await api.segmentRefine(s.session_id, edit);
+          publishMask(r.mask_png_base64);
+        } catch {
+          setHint("Refine failed. Try again.");
+        }
       } else if (status === 422) {
         setHint("No match for that prompt. Keeping the current mask.");
       } else {
@@ -132,9 +139,9 @@ export function SegmentRefineCanvas({ image, defaultPrompt, onMaskChange }: Prop
         <button type="button" disabled={busy} onClick={() => callRefine({ prompt })}>Re-detect</button>
         <button type="button" disabled={busy || !points.length}
                 onClick={() => { const n = points.slice(0, -1); setPoints(n);
-                  callRefine({ reset: true }); if (n.length) callRefine({ points: n }); }}>Undo point</button>
+                  callRefine({ reset: true }).then(() => { if (n.length) callRefine({ points: n }); }); }}>Undo point</button>
         <button type="button" disabled={busy}
-                onClick={() => { setPoints([]); callRefine({ reset: true }); callRefine({ prompt }); }}>Reset to auto</button>
+                onClick={() => { setPoints([]); callRefine({ reset: true }).then(() => callRefine({ prompt })); }}>Reset to auto</button>
       </div>
       {hint && <div className="seg-hint">{hint}</div>}
     </div>
