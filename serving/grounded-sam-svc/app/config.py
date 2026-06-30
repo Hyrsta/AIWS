@@ -19,6 +19,8 @@ class Settings:
     grounding_dino_model_id: str = "IDEA-Research/grounding-dino-tiny"
     hf_endpoint: str = "https://hf-mirror.com"
     hf_home: str = "/ckpt/hf-cache"
+    session_ttl_seconds: int = 900
+    max_sessions: int = 8
 
 
 def load_settings() -> Settings:
@@ -35,4 +37,6 @@ def load_settings() -> Settings:
         ),
         hf_endpoint=os.environ.get("HF_ENDPOINT", "https://hf-mirror.com"),
         hf_home=os.environ.get("HF_HOME", "/ckpt/hf-cache"),
+        session_ttl_seconds=int(os.environ.get("SESSION_TTL_SECONDS", "900")),
+        max_sessions=int(os.environ.get("MAX_SESSIONS", "8")),
     )
