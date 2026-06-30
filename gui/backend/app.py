@@ -16,8 +16,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 import numpy as np
 from pydantic import BaseModel, Field
 import re
@@ -634,6 +634,62 @@ async def create_simple_reconstruct(
     }
     save_job(job)
     return JobSummary(**job)
+
+
+# ---------------------------------------------------------------------------
+# Grounded-SAM session proxy endpoints
+# Thin pass-through so the browser only talks to the GUI origin.
+# ---------------------------------------------------------------------------
+
+@app.post("/segment/session")
+async def segment_session(image: UploadFile = File(...), prompt: Optional[str] = Form(None)):
+    data = await image.read()
+    boundary = b"AIWS_GSAM_REFINE_BOUNDARY"
+    parts = [b"--" + boundary,
+             b'Content-Disposition: form-data; name="image"; filename="upload.png"',
+             b"Content-Type: application/octet-stream", b"", data]
+    if prompt:
+        parts += [b"--" + boundary,
+                  b'Content-Disposition: form-data; name="prompt"', b"",
+                  prompt.encode()]
+    parts += [b"--" + boundary + b"--", b""]
+    payload = b"\r\n".join(parts)
+    req = urllib.request.Request(
+        f"{GROUNDED_SAM_URL}/segment/session", data=payload,
+        headers={"Content-Type": b"multipart/form-data; boundary=" + boundary})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return JSONResponse(status_code=resp.status, content=json.loads(resp.read()))
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail=exc.read().decode("utf-8", "replace"))
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=503, detail=f"grounded-sam-svc unreachable: {exc}")
+
+
+@app.post("/segment/refine")
+async def segment_refine(body: dict = Body(...)):
+    req = urllib.request.Request(
+        f"{GROUNDED_SAM_URL}/segment/refine", data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return JSONResponse(status_code=resp.status, content=json.loads(resp.read()))
+    except urllib.error.HTTPError as exc:
+        # Propagate 409 so the frontend can re-create the session.
+        raise HTTPException(status_code=exc.code, detail=exc.read().decode("utf-8", "replace"))
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=503, detail=f"grounded-sam-svc unreachable: {exc}")
+
+
+@app.delete("/segment/session/{session_id}", status_code=204)
+async def segment_release(session_id: str):
+    req = urllib.request.Request(
+        f"{GROUNDED_SAM_URL}/segment/session/{session_id}", method="DELETE")
+    try:
+        urllib.request.urlopen(req, timeout=30)
+    except Exception:  # noqa: BLE001
+        pass  # best-effort release; TTL will sweep otherwise
+    return None
 
 
 @app.get("/jobs/{job_id}/logs")
