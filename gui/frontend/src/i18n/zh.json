@@ -285,5 +285,9 @@
   "x.sampleHint": "尚未上传。将使用示例图像。",
   "x.confReasons": "原因",
   "x.seconds": "{v}秒",
-  "common.backendDown": "后端不可用"
+  "common.backendDown": "后端不可用",
+  "refine.title": "优化掩膜",
+  "refine.useMask": "使用此掩膜并重建",
+  "refine.hint": "用新的提示词重新检测，点击添加点（Alt 点击表示排除），或拖拽框选。",
+  "refine.needMask": "请先调整掩膜，然后重建"
 }

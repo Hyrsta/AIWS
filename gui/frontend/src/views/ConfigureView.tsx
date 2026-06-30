@@ -10,6 +10,7 @@ import type { Catalog, Health } from "@/api/types";
 import type { ReconstructInput } from "@/api/types";
 import { api } from "@/api/client";
 import { Icon } from "@/components/Icon";
+import { SegmentRefineCanvas } from "@/components/SegmentRefineCanvas";
 // Bundled demo pair — real pipeline inputs from a top-IoU reconstruction
 // (cover_plate NEW-G140-52). Lets users try the pipeline without their own data.
 import samplePhotoUrl from "@/assets/samples/sample_part.png";
@@ -291,6 +292,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
 
   const [inputMode, setInputMode] = useState<"image_mask" | "image" | "mesh">("image_mask");
   const [detectPrompt, setDetectPrompt] = useState<string>("");
+  const [refinedMask, setRefinedMask] = useState<File | null>(null);
   const [photo, setPhoto] = useState<ImageSlot | null>(null);
   const [mask, setMask] = useState<ImageSlot | null>(null);
   const [mesh, setMesh] = useState<MeshSlot | null>(null);
@@ -355,7 +357,7 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
 
   const imageReady =
     inputMode === "image"
-      ? photo !== null
+      ? photo !== null && refinedMask !== null
       : photo !== null && mask !== null && !dimMismatch;
   const meshReady = mesh !== null;
   const ready =
@@ -394,6 +396,12 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
     }
   };
 
+  // Reset the refined mask whenever the image or mode changes so a stale mask
+  // from a previous upload never leaks into a new reconstruction.
+  useEffect(() => {
+    setRefinedMask(null);
+  }, [photo, inputMode]);
+
   const clearPhoto = () => {
     revokeSlot(photo);
     setPhoto(null);
@@ -424,11 +432,11 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
       return;
     }
     if (inputMode === "image") {
-      if (!photo) return;
+      if (!photo || !refinedMask) return;
       onStart({
-        input_mode: "image",
+        input_mode: "image_mask",
         image: photo.file,
-        detect_prompt: detectPrompt.trim() || null,
+        mask: refinedMask,
         ...base,
       });
       return;
@@ -572,6 +580,16 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
                     {t("upl.detectPromptHint")}
                   </p>
                 </div>
+                {photo ? (
+                  <div className="field" style={{ marginTop: 16 }}>
+                    <label>{t("refine.title")}</label>
+                    <SegmentRefineCanvas
+                      image={photo.file}
+                      defaultPrompt={detectPrompt || t("refine.hint")}
+                      onMaskChange={setRefinedMask}
+                    />
+                  </div>
+                ) : null}
               </>
             ) : (
               <>
@@ -823,15 +841,18 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
       {/* ---- action bar ---- */}
       <div
         className="row reveal-3"
-        style={{ marginTop: 24, justifyContent: "flex-end" }}
+        style={{ marginTop: 24, justifyContent: "flex-end", gap: 12, alignItems: "center" }}
       >
+        {inputMode === "image" && photo && !refinedMask ? (
+          <span className="hint">{t("refine.needMask")}</span>
+        ) : null}
         <button
           className="btn btn-primary lg"
           disabled={!ready}
           onClick={onStartClick}
         >
           <Icon n="play" size={16} />
-          {t("act.start")}
+          {inputMode === "image" ? t("refine.useMask") : t("act.start")}
         </button>
       </div>
     </div>

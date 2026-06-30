@@ -2,7 +2,7 @@
    ConfigureView — unit tests
    ============================================================ */
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConfigureView } from "./ConfigureView";
 
@@ -25,6 +25,14 @@ vi.mock("@/api/client", () => ({
       },
     }),
     health: vi.fn().mockResolvedValue({ ok: true, gpus: [] }),
+    // segmentSession and segmentRelease are used by SegmentRefineCanvas; provide
+    // defaults here and override per-test as needed.
+    segmentSession: vi.fn().mockResolvedValue({
+      session_id: "test-session",
+      mask_png_base64: "AAAA",
+      detected: true,
+    }),
+    segmentRelease: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -145,5 +153,30 @@ describe("ConfigureView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /start/i }));
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ input_mode: "mesh", mesh: meshFile }));
+  });
+
+  it("RGB-only: use-mask routes an image_mask reconstruct", async () => {
+    const { onStart } = renderConfigureView();
+
+    // Switch to RGB-only (auto-segment) mode.
+    fireEvent.click(await screen.findByRole("button", { name: /rgb only/i }));
+
+    // Upload a photo so the SegmentRefineCanvas mounts and calls segmentSession.
+    const photoInput = document.querySelector<HTMLInputElement>('input[data-upload-kind="photo-file"]');
+    expect(photoInput).not.toBeNull();
+    const photoFile = new File(["img"], "part.png", { type: "image/png" });
+    fireEvent.change(photoInput!, { target: { files: [photoFile] } });
+
+    // Wait for the mask to be published: the "Use this mask and reconstruct" button
+    // becomes enabled once segmentSession resolves and onMaskChange fires.
+    const useBtn = await screen.findByRole("button", { name: /use this mask/i });
+    await waitFor(() => expect(useBtn).not.toBeDisabled(), { timeout: 3000 });
+
+    fireEvent.click(useBtn);
+
+    expect(onStart).toHaveBeenCalledOnce();
+    const arg = onStart.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg.input_mode).toBe("image_mask");
+    expect(arg.mask).toBeInstanceOf(File);
   });
 });

@@ -285,5 +285,9 @@
   "x.sampleHint": "No upload yet. Starts with a sample pair.",
   "x.confReasons": "Reasons",
   "x.seconds": "{v}s",
-  "common.backendDown": "Backend unavailable"
+  "common.backendDown": "Backend unavailable",
+  "refine.title": "Refine the mask",
+  "refine.useMask": "Use this mask and reconstruct",
+  "refine.hint": "Re-detect with a new prompt, click to add points (Alt-click to exclude), or drag a box.",
+  "refine.needMask": "Adjust the mask, then reconstruct"
 }
