@@ -583,9 +583,10 @@ export function ConfigureView({ onStart }: ConfigureViewProps) {
                 {photo ? (
                   <div className="field" style={{ marginTop: 16 }}>
                     <label>{t("refine.title")}</label>
+                    <small className="seg-hint">{t("refine.hint")}</small>
                     <SegmentRefineCanvas
                       image={photo.file}
-                      defaultPrompt={detectPrompt || t("refine.hint")}
+                      defaultPrompt={detectPrompt}
                       onMaskChange={setRefinedMask}
                     />
                   </div>

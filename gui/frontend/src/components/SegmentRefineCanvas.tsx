@@ -136,7 +136,7 @@ export function SegmentRefineCanvas({ image, defaultPrompt, onMaskChange }: Prop
         <input className="seg-prompt" value={prompt}
                onChange={(e) => setPrompt(e.target.value)}
                placeholder="workpiece. metal part." />
-        <button type="button" disabled={busy} onClick={() => callRefine({ prompt })}>Re-detect</button>
+        <button type="button" disabled={busy || !prompt.trim()} onClick={() => callRefine({ prompt })}>Re-detect</button>
         <button type="button" disabled={busy || !points.length}
                 onClick={() => { const n = points.slice(0, -1); setPoints(n);
                   callRefine({ reset: true }).then(() => { if (n.length) callRefine({ points: n }); }); }}>Undo point</button>

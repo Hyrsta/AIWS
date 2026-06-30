@@ -87,7 +87,8 @@ def build_app(settings, segmentor) -> FastAPI:
 
     @app.delete("/segment/session/{session_id}", status_code=204)
     def segment_release(session_id: str):
-        store.release(session_id)
+        with _gpu_lock:
+            store.release(session_id)
         return None
 
     return app
