@@ -111,6 +111,14 @@ export interface JobInputs {
   input_mesh?: string | null;
 }
 
+export interface RefinePoint { x: number; y: number; label: 1 | 0; }
+export interface SegmentSession {
+  session_id: string; mask_png_base64: string; box: number[] | null;
+  score: number; width: number; height: number; detected: boolean;
+}
+export interface RefineResult { mask_png_base64: string; score: number; width: number; height: number; }
+export interface RefineEdit { prompt?: string; points?: RefinePoint[]; box?: number[]; reset?: boolean; }
+
 export interface ScaledMetadata {
   rewrite_mode: string;
   dry_run?: boolean;

@@ -63,3 +63,44 @@ describe("api client", () => {
     expect(body.has("mask")).toBe(false);
   });
 });
+
+function mockFetchOnce(json: unknown, ok = true, status = 200) {
+  vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+    ok, status, json: async () => json, text: async () => JSON.stringify(json),
+  } as Response);
+}
+
+describe("segment refine client", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("segmentSession posts the image and returns the session", async () => {
+    mockFetchOnce({ session_id: "s1", mask_png_base64: "AUTO", box: null,
+      score: 0.5, width: 4, height: 3, detected: true });
+    const file = new File([new Uint8Array([1, 2, 3])], "a.png", { type: "image/png" });
+    const out = await api.segmentSession(file, "bracket");
+    expect(out.session_id).toBe("s1");
+    const fetchMock = vi.mocked(globalThis.fetch);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/segment/session");
+    expect((init as RequestInit).method).toBe("POST");
+  });
+
+  it("segmentRefine posts JSON body with points", async () => {
+    mockFetchOnce({ mask_png_base64: "REF", score: 0.6, width: 4, height: 3 });
+    const out = await api.segmentRefine("s1", { points: [{ x: 2, y: 3, label: 1 }] });
+    expect(out.mask_png_base64).toBe("REF");
+    const fetchMock = vi.mocked(globalThis.fetch);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/segment/refine");
+    expect(JSON.parse((init as RequestInit).body as string).points[0].x).toBe(2);
+  });
+
+  it("segmentRelease issues DELETE", async () => {
+    mockFetchOnce({}, true, 204);
+    await api.segmentRelease("s1");
+    const fetchMock = vi.mocked(globalThis.fetch);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/segment/session/s1");
+    expect((init as RequestInit).method).toBe("DELETE");
+  });
+});

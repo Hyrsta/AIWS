@@ -1,4 +1,4 @@
-import type { Health, Catalog, JobSummary, Metrics, CleanupMetadata, ReconstructInput, JobInputs } from "./types";
+import type { Health, Catalog, JobSummary, Metrics, CleanupMetadata, ReconstructInput, JobInputs, SegmentSession, RefineResult, RefineEdit } from "./types";
 
 // Same-origin in prod; vite dev proxy forwards these paths to VITE_BACKEND_URL.
 const BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -59,7 +59,30 @@ export const api = {
   getJobInputs: (id: string) => jget<JobInputs>(`/jobs/${id}/inputs`),
   async deleteJob(id: string): Promise<{ ok: boolean }> {
     const r = await fetch(`${BASE}/jobs/${id}`, { method: "DELETE" });
-    if (!r.ok) throw new Error(`DELETE /jobs/${id} → ${r.status}`);
+    if (!r.ok) throw new Error(`DELETE /jobs/${id} -> ${r.status}`);
     return (await r.json()) as { ok: boolean };
+  },
+  async segmentSession(image: File, prompt?: string): Promise<SegmentSession> {
+    const fd = new FormData();
+    fd.append("image", image);
+    if (prompt) fd.append("prompt", prompt);
+    const r = await fetch(`${BASE}/segment/session`, { method: "POST", body: fd });
+    if (!r.ok) throw new Error(`POST /segment/session -> ${r.status}`);
+    return (await r.json()) as SegmentSession;
+  },
+  async segmentRefine(sessionId: string, edit: RefineEdit): Promise<RefineResult> {
+    const r = await fetch(`${BASE}/segment/refine`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, ...edit }),
+    });
+    if (!r.ok) {
+      const e = new Error(`POST /segment/refine -> ${r.status}`);
+      (e as Error & { status?: number }).status = r.status;
+      throw e;
+    }
+    return (await r.json()) as RefineResult;
+  },
+  async segmentRelease(sessionId: string): Promise<void> {
+    await fetch(`${BASE}/segment/session/${sessionId}`, { method: "DELETE" });
   },
 };
