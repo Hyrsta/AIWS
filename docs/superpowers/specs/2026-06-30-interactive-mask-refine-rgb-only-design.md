@@ -1,7 +1,7 @@
 # Interactive mask refine for RGB-only mode
 
 - Date: 2026-06-30
-- Status: Design approved, pending spec review
+- Status: Implemented and validated on RXL (2026-06-30)
 - Branch / PR: `claude/mystifying-moore-6f426e` / [#36](https://github.com/Hyrsta/AIWS/pull/36)
 - Related: builds on the Grounded-SAM image-only pipeline (`docs/superpowers/specs/2026-06-29-grounded-sam-image-only-pipeline-design.md`)
 
@@ -121,3 +121,18 @@ On-RXL manual validation (host-process deployment):
 - Brush/scribble refinement.
 - Persisting the chosen mask alongside the job record for later re-runs.
 - Multi-worker session affinity for grounded-sam-svc.
+
+
+## Validation (RXL, 2026-06-30)
+
+Deployed to the RXL host processes (grounded-sam-svc :18091, GUI backend :18000) and validated end to end with a real workpiece photo:
+
+- Session create: detected a workpiece (box + score 0.45), returned a mask.
+- Refine by positive point, negative point, and box: each returned an updated mask.
+- Refine by text re-prompt: returned an updated mask.
+- Refine latency: 0.173 s (well under the 1 s target; the warm-session design encodes the image once).
+- Delete returns 204; a refine against the deleted session returns 409.
+- GUI proxy: POST :18000/segment/session forwards to grounded-sam-svc and returns the session + mask; proxy refine 200, proxy delete 204.
+- Frontend: the rebuilt bundle contains the refine canvas (seg-canvas-wrap, segmentSession, Re-detect, Use this mask).
+
+This confirms the SAM-coupled session methods (encode_image, auto_mask, refine_mask, predictor-state restore), which could not be unit-tested locally, are correct on real hardware. The low-resolution mask passed back as mask_input has the expected shape (refine returns valid masks).
