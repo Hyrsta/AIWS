@@ -21,8 +21,10 @@ venv/
 .clawhub/
 AGENTS.md
 BOOTSTRAP.md
+DREAMS.md
 HEARTBEAT.md
 IDENTITY.md
+MEMORY.md
 SOUL.md
 TOOLS.md
 USER.md
