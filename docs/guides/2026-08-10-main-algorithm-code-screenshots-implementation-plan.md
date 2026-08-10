@@ -6,7 +6,7 @@
 
 **Architecture:** Copy the six authoritative source files read-only from RXL into a task-local temporary directory, extract only the approved line ranges, and syntax-highlight them with Pygments. Wrap the highlighted excerpts in deterministic local HTML cards and rasterize them with headless Google Chrome at 2x scale; the workspace receives only the five final PNGs.
 
-**Tech Stack:** SSH/SCP, Pygments 2.19.2 (`/Users/hyrsta/Library/Python/3.9/bin/pygmentize`), bundled Python 3 with Pillow 12.2.0, local Google Chrome headless, HTML/CSS.
+**Tech Stack:** SSH/SCP, Pygments 2.19.2 (`/Users/hyrsta/Library/Python/3.9/bin/pygmentize`), bundled Python 3 with Pillow 12.2.0, Playwright Chromium headless shell, HTML/CSS.
 
 ## Global Constraints
 
@@ -174,13 +174,13 @@ Expected: five UTF-8 HTML files exist and each contains a `<table class="highlig
 
 - [ ] **Step 3: Rasterize every card at 2x scale**
 
-Have `render_screenshots.py` run headless Chrome once per HTML file with:
+Have `render_screenshots.py` run the dedicated Chromium headless shell once per HTML file with:
 
 ```python
 subprocess.run(
     [
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "--headless=new",
+        "/Users/hyrsta/Library/Caches/ms-playwright/chromium_headless_shell-1148/chrome-mac/headless_shell",
+        "--headless",
         "--disable-gpu",
         "--hide-scrollbars",
         "--force-device-scale-factor=2",
